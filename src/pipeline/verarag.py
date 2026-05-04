@@ -1,0 +1,323 @@
+"""VeraRAG Main Pipeline."""
+
+import os
+from typing import Dict, Any, Optional, List
+import time
+
+from ..agents.base import LLMClient
+from ..agents.task_analyzer import TaskAnalyzer
+from ..agents.planner import DecompositionPlanner
+from ..agents.retrieval_agent import DynamicRetrievalAgent
+from ..agents.reasoning_agent import ReasoningAgent
+from ..agents.verifier_agent import VerifierAgent
+from ..agents.repair_agent import RepairAgent
+from ..evidence.extractor import EvidenceExtractor
+from ..evidence.normalizer import EvidenceNormalizer
+from ..evidence.conflict_graph import ConflictGraphBuilder
+from ..uncertainty.controller import UncertaintyController, Action
+from ..utils.data_structures import (
+    VeraRAGOutput,
+    UncertaintyBreakdown,
+    Evidence,
+    EvidenceConflictGraph
+)
+from ..retriever.hybrid import HybridRetriever
+
+
+class VeraRAG:
+    """
+    Main VeraRAG pipeline for verifiable agentic RAG.
+
+    Pipeline stages:
+    1. Task Analysis: Analyze the question
+    2. Decomposition: Break into sub-questions
+    3. Dynamic Retrieval: Multi-round evidence collection
+    4. Evidence Normalization: Structure the evidence
+    5. Conflict Graph Building: Model evidence relationships
+    6. Uncertainty Assessment: Estimate uncertainty
+    7. Reasoning: Generate answer with claims
+    8. Verification: Check claims against evidence
+    9. Repair: Fix any issues identified
+    10. Final Output: Assemble result
+    """
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """
+        Initialize VeraRAG pipeline.
+
+        Args:
+            config: Configuration dictionary
+        """
+        self.config = config or {}
+        self._setup_components()
+
+    def _setup_components(self):
+        """Setup all pipeline components."""
+        # LLM Client
+        llm_config = self.config.get("llm", {})
+        self.llm_client = LLMClient(
+            provider=llm_config.get("provider", "openai"),
+            model=llm_config.get("model", "gpt-4o"),
+            api_key=os.getenv(llm_config.get("api_key_env", "OPENAI_API_KEY")),
+            temperature=llm_config.get("temperature", 0.7),
+            max_tokens=llm_config.get("max_tokens", 2000)
+        )
+
+        # Retriever
+        retriever_config = self.config.get("retriever", {})
+        self.retriever = HybridRetriever(
+            config=retriever_config,
+            sparse_weight=retriever_config.get("sparse_weight", 0.3),
+            dense_weight=retriever_config.get("dense_weight", 0.7)
+        )
+
+        # Agents
+        self.task_analyzer = TaskAnalyzer(self.config, self.llm_client)
+        self.planner = DecompositionPlanner(self.config, self.llm_client)
+        self.retrieval_agent = DynamicRetrievalAgent(
+            retriever=self.retriever,
+            config=self.config,
+            llm_client=self.llm_client
+        )
+        self.reasoning_agent = ReasoningAgent(self.config, self.llm_client)
+        self.verifier_agent = VerifierAgent(self.config, self.llm_client)
+        self.repair_agent = RepairAgent(self.config, self.llm_client)
+
+        # Evidence processing
+        self.evidence_extractor = EvidenceExtractor(self.config, self.llm_client)
+        self.evidence_normalizer = EvidenceNormalizer(self.config)
+        self.conflict_graph_builder = ConflictGraphBuilder(self.config, self.llm_client)
+
+        # Uncertainty control
+        uncertainty_config = self.config.get("uncertainty", {})
+        self.uncertainty_controller = UncertaintyController(uncertainty_config)
+
+        # Pipeline settings
+        pipeline_config = self.config.get("pipeline", {})
+        self.max_retrieval_rounds = pipeline_config.get("max_retrieval_rounds", 5)
+        self.max_subquestions = pipeline_config.get("max_subquestions", 10)
+        self.enable_conflict_graph = pipeline_config.get("enable_conflict_graph", True)
+        self.enable_uncertainty = pipeline_config.get("enable_uncertainty", True)
+        self.enable_verification = pipeline_config.get("enable_verification", True)
+        self.enable_repair = pipeline_config.get("enable_repair", True)
+
+    def index_documents(self, documents: List[Dict[str, Any]]) -> None:
+        """
+        Build retrieval index from documents.
+
+        Args:
+            documents: List of documents with 'id' and 'text' fields
+        """
+        self.retriever.index_documents(documents)
+
+    def query(
+        self,
+        question: str,
+        max_rounds: Optional[int] = None
+    ) -> VeraRAGOutput:
+        """
+        Process a question through the VeraRAG pipeline.
+
+        Args:
+            question: The user's question
+            max_rounds: Maximum retrieval rounds (overrides config)
+
+        Returns:
+            VeraRAGOutput with answer, evidence, and metadata
+        """
+        start_time = time.time()
+        max_rounds = max_rounds or self.max_retrieval_rounds
+
+        # Stage 1: Task Analysis
+        task_analysis = self.task_analyzer.analyze(question)
+
+        # Stage 2: Decomposition
+        subquestions = self.planner.decompose(
+            question,
+            task_analysis,
+            self.max_subquestions
+        )
+        reasoning_plan = self.planner.get_reasoning_plan(question, subquestions)
+
+        # Stage 3 & 4 & 5: Dynamic Retrieval, Normalization, Conflict Graph
+        evidence_pool: List[Evidence] = []
+        conflict_graph = EvidenceConflictGraph()
+
+        for round_id in range(max_rounds):
+            # Dynamic retrieval
+            evidence_pool = self.retrieval_agent.dynamic_retrieve(
+                subquestions,
+                evidence_pool,
+                max_rounds=1,
+                budget_per_round=50
+            )
+
+            # Normalize evidence
+            if round_id == 0:
+                # First round: normalize all
+                evidence_pool = self._normalize_evidence(
+                    [self._retrieval_result_to_evidence(r) for r in evidence_pool]
+                )
+                evidence_pool = self.evidence_normalizer.filter_low_quality(evidence_pool)
+
+            # Build conflict graph
+            if self.enable_conflict_graph:
+                conflict_graph = self.conflict_graph_builder.build_graph(
+                    evidence_pool,
+                    use_llm=True
+                )
+
+            # Assess uncertainty
+            if self.enable_uncertainty:
+                decision = self.uncertainty_controller.assess(
+                    subquestions,
+                    evidence_pool,
+                    conflict_graph,
+                    current_round=round_id,
+                    max_rounds=max_rounds
+                )
+
+                if decision.should_stop:
+                    break
+
+        # Stage 6: Reasoning
+        answer, answer_claims, reasoning_chain = self.reasoning_agent.reason(
+            question,
+            subquestions,
+            evidence_pool,
+            conflict_graph,
+            reasoning_plan
+        )
+
+        # Stage 7: Verification
+        verification_report = None
+        if self.enable_verification:
+            verification_report = self.verifier_agent.verify_answer(
+                answer,
+                answer_claims,
+                evidence_pool,
+                conflict_graph
+            )
+
+        # Stage 8: Repair (if needed)
+        if self.enable_repair and verification_report and verification_report.has_critical_issues():
+            answer, answer_claims = self.repair_agent.repair_answer(
+                answer,
+                answer_claims,
+                verification_report,
+                evidence_pool
+            )
+
+        # Stage 9: Final uncertainty and confidence
+        uncertainty = UncertaintyBreakdown()
+        final_confidence = 0.5
+
+        if self.enable_uncertainty:
+            uncertainty = self.uncertainty_controller.get_uncertainty_breakdown(
+                subquestions,
+                evidence_pool,
+                conflict_graph
+            )
+
+            if verification_report:
+                verification_conf = (
+                    1.0 if verification_report.overall_status.value == "supported"
+                    else 0.5
+                )
+                uncertainty = self.uncertainty_controller.estimator.estimate_for_answer(
+                    final_confidence,
+                    verification_conf,
+                    uncertainty
+                )
+
+            final_confidence = self.uncertainty_controller.calibrator.calibrate_confidence(
+                1.0 - uncertainty.overall,
+                uncertainty
+            )
+
+        # Stage 10: Assemble output
+        elapsed_time = time.time() - start_time
+
+        output = VeraRAGOutput(
+            question=question,
+            answer=answer,
+            answer_claims=answer_claims,
+            evidence=evidence_pool[:20],  # Limit evidence in output
+            reasoning_chain=reasoning_chain,
+            conflict_report=conflict_graph.to_dict(),
+            verification_report=verification_report,
+            confidence=final_confidence,
+            uncertainty=uncertainty,
+            metadata={
+                "task_analysis": task_analysis.to_dict(),
+                "num_subquestions": len(subquestions),
+                "num_evidence": len(evidence_pool),
+                "num_conflicts": len(conflict_graph.get_conflicts()),
+                "elapsed_time": elapsed_time,
+                "retrieval_rounds": round_id + 1
+            }
+        )
+
+        return output
+
+    def _normalize_evidence(self, evidence_list: List[Evidence]) -> List[Evidence]:
+        """Normalize a list of evidence."""
+        # Filter and deduplicate
+        evidence_list = self.evidence_normalizer.filter_low_quality(evidence_list)
+        evidence_list = self.evidence_normalizer.deduplicate(evidence_list)
+        return evidence_list
+
+    def _retrieval_result_to_evidence(self, result) -> Evidence:
+        """Convert retrieval result to evidence."""
+        # Handle both RetrievalResult and Evidence types
+        if hasattr(result, 'evidence_id'):
+            return result
+
+        from ..utils.data_structures import Evidence
+        import uuid
+
+        return Evidence(
+            evidence_id=f"E{uuid.uuid4().hex[:8]}",
+            source=result.metadata.get("source", "unknown"),
+            title=result.title,
+            text_span=result.content,
+            url=result.metadata.get("url"),
+            relevance_score=min(1.0, result.score)
+        )
+
+    def batch_query(
+        self,
+        questions: List[str],
+        max_rounds: Optional[int] = None
+    ) -> List[VeraRAGOutput]:
+        """
+        Process multiple questions.
+
+        Args:
+            questions: List of questions
+            max_rounds: Maximum retrieval rounds
+
+        Returns:
+            List of VeraRAGOutput objects
+        """
+        return [self.query(q, max_rounds) for q in questions]
+
+
+def create_verarag(config_path: Optional[str] = None) -> VeraRAG:
+    """
+    Factory function to create VeraRAG instance.
+
+    Args:
+        config_path: Optional path to config file
+
+    Returns:
+        VeraRAG instance
+    """
+    config = None
+
+    if config_path:
+        import yaml
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+
+    return VeraRAG(config)

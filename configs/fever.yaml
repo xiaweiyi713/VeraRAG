@@ -1,0 +1,73 @@
+# VeraRAG Configuration for FEVER Dataset
+
+# Dataset
+dataset:
+  name: "fever"
+  path: "data/raw/fever"
+  # FEVER has paper versions: v1.0, v2.0
+  version: "v2.0"
+  # FEVER labels: Supports, Refutes, Not Enough Info
+  labels: ["SUPPORTS", "REFUTES", "NOT ENOUGH INFO"]
+
+# Task-specific settings
+task:
+  task_type: "fact_verification"
+  # For FEVER, we need to verify claims against evidence
+  claim_verification: true
+  # Evidence retrieval settings
+  max_evidence_per_claim: 5
+  # FEVER requires annotated evidence sentences
+  require_exact_evidence: false
+
+# Retrieval settings for FEVER
+retrieval:
+  # FEVER provides Wikipedia pages for each claim
+  use_provided_pages: true
+  wikipedia_path: "data/indexes/fever_wikipedia"
+  # Number of sentences to retrieve per page
+  sentences_per_page: 10
+  # Use the FEVER dataset's pre-retrieved evidence
+  use_gold_evidence: false  # Set to true for upper bound
+
+# Evidence extraction
+evidence:
+  # FEVER uses sentence-level evidence
+  level: "sentence"
+  # Maximum evidence per claim
+  max_evidence: 5
+  # Relevance threshold
+  relevance_threshold: 0.6
+
+# Verification settings
+verification:
+  # FEVER has three classes, align with them
+  classes: ["SUPPORTED", "REFUTED", "NOT_ENOUGH_INFO"]
+  # Thresholds for classification
+  support_threshold: 0.7
+  refute_threshold: 0.3
+  # Use NLI model for verification
+  use_nli: true
+  nli_model: "cross-encoder/nli-deberta-v3-base"
+
+# Evaluation
+evaluation:
+  # FEVER official evaluation metrics
+  metrics:
+    - label_accuracy
+    - fever_score  # (supports + refutes correctly predicted) / total
+    - precision
+    - recall
+    - f1
+    # Evidence retrieval metrics
+    - evidence_recall
+    - evidence_precision
+    # VeraRAG specific
+    - conflict_detection_f1
+    - calibration_error
+    - claim_verification_accuracy
+
+# Pipeline overrides
+pipeline:
+  max_retrieval_rounds: 2
+  enable_conflict_graph: true
+  enable_uncertainty: true

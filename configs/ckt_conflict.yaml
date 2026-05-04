@@ -1,0 +1,137 @@
+# VeraRAG Configuration for CKT-Conflict Dataset
+
+# Dataset
+dataset:
+  name: "ckt_conflict"
+  path: "data/ckt_conflict"
+  # CKT-Conflict: Complex Knowledge Tasks with Conflicting Evidence
+  description: "A benchmark for conflict-aware complex knowledge tasks"
+  version: "1.0"
+
+# Task-specific settings
+task:
+  task_type: "multi_hop_qa_with_conflicts"
+  # CKT-Conflict focuses on conflict detection and resolution
+  conflict_aware: true
+  # Conflict types to include
+  conflict_types:
+    - numeric_conflict
+    - temporal_conflict
+    - entity_mismatch
+    - source_disagreement
+    - definitional_conflict
+    - partial_support
+
+# Evidence configuration
+evidence:
+  # Each question includes:
+  # - supporting evidence (correct)
+  # - conflicting evidence (contradictory)
+  # - distractor evidence (irrelevant)
+  # - outdated evidence (temporal conflict)
+  # - pseudo-support evidence (misleading)
+  evidence_types:
+    supporting:
+      count: 3
+      weight: 1.0
+    conflicting:
+      count: 2
+      weight: -1.0
+    distractor:
+      count: 3
+      weight: 0.0
+    outdated:
+      count: 1
+      weight: 0.3
+    pseudo_support:
+      count: 1
+      weight: 0.5
+
+# Retrieval settings
+retrieval:
+  # For CKT-Conflict, we simulate retrieval with mixed evidence
+  simulate_retrieval: true
+  # Return mixed evidence including conflicts
+  return_conflicting_evidence: true
+  # Source diversity is important
+  enforce_source_diversity: true
+  max_sources_per_query: 5
+
+# Conflict detection
+conflict:
+  # Must detect all conflict types
+  detect_all_types: true
+  # Conflict resolution strategies
+  resolution_strategies:
+    - temporal_priority  # Prefer recent evidence
+    - source_authority  # Prefer high-credibility sources
+    - evidence_weighting  # Weight by combined score
+    - explicit_acknowledgment  # Acknowledge conflicts in answer
+
+# Uncertainty settings
+uncertainty:
+  # CKT-Conflict requires high uncertainty awareness
+  high_conflict_threshold: 0.5
+  # When to abstain from answering
+  abstain_threshold: 0.7
+  # Require explicit uncertainty expression
+  require_explicit_uncertainty: true
+
+# Verification settings
+verification:
+  # Must verify against supporting evidence
+  verify_against_supporting: true
+  # Must acknowledge conflicting evidence
+  acknowledge_conflicts: true
+  # Must not use pseudo-support
+  reject_pseudo_support: true
+
+# Evaluation
+evaluation:
+  # CKT-Conflict specific metrics
+  metrics:
+    # Standard QA metrics
+    - exact_match
+    - answer_f1
+    # Evidence metrics
+    - evidence_recall
+    - evidence_precision
+    - supporting_evidence_f1
+    # Conflict metrics (primary for this dataset)
+    - conflict_detection_f1
+    - conflict_type_accuracy
+    - conflict_resolution_accuracy
+    - false_conflict_rate
+    # Uncertainty metrics
+    - expected_calibration_error
+    - abstention_accuracy
+    - uncertainty_correlation
+    # Hallucination metrics
+    - unsupported_claim_rate
+    - pseudo_support_usage_rate
+    - overconfidence_rate
+    # VeraRAG specific
+    - verifiable_answer_rate
+    - citation_accuracy
+
+# Scoring
+scoring:
+  # Primary score: weighted combination
+  primary_score:
+    answer_f1: 0.25
+    conflict_detection_f1: 0.30
+    uncertainty_calibration: 0.20
+    unsupported_claim_rate: 0.15
+    citation_accuracy: 0.10
+  # Pass threshold for primary score
+  pass_threshold: 0.60
+
+# Pipeline overrides
+pipeline:
+  max_retrieval_rounds: 5
+  enable_conflict_graph: true
+  enable_uncertainty: true
+  enable_verification: true
+  enable_repair: true
+  # Force counter-evidence retrieval
+  force_counter_evidence: true

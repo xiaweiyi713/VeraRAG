@@ -1,0 +1,123 @@
+# VeraRAG Model Configuration
+
+# LLM Configuration
+llm:
+  # Provider: openai, anthropic, local, ollama
+  provider: "openai"
+  model: "gpt-4o"
+  # Fallback model for faster operations
+  fast_model: "gpt-4o-mini"
+  # Temperature for generation
+  temperature: 0.7
+  # Max tokens for generation
+  max_tokens: 2000
+  # API key (can be set via environment variable)
+  api_key_env: "OPENAI_API_KEY"
+  # Base URL (for custom endpoints)
+  base_url: null
+
+# Anthropic Claude Configuration (alternative)
+anthropic:
+  model: "claude-sonnet-4-20250514"
+  api_key_env: "ANTHROPIC_API_KEY"
+  max_tokens: 4096
+  temperature: 0.7
+
+# Local LLM Configuration (for open-source models)
+local_llm:
+  model_path: "/path/to/model"
+  model_type: "llama"  # llama, qwen, mistral, etc.
+  device: "cuda"
+  max_new_tokens: 2048
+  temperature: 0.7
+
+# Retriever Configuration
+retriever:
+  # Sparse retrieval (BM25)
+  sparse:
+    enabled: true
+    backend: "rank_bm25"  # rank_bm25, pyserini
+
+  # Dense retrieval
+  dense:
+    enabled: true
+    model: "BAAI/bge-base-en-v1.5"  # or BAAI/bge-large-en-v1.5
+    device: "cuda"
+    batch_size: 32
+    max_length: 512
+
+  # Hybrid retrieval
+  hybrid:
+    enabled: true
+    sparse_weight: 0.3
+    dense_weight: 0.7
+
+  # Reranker
+  reranker:
+    enabled: true
+    model: "BAAI/bge-reranker-base"
+    top_k: 20
+
+  # Retrieval parameters
+  top_k: 10
+  fetch_k: 100  # Number to fetch before reranking
+
+# Verifier Configuration
+verifier:
+  # Type: llm, nli, hybrid
+  type: "hybrid"
+  # NLI model for claim verification
+  nli_model: "cross-encoder/nli-deberta-v3-base"
+  # Verification threshold
+  support_threshold: 0.7
+  refute_threshold: 0.3
+
+# Vector Store Configuration
+vector_store:
+  # Type: faiss, milvus, chroma, qdrant
+  type: "faiss"
+  dimension: 768
+  index_type: "Flat"  # Flat, IVF, HNSW
+  path: "data/indexes/vector_index"
+
+# Uncertainty Configuration
+uncertainty:
+  # Thresholds for decision making
+  acceptable_threshold: 0.3
+  high_threshold: 0.6
+  # Weights for uncertainty components
+  weights:
+    retrieval: 0.25
+    conflict: 0.30
+    reasoning: 0.20
+    source: 0.15
+    verification: 0.10
+
+# Evaluation Configuration
+evaluation:
+  # Metrics to compute
+  metrics:
+    - exact_match
+    - f1
+    - evidence_recall
+    - evidence_precision
+    - citation_precision
+    - citation_recall
+    - conflict_detection_f1
+    - calibration_error
+    - unsupported_claim_rate
+
+# Pipeline Configuration
+pipeline:
+  # Maximum retrieval rounds
+  max_retrieval_rounds: 5
+  # Maximum subquestions
+  max_subquestions: 10
+  # Enable conflict graph
+  enable_conflict_graph: true
+  # Enable uncertainty control
+  enable_uncertainty: true
+  # Enable verification loop
+  enable_verification: true
+  # Enable repair loop
+  enable_repair: true

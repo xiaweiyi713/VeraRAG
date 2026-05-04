@@ -1,0 +1,58 @@
+# VeraRAG Configuration for HotpotQA Dataset
+
+# Dataset
+dataset:
+  name: "hotpotqa"
+  path: "data/raw/hotpotqa"
+  dev_filename: "hotpot_dev_distractor_v1.json"
+  # HotpotQA has two settings: distractor and fullwiki
+  setting: "distractor"  # distractor or fullwiki
+
+# Task-specific settings
+task:
+  task_type: "multi-hop_qa"
+  requires_supporting_facts: true
+  max_hops: 4
+  # HotpotQA questions are either bridge/comparison or multi-hop
+  question_types: ["bridge", "comparison", "multi-hop"]
+
+# Retrieval settings for HotpotQA
+retrieval:
+  # In distractor setting, use provided context
+  use_distractor_context: true
+  # In fullwiki setting, need to retrieve from Wikipedia
+  wikipedia_path: "data/indexes/hotpot_wikipedia"
+  # Number of documents to retrieve per hop
+  docs_per_hop: 5
+  # Number of sentences to keep per document
+  sentences_per_doc: 10
+
+# Evidence extraction
+evidence:
+  # Extract sentence-level evidence
+  level: "sentence"  # sentence, span, claim
+  # Maximum evidence per question
+  max_evidence: 20
+  # Score threshold for evidence relevance
+  relevance_threshold: 0.5
+
+# Evaluation
+evaluation:
+  # HotpotQA official evaluation uses joint EM and F1
+  metrics:
+    - joint_exact_match
+    - joint_f1
+    - answer_exact_match
+    - answer_f1
+    - supporting_fact_recall
+    - supporting_fact_precision
+    - supporting_fact_f1
+    # VeraRAG specific
+    - conflict_detection_accuracy
+    - uncertainty_calibration
+    - unsupported_claim_rate
+
+# Pipeline overrides
+pipeline:
+  max_retrieval_rounds: 3
+  max_subquestions: 5
