@@ -2,12 +2,20 @@
 
 import asyncio
 import json
+import os
+import sys
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
+
+# Ensure project root is on sys.path for src.* imports
+_project_root = str(Path(__file__).resolve().parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 
 class QueryRequest(BaseModel):
@@ -17,29 +25,35 @@ class QueryRequest(BaseModel):
     config_overrides: Dict[str, Any] = {}
 
 
+class ConfigRequest(BaseModel):
+    provider: str
+    model: str
+    api_key: str
+    base_url: str = ""
+
+
+class DemoQueryRequest(BaseModel):
+    question: str
+
+
+def _import_verarag():
+    """Lazy import to avoid pulling heavy deps at module load."""
+    from src.pipeline.verarag import VeraRAG
+    return VeraRAG
+
+
 def create_router(templates, db, config):
-    """Create API router with all endpoints.
-
-    Args:
-        templates: Jinja2Templates instance
-        db: Database instance
-        config: VeraRAG configuration dict
-
-    Returns:
-        FastAPI APIRouter
-    """
+    """Create API router with all endpoints."""
     router = APIRouter()
 
     @router.get("/", response_class=HTMLResponse)
     async def home(request: Request):
-        """Render the home page with query input."""
         return templates.TemplateResponse(request, "index.html", {
             "config": config or {}
         })
 
     @router.get("/history", response_class=HTMLResponse)
     async def history(request: Request):
-        """Render the query history page."""
         queries = db.list_queries()
         return templates.TemplateResponse(request, "history.html", {
             "queries": queries
@@ -47,7 +61,6 @@ def create_router(templates, db, config):
 
     @router.get("/history/{query_id}", response_class=HTMLResponse)
     async def detail(request: Request, query_id: str):
-        """Render the detail page for a specific query."""
         query = db.get_query(query_id)
         if query is None:
             return templates.TemplateResponse(request, "detail.html", {
@@ -59,9 +72,10 @@ def create_router(templates, db, config):
             "error": None
         })
 
+    # --- Status & Config APIs ---
+
     @router.get("/api/status")
     async def status():
-        """Return system status."""
         llm_cfg = db.get_llm_config()
         has_provider = bool(llm_cfg.get("provider"))
         return JSONResponse({
@@ -74,24 +88,15 @@ def create_router(templates, db, config):
 
     @router.get("/api/config")
     async def get_config():
-        """Get current LLM configuration."""
         llm_cfg = db.get_llm_config()
-        # Mask API key for display
         masked = llm_cfg.copy()
         if masked.get("api_key"):
             key = masked["api_key"]
             masked["api_key"] = key[:4] + "****" + key[-4:] if len(key) > 8 else "****"
         return JSONResponse(masked)
 
-    class ConfigRequest(BaseModel):
-        provider: str
-        model: str
-        api_key: str
-        base_url: str = ""
-
     @router.put("/api/config")
     async def update_config(req: ConfigRequest):
-        """Update LLM configuration."""
         db.set_llm_config(
             provider=req.provider,
             model=req.model,
@@ -100,16 +105,28 @@ def create_router(templates, db, config):
         )
         return JSONResponse({"status": "ok"})
 
+    # --- Query endpoints ---
+
     @router.post("/query")
     async def stream_query(request: QueryRequest):
-        """Process a query with SSE streaming."""
-        import sys
-        sys.path.insert(0, 'src')
-        from src.pipeline.verarag import VeraRAG
+        """Process a query with SSE streaming using real LLM pipeline."""
+        VeraRAG = _import_verarag()
 
         pipeline_config = config or {}
         if request.config_overrides:
             pipeline_config.update(request.config_overrides)
+
+        # Merge DB-stored LLM config into pipeline config
+        llm_cfg = db.get_llm_config()
+        if llm_cfg.get("provider"):
+            pipeline_config.setdefault("llm", {})
+            pipeline_config["llm"]["provider"] = llm_cfg["provider"]
+            if llm_cfg.get("model"):
+                pipeline_config["llm"]["model"] = llm_cfg["model"]
+            if llm_cfg.get("api_key"):
+                pipeline_config["llm"]["api_key"] = llm_cfg["api_key"]
+            if llm_cfg.get("base_url"):
+                pipeline_config["llm"]["base_url"] = llm_cfg["base_url"]
 
         event_queue = asyncio.Queue()
 
@@ -117,54 +134,65 @@ def create_router(templates, db, config):
             event_queue.put_nowait((event_type, data))
 
         async def event_generator():
-            # Run pipeline in thread pool to not block the event loop
             loop = asyncio.get_event_loop()
 
             def run_pipeline():
-                pipeline = VeraRAG(pipeline_config)
-                output = pipeline.query_stream(
-                    question=request.question,
-                    max_rounds=request.max_rounds,
-                    callback=callback
-                )
-                # Save to database
-                query_id = db.save_query(
-                    question=output.question,
-                    answer=output.answer,
-                    confidence=output.confidence,
-                    result_json=output.to_dict()
-                )
-                event_queue.put_nowait(("saved", {"result_id": query_id}))
-                event_queue.put_nowait(("_done", {}))
-
-            loop.run_in_executor(None, run_pipeline)
-
-            while True:
                 try:
-                    event_type, data = await asyncio.wait_for(
-                        event_queue.get(), timeout=300.0
+                    pipeline = VeraRAG(pipeline_config)
+                    output = pipeline.query_stream(
+                        question=request.question,
+                        max_rounds=request.max_rounds,
+                        callback=callback
                     )
-                except asyncio.TimeoutError:
-                    yield {"event": "error", "data": json.dumps({"error": "timeout"})}
-                    break
+                    query_id = db.save_query(
+                        question=output.question,
+                        answer=output.answer,
+                        confidence=output.confidence,
+                        result_json=output.to_dict()
+                    )
+                    event_queue.put_nowait(("saved", {"result_id": query_id}))
+                except Exception as e:
+                    event_queue.put_nowait(("error", {"error": str(e)}))
+                finally:
+                    event_queue.put_nowait(("_done", {}))
 
-                if event_type == "_done":
-                    break
+            future = loop.run_in_executor(None, run_pipeline)
 
-                yield {
-                    "event": event_type,
-                    "data": json.dumps(data, ensure_ascii=False)
-                }
+            try:
+                while True:
+                    try:
+                        event_type, data = await asyncio.wait_for(
+                            event_queue.get(), timeout=300.0
+                        )
+                    except asyncio.TimeoutError:
+                        yield {"event": "error", "data": json.dumps({"error": "timeout"})}
+                        break
+
+                    if event_type == "_done":
+                        break
+
+                    yield {
+                        "event": event_type,
+                        "data": json.dumps(data, ensure_ascii=False)
+                    }
+            finally:
+                # Ensure the background task is done before we exit
+                try:
+                    await asyncio.wait_for(future, timeout=5.0)
+                except (asyncio.TimeoutError, Exception):
+                    pass
 
         return EventSourceResponse(event_generator())
-
-    class DemoQueryRequest(BaseModel):
-        question: str
 
     @router.post("/query/demo")
     async def demo_query(request: DemoQueryRequest):
         """Demo mode: simulate the pipeline with fake data for UI testing."""
         question = request.question
+        demo_answer = (
+            f"关于「{question}」：根据现有证据，RAG 能够显著减少但不能完全消除幻觉问题。"
+            "研究表明 RAG 在法律领域仍存在约 15% 的错误率，"
+            "不过通过领域优化可将错误率降至 5%。建议结合人工审核机制确保可靠性。"
+        )
 
         demo_events = [
             ("stage", {"stage": "task_analysis", "status": "started"}),
@@ -217,7 +245,7 @@ def create_router(templates, db, config):
             ("uncertainty", {"action": "continue_retrieval", "confidence": 0.62, "reason": "证据冲突需进一步验证"}),
             ("stage", {"stage": "reasoning", "status": "started"}),
             ("reasoning", {
-                "answer": f"关于「{question}」：根据现有证据，RAG 能够显著减少但不能完全消除幻觉问题。研究表明 RAG 在法律领域仍存在约 15% 的错误率，不过通过领域优化可将错误率降至 5%。建议结合人工审核机制确保可靠性。",
+                "answer": demo_answer,
                 "claims": [
                     {"claim": "RAG 能将幻觉率从 20% 降至 8%", "verification_status": "supported",
                      "confidence": 0.87, "supporting_evidence": ["E1"], "conflicting_evidence": []},
@@ -247,6 +275,14 @@ def create_router(templates, db, config):
             ("complete", {"elapsed_time": 3.45, "confidence": 0.82, "num_evidence": 5, "num_conflicts": 1}),
         ]
 
+        # Save demo result with correct answer
+        result_id = db.save_query(
+            question=question,
+            answer=demo_answer,
+            confidence=0.82,
+            result_json={"demo": True, "question": question, "answer": demo_answer}
+        )
+
         async def demo_generator():
             for event_type, data in demo_events:
                 await asyncio.sleep(0.4)
@@ -254,19 +290,8 @@ def create_router(templates, db, config):
                     "event": event_type,
                     "data": json.dumps(data, ensure_ascii=False)
                 }
-
-        # Save demo result
-        result_id = db.save_query(
-            question=question,
-            answer=demo_events[-1][1].get("answer_preview", question),
-            confidence=0.82,
-            result_json={"demo": True, "question": question}
-        )
-        async def wrapper():
-            async for event in demo_generator():
-                yield event
             yield {"event": "saved", "data": json.dumps({"result_id": result_id})}
 
-        return EventSourceResponse(wrapper())
+        return EventSourceResponse(demo_generator())
 
     return router

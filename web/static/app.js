@@ -21,7 +21,7 @@ let currentEventData = {
     resultId: null
 };
 
-// DOM refs
+// DOM refs (only exist on the index page)
 const queryForm = document.getElementById('query-form');
 const questionInput = document.getElementById('question-input');
 const submitBtn = document.getElementById('submit-btn');
@@ -30,6 +30,9 @@ const stagesContainer = document.getElementById('stages-container');
 const resultPanel = document.getElementById('result-panel');
 const errorPanel = document.getElementById('error-panel');
 const errorText = document.getElementById('error-text');
+
+// Guard: only run query logic on the index page
+const isIndexPage = !!queryForm;
 
 // Init stages
 function initStages() {
@@ -150,20 +153,23 @@ function renderUncertainty(uncertainty) {
 }
 
 // Tab switching
-document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => {
-            b.classList.remove('active');
-            b.classList.add('text-gray-500');
+if (isIndexPage) {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.classList.remove('active');
+                b.classList.add('text-gray-500');
+            });
+            btn.classList.add('active');
+            btn.classList.remove('text-gray-500');
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+            document.getElementById(`tab-${btn.dataset.tab}`).classList.remove('hidden');
         });
-        btn.classList.add('active');
-        btn.classList.remove('text-gray-500');
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
-        document.getElementById(`tab-${btn.dataset.tab}`).classList.remove('hidden');
     });
-});
+}
 
 // Submit query
+if (isIndexPage) {
 queryForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const question = questionInput.value.trim();
@@ -316,7 +322,9 @@ function handleEvent(eventType, data) {
 }
 
 // Auto-resize textarea
-questionInput.addEventListener('input', () => {
-    questionInput.style.height = 'auto';
-    questionInput.style.height = Math.min(questionInput.scrollHeight, 120) + 'px';
-});
+if (isIndexPage) {
+    questionInput.addEventListener('input', () => {
+        questionInput.style.height = 'auto';
+        questionInput.style.height = Math.min(questionInput.scrollHeight, 120) + 'px';
+    });
+}
