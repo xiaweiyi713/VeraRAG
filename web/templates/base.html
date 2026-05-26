@@ -105,7 +105,7 @@
     </script>
 
     <!-- Settings Modal -->
-    <div id="settings-modal" class="fixed inset-0 z-50 hidden">
+    <div id="settings-modal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-label="LLM 配置">
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="settings-overlay"></div>
         <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md">
             <div class="glass rounded-2xl p-6 mx-4">
@@ -175,6 +175,7 @@
         });
         document.getElementById('settings-close').addEventListener('click', () => modal.classList.add('hidden'));
         document.getElementById('settings-overlay').addEventListener('click', () => modal.classList.add('hidden'));
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.classList.contains('hidden')) modal.classList.add('hidden'); });
 
         // Provider change -> update models
         providerSelect.addEventListener('change', () => {

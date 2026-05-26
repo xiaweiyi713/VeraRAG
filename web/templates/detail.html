@@ -9,7 +9,7 @@
     <a href="/history" class="inline-block mt-3 text-sm text-violet-400 hover:text-violet-300 transition">返回历史记录</a>
 </div>
 {% else %}
-{% set result = query.result_json %}
+{% set result = query.result_json if query.result_json is mapping else {} %}
 
 <!-- Back + Question -->
 <div class="mb-6">
