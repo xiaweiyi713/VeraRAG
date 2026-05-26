@@ -1,31 +1,29 @@
 """FastAPI application factory for VeraRAG Web UI."""
 
+import logging
 import os
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .db import Database
 from .api import create_router
 
+logger = logging.getLogger("verarag")
+
 
 def create_app(config_path: Optional[str] = None, db_path: Optional[str] = None) -> FastAPI:
-    """Create and configure the FastAPI application.
-
-    Args:
-        config_path: Path to VeraRAG YAML config file
-        db_path: Path to SQLite database file
-
-    Returns:
-        Configured FastAPI application
-    """
+    """Create and configure the FastAPI application."""
     app = FastAPI(
         title="VeraRAG",
         description="Verifiable Agentic Retrieval-Augmented Reasoning",
-        version="0.1.0"
+        version="0.1.0",
+        docs_url=None,
+        redoc_url=None
     )
 
     # Paths
@@ -43,10 +41,6 @@ def create_app(config_path: Optional[str] = None, db_path: Optional[str] = None)
     # Templates
     templates = Jinja2Templates(directory=str(templates_dir))
 
-    # Static files
-    if static_dir.exists():
-        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
     # Config
     config = None
     if config_path and os.path.exists(config_path):
@@ -59,8 +53,25 @@ def create_app(config_path: Optional[str] = None, db_path: Optional[str] = None)
     app.state.templates = templates
     app.state.config = config
 
+    # Global exception handler
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        logger.error(f"Unhandled error: {exc}", exc_info=True)
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"error": "内部错误"}, status_code=500)
+        return JSONResponse({"error": "内部错误"}, status_code=500)
+
+    # Favicon - redirect to prevent 404 noise
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        return RedirectResponse(url="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>V</text></svg>")
+
     # Routes
     router = create_router(templates, db, config)
     app.include_router(router)
+
+    # Static files (mount last so routes take priority)
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     return app
