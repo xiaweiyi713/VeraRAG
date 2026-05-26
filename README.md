@@ -37,6 +37,13 @@ VeraRAG/
 │   └── pipeline/       # 主流程
 ├── experiments/         # 实验脚本
 ├── scripts/            # 辅助脚本
+├── web/                # Web UI 模块
+│   ├── api.py          # API 端点（SSE 流式）
+│   ├── app.py          # FastAPI 应用入口
+│   ├── db.py           # SQLite 数据库
+│   ├── templates/      # Jinja2 模板
+│   └── static/         # JS/CSS
+├── run_web.py          # Web UI 启动脚本
 └── tests/              # 测试文件
 ```
 
@@ -74,7 +81,25 @@ export ANTHROPIC_API_KEY="your-anthropic-api-key"
 
 ## 快速开始
 
-### 基本使用
+### 启动 Web UI
+
+```bash
+# 安装依赖
+pip install -r requirements.txt
+
+# 启动服务
+python run_web.py --port 8000
+
+# 或指定配置文件
+python run_web.py --config configs/model.yaml --port 8000
+```
+
+打开浏览器访问 `http://localhost:8000`，即可使用交互式问答界面。
+
+- 未配置 LLM 时自动进入**演示模式**，可预览完整推理流程
+- 点击导航栏「设置」配置 LLM 提供商和 API Key
+
+### Python API
 
 ```python
 from src.pipeline.verarag import create_verarag

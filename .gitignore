@@ -39,6 +39,7 @@ env/
 data/raw/*
 data/processed/*
 data/indexes/*
+data/*.db
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/indexes/.gitkeep
@@ -61,3 +62,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Test cache
+.pytest_cache/
