@@ -2,6 +2,9 @@
  * VeraRAG SSE Client - handles real-time pipeline updates
  */
 
+// HTML escape to prevent XSS
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
 // Stage definitions
 const STAGES = [
     { id: 'task_analysis', label: '任务分析', icon: '分析' },
@@ -78,14 +81,15 @@ function setStageDetail(stageId, text) {
 // Render functions
 function renderEvidence(evidence) {
     const list = document.getElementById('evidence-list');
+    if (!list) return;
     list.innerHTML = evidence.map(e => `
         <div class="bg-white/[0.02] rounded-xl p-4 border border-white/5">
             <div class="flex items-center justify-between mb-2">
-                <span class="text-xs text-violet-400/80 font-medium">${e.source || 'source'}</span>
+                <span class="text-xs text-violet-400/80 font-medium">${esc(e.source) || 'source'}</span>
                 <span class="text-xs text-gray-600">${(e.combined_score || 0).toFixed(2)}</span>
             </div>
-            <p class="text-sm text-gray-300">${e.title || ''}</p>
-            ${e.text_span ? `<p class="text-xs text-gray-500 mt-1 line-clamp-2">${e.text_span}</p>` : ''}
+            <p class="text-sm text-gray-300">${esc(e.title)}</p>
+            ${e.text_span ? `<p class="text-xs text-gray-500 mt-1 line-clamp-2">${esc(e.text_span)}</p>` : ''}
         </div>
     `).join('');
 }
@@ -106,7 +110,7 @@ function renderClaims(claims) {
         const statusLabel = { 'supported': '已验证', 'refuted': '已反驳', 'not_enough_info': '证据不足' };
         return `
             <div class="bg-white/[0.02] rounded-xl p-4 border border-white/5">
-                <p class="text-sm text-gray-300 mb-2">${c.claim}</p>
+                <p class="text-sm text-gray-300 mb-2">${esc(c.claim)}</p>
                 <div class="flex items-center gap-2">
                     <span class="text-xs px-2 py-0.5 rounded-full ${statusClass}">${statusLabel[c.verification_status] || c.verification_status}</span>
                     <span class="text-xs text-gray-600">置信度 ${(c.confidence || 0).toFixed(2)}</span>
@@ -194,19 +198,31 @@ queryForm.addEventListener('submit', async (e) => {
         }
     } catch (e) { /* use default */ }
 
+    // Guard against double-submit
+    if (submitBtn.disabled) return;
+
     try {
         const body = endpoint === '/query/demo'
             ? { question }
             : { question, max_rounds: 5 };
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 120000);
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: ctrl.signal
         });
+        clearTimeout(timer);
+
+        if (!response.ok) {
+            throw new Error(`服务端错误: ${response.status}`);
+        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let currentEvent = '';
 
         while (true) {
             const { done, value } = await reader.read();
@@ -216,8 +232,11 @@ queryForm.addEventListener('submit', async (e) => {
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
 
-            let currentEvent = '';
             for (const line of lines) {
+                if (line === '') {
+                    currentEvent = '';
+                    continue;
+                }
                 if (line.startsWith('event: ')) {
                     currentEvent = line.slice(7).trim();
                 } else if (line.startsWith('data: ') && currentEvent) {
@@ -225,15 +244,17 @@ queryForm.addEventListener('submit', async (e) => {
                         const data = JSON.parse(line.slice(6));
                         handleEvent(currentEvent, data);
                     } catch (err) {
-                        // skip malformed data
+                        // skip malformed JSON
                     }
                     currentEvent = '';
                 }
             }
         }
     } catch (err) {
-        errorPanel.classList.remove('hidden');
-        errorText.textContent = '连接失败: ' + err.message;
+        if (errorPanel) {
+            errorPanel.classList.remove('hidden');
+            errorText.textContent = err.name === 'AbortError' ? '请求超时，请重试' : '连接失败: ' + err.message;
+        }
     } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = '开始推理';

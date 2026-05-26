@@ -112,7 +112,7 @@ def create_router(templates, db, config):
         """Process a query with SSE streaming using real LLM pipeline."""
         VeraRAG = _import_verarag()
 
-        pipeline_config = config or {}
+        pipeline_config = json.loads(json.dumps(config or {}))  # deep copy
         if request.config_overrides:
             pipeline_config.update(request.config_overrides)
 
@@ -129,13 +129,12 @@ def create_router(templates, db, config):
                 pipeline_config["llm"]["base_url"] = llm_cfg["base_url"]
 
         event_queue = asyncio.Queue()
+        loop_ref = asyncio.get_event_loop()
 
         def callback(event_type: str, data: dict):
-            event_queue.put_nowait((event_type, data))
+            loop_ref.call_soon_threadsafe(event_queue.put_nowait, (event_type, data))
 
         async def event_generator():
-            loop = asyncio.get_event_loop()
-
             def run_pipeline():
                 try:
                     pipeline = VeraRAG(pipeline_config)
@@ -156,7 +155,7 @@ def create_router(templates, db, config):
                 finally:
                     event_queue.put_nowait(("_done", {}))
 
-            future = loop.run_in_executor(None, run_pipeline)
+            future = loop_ref.run_in_executor(None, run_pipeline)
 
             try:
                 while True:
