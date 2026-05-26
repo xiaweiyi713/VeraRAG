@@ -178,11 +178,24 @@ queryForm.addEventListener('submit', async (e) => {
     initStages();
     currentEventData = { evidence: [], claims: [], uncertainty: null, reasoning: null, verification: null, resultId: null };
 
+    // Check if LLM is configured, fall back to demo mode
+    let endpoint = '/query';
     try {
-        const response = await fetch('/query', {
+        const statusResp = await fetch('/api/status');
+        const statusData = await statusResp.json();
+        if (!statusData.llm_configured) {
+            endpoint = '/query/demo';
+        }
+    } catch (e) { /* use default */ }
+
+    try {
+        const body = endpoint === '/query/demo'
+            ? { question }
+            : { question, max_rounds: 5 };
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, max_rounds: 5 })
+            body: JSON.stringify(body)
         });
 
         const reader = response.body.getReader();

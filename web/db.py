@@ -27,6 +27,12 @@ class Database:
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
         conn.commit()
         conn.close()
 
@@ -103,3 +109,44 @@ class Database:
         deleted = cursor.rowcount > 0
         conn.close()
         return deleted
+
+    # --- Config operations ---
+
+    def get_config(self, key: str, default: Any = None) -> Any:
+        """Get a config value by key."""
+        conn = self._get_conn()
+        cursor = conn.execute("SELECT value FROM config WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        conn.close()
+        if row is None:
+            return default
+        return json.loads(row[0])
+
+    def set_config(self, key: str, value: Any) -> None:
+        """Set a config value."""
+        json_str = json.dumps(value, ensure_ascii=False)
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
+            (key, json_str)
+        )
+        conn.commit()
+        conn.close()
+
+    def get_llm_config(self) -> Dict[str, Any]:
+        """Get the full LLM configuration."""
+        return self.get_config("llm_config", {
+            "provider": "",
+            "model": "",
+            "api_key": "",
+            "base_url": ""
+        })
+
+    def set_llm_config(self, provider: str, model: str, api_key: str, base_url: str = "") -> None:
+        """Save LLM configuration."""
+        self.set_config("llm_config", {
+            "provider": provider,
+            "model": model,
+            "api_key": api_key,
+            "base_url": base_url
+        })

@@ -54,6 +54,9 @@
                     <span class="w-1.5 h-1.5 rounded-full bg-gray-600 inline-block"></span>
                     检测中...
                 </span>
+                <button id="settings-btn" class="text-sm text-gray-400 hover:text-gray-200 transition px-3 py-1.5 rounded-lg hover:bg-white/5">
+                    设置
+                </button>
                 <a href="/history" class="text-sm text-gray-400 hover:text-gray-200 transition px-3 py-1.5 rounded-lg hover:bg-white/5">
                     历史记录
                 </a>
@@ -68,20 +71,184 @@
 
     <!-- Status check -->
     <script>
-        fetch('/api/status')
-            .then(r => r.json())
-            .then(data => {
-                const el = document.getElementById('llm-status');
-                if (data.status === 'running') {
-                    el.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span> 就绪';
-                    el.className = 'text-xs text-emerald-400/80 flex items-center gap-1.5';
+        // LLM providers config
+        const PROVIDERS = {
+            openai: { label: 'OpenAI', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'], keyEnv: 'OPENAI_API_KEY' },
+            anthropic: { label: 'Anthropic Claude', models: ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001', 'claude-opus-4-7'], keyEnv: 'ANTHROPIC_API_KEY' },
+            deepseek: { label: 'DeepSeek', models: ['deepseek-chat', 'deepseek-reasoner'], keyEnv: 'DEEPSEEK_API_KEY' },
+            dashscope: { label: '通义千问', models: ['qwen-turbo', 'qwen-plus', 'qwen-max'], keyEnv: 'DASHSCOPE_API_KEY' },
+            zhipuai: { label: '智谱 GLM', models: ['glm-4-flash', 'glm-4-plus', 'glm-4'], keyEnv: 'ZHIPUAI_API_KEY' },
+            ollama: { label: 'Ollama (本地)', models: ['qwen2.5:7b', 'llama3.1:8b', 'mistral:7b', 'gemma2:9b'], keyEnv: '' }
+        };
+
+        function loadStatus() {
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(data => {
+                    const el = document.getElementById('llm-status');
+                    if (data.llm_configured) {
+                        const p = PROVIDERS[data.llm_provider] || { label: data.llm_provider };
+                        el.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span> ${p.label}`;
+                        el.className = 'text-xs text-emerald-400/80 flex items-center gap-1.5';
+                    } else {
+                        el.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"></span> 演示模式';
+                        el.className = 'text-xs text-amber-400/80 flex items-center gap-1.5';
+                    }
+                })
+                .catch(() => {
+                    const el = document.getElementById('llm-status');
+                    el.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-400 inline-block"></span> 离线';
+                    el.className = 'text-xs text-red-400/80 flex items-center gap-1.5';
+                });
+        }
+        loadStatus();
+    </script>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="settings-overlay"></div>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md">
+            <div class="glass rounded-2xl p-6 mx-4">
+                <div class="flex items-center justify-between mb-5">
+                    <h2 class="text-base font-medium text-gray-200">LLM 配置</h2>
+                    <button id="settings-close" class="text-gray-500 hover:text-gray-300 transition text-lg px-2">&times;</button>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1.5">提供商</label>
+                        <select id="cfg-provider" class="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 outline-none focus:border-violet-500/50 transition">
+                            <option value="">-- 选择提供商 --</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1.5">模型</label>
+                        <select id="cfg-model" class="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 outline-none focus:border-violet-500/50 transition">
+                            <option value="">-- 先选择提供商 --</option>
+                        </select>
+                    </div>
+                    <div id="cfg-apikey-wrap">
+                        <label class="block text-xs text-gray-400 mb-1.5">API Key</label>
+                        <input id="cfg-apikey" type="password" placeholder="sk-..." class="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 outline-none focus:border-violet-500/50 transition placeholder-gray-600">
+                    </div>
+                    <div id="cfg-baseurl-wrap" class="hidden">
+                        <label class="block text-xs text-gray-400 mb-1.5">Base URL <span class="text-gray-600">(可选)</span></label>
+                        <input id="cfg-baseurl" type="text" placeholder="http://localhost:11434" class="w-full bg-white/[0.04] border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 outline-none focus:border-violet-500/50 transition placeholder-gray-600">
+                    </div>
+                </div>
+
+                <div class="flex gap-3 mt-6">
+                    <button id="settings-save" class="flex-1 px-5 py-2.5 bg-gradient-to-r from-violet-600 to-emerald-600 hover:from-violet-500 hover:to-emerald-500 text-white rounded-xl font-medium text-sm transition">
+                        保存配置
+                    </button>
+                    <button id="settings-clear" class="px-5 py-2.5 bg-white/[0.04] hover:bg-white/[0.08] text-gray-400 rounded-xl text-sm transition border border-white/10">
+                        清除
+                    </button>
+                </div>
+
+                <p id="settings-msg" class="text-xs text-center mt-3 hidden"></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        const modal = document.getElementById('settings-modal');
+        const providerSelect = document.getElementById('cfg-provider');
+        const modelSelect = document.getElementById('cfg-model');
+        const apikeyWrap = document.getElementById('cfg-apikey-wrap');
+        const baseurlWrap = document.getElementById('cfg-baseurl-wrap');
+        const msgEl = document.getElementById('settings-msg');
+
+        // Populate providers
+        Object.entries(PROVIDERS).forEach(([key, p]) => {
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.textContent = p.label;
+            providerSelect.appendChild(opt);
+        });
+
+        // Open/close
+        document.getElementById('settings-btn').addEventListener('click', () => {
+            modal.classList.remove('hidden');
+            loadConfig();
+        });
+        document.getElementById('settings-close').addEventListener('click', () => modal.classList.add('hidden'));
+        document.getElementById('settings-overlay').addEventListener('click', () => modal.classList.add('hidden'));
+
+        // Provider change -> update models
+        providerSelect.addEventListener('change', () => {
+            const p = PROVIDERS[providerSelect.value];
+            modelSelect.innerHTML = '';
+            if (p) {
+                p.models.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m;
+                    opt.textContent = m;
+                    modelSelect.appendChild(opt);
+                });
+                // Ollama doesn't need API key
+                apikeyWrap.classList.toggle('hidden', providerSelect.value === 'ollama');
+                baseurlWrap.classList.toggle('hidden', providerSelect.value !== 'ollama');
+            } else {
+                modelSelect.innerHTML = '<option value="">-- 先选择提供商 --</option>';
+                apikeyWrap.classList.remove('hidden');
+                baseurlWrap.classList.add('hidden');
+            }
+        });
+
+        function showMsg(text, color) {
+            msgEl.textContent = text;
+            msgEl.className = `text-xs text-center mt-3 text-${color}-400`;
+            msgEl.classList.remove('hidden');
+            setTimeout(() => msgEl.classList.add('hidden'), 3000);
+        }
+
+        // Load current config
+        function loadConfig() {
+            fetch('/api/config').then(r => r.json()).then(cfg => {
+                if (cfg.provider) {
+                    providerSelect.value = cfg.provider;
+                    providerSelect.dispatchEvent(new Event('change'));
+                    setTimeout(() => { modelSelect.value = cfg.model || ''; }, 50);
                 }
-            })
-            .catch(() => {
-                const el = document.getElementById('llm-status');
-                el.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-400 inline-block"></span> 离线';
-                el.className = 'text-xs text-red-400/80 flex items-center gap-1.5';
             });
+        }
+
+        // Save
+        document.getElementById('settings-save').addEventListener('click', () => {
+            const provider = providerSelect.value;
+            if (!provider) { showMsg('请选择提供商', 'amber'); return; }
+            const model = modelSelect.value;
+            const api_key = document.getElementById('cfg-apikey').value;
+            const base_url = document.getElementById('cfg-baseurl').value;
+
+            fetch('/api/config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, model, api_key, base_url })
+            }).then(r => r.json()).then(() => {
+                showMsg('配置已保存', 'emerald');
+                loadStatus();
+                setTimeout(() => modal.classList.add('hidden'), 800);
+            }).catch(() => showMsg('保存失败', 'red'));
+        });
+
+        // Clear
+        document.getElementById('settings-clear').addEventListener('click', () => {
+            fetch('/api/config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: '', model: '', api_key: '', base_url: '' })
+            }).then(r => r.json()).then(() => {
+                providerSelect.value = '';
+                providerSelect.dispatchEvent(new Event('change'));
+                document.getElementById('cfg-apikey').value = '';
+                showMsg('配置已清除', 'emerald');
+                loadStatus();
+            });
+        });
+    })();
     </script>
     {% block scripts %}{% endblock %}
 </body>
