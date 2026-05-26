@@ -285,6 +285,202 @@ class VeraRAG:
             relevance_score=min(1.0, result.score)
         )
 
+    def query_stream(
+        self,
+        question: str,
+        max_rounds: Optional[int] = None,
+        callback=None
+    ) -> VeraRAGOutput:
+        """
+        Process a question with streaming callbacks for each pipeline stage.
+
+        Args:
+            question: The user's question
+            max_rounds: Maximum retrieval rounds (overrides config)
+            callback: Callable(event_type: str, data: dict) called at each stage
+
+        Returns:
+            VeraRAGOutput with answer, evidence, and metadata
+        """
+        def emit(event_type: str, data: dict):
+            if callback:
+                callback(event_type, data)
+
+        start_time = time.time()
+        max_rounds = max_rounds or self.max_retrieval_rounds
+
+        # Stage 1: Task Analysis
+        emit("stage", {"stage": "task_analysis", "status": "started"})
+        task_analysis = self.task_analyzer.analyze(question)
+        emit("task_analysis", task_analysis.to_dict())
+
+        # Stage 2: Decomposition
+        emit("stage", {"stage": "decomposition", "status": "started"})
+        subquestions = self.planner.decompose(
+            question,
+            task_analysis,
+            self.max_subquestions
+        )
+        reasoning_plan = self.planner.get_reasoning_plan(question, subquestions)
+        emit("decomposition", {
+            "subquestions": [sq.to_dict() for sq in subquestions]
+        })
+
+        # Stage 3 & 4 & 5: Dynamic Retrieval, Normalization, Conflict Graph
+        evidence_pool: List[Evidence] = []
+        conflict_graph = EvidenceConflictGraph()
+
+        for round_id in range(max_rounds):
+            emit("stage", {
+                "stage": "retrieval",
+                "round": round_id + 1,
+                "total_rounds": max_rounds,
+                "status": "started"
+            })
+
+            evidence_pool = self.retrieval_agent.dynamic_retrieve(
+                subquestions,
+                evidence_pool,
+                max_rounds=1,
+                budget_per_round=50
+            )
+
+            if round_id == 0:
+                evidence_pool = self._normalize_evidence(
+                    [self._retrieval_result_to_evidence(r) for r in evidence_pool]
+                )
+                evidence_pool = self.evidence_normalizer.filter_low_quality(evidence_pool)
+
+            emit("evidence", {
+                "round": round_id + 1,
+                "new_count": len(evidence_pool),
+                "total": len(evidence_pool),
+                "evidence": [e.to_dict() for e in evidence_pool[-5:]]
+            })
+
+            if self.enable_conflict_graph:
+                conflict_graph = self.conflict_graph_builder.build_graph(
+                    evidence_pool,
+                    use_llm=True
+                )
+                emit("conflict", {
+                    "conflicts": len(conflict_graph.get_conflicts()),
+                    "conflict_score": conflict_graph.get_conflict_score(),
+                    "edges": [e.to_dict() for e in conflict_graph.edges[:10]]
+                })
+
+            if self.enable_uncertainty:
+                decision = self.uncertainty_controller.assess(
+                    subquestions,
+                    evidence_pool,
+                    conflict_graph,
+                    current_round=round_id,
+                    max_rounds=max_rounds
+                )
+                emit("uncertainty", {
+                    "action": decision.action.value,
+                    "confidence": decision.confidence,
+                    "reason": decision.reason
+                })
+
+                if decision.should_stop:
+                    break
+
+        # Stage 6: Reasoning
+        emit("stage", {"stage": "reasoning", "status": "started"})
+        answer, answer_claims, reasoning_chain = self.reasoning_agent.reason(
+            question,
+            subquestions,
+            evidence_pool,
+            conflict_graph,
+            reasoning_plan
+        )
+        emit("reasoning", {
+            "answer": answer,
+            "claims": [c.to_dict() for c in answer_claims],
+            "steps": [r.to_dict() for r in reasoning_chain]
+        })
+
+        # Stage 7: Verification
+        verification_report = None
+        if self.enable_verification:
+            emit("stage", {"stage": "verification", "status": "started"})
+            verification_report = self.verifier_agent.verify_answer(
+                answer,
+                answer_claims,
+                evidence_pool,
+                conflict_graph
+            )
+            emit("verification", verification_report.to_dict())
+
+        # Stage 8: Repair
+        if self.enable_repair and verification_report and verification_report.has_critical_issues():
+            emit("stage", {"stage": "repair", "status": "started"})
+            answer, answer_claims = self.repair_agent.repair_answer(
+                answer,
+                answer_claims,
+                verification_report,
+                evidence_pool
+            )
+
+        # Stage 9: Final uncertainty
+        uncertainty = UncertaintyBreakdown()
+        final_confidence = 0.5
+
+        if self.enable_uncertainty:
+            uncertainty = self.uncertainty_controller.get_uncertainty_breakdown(
+                subquestions,
+                evidence_pool,
+                conflict_graph
+            )
+
+            if verification_report:
+                verification_conf = (
+                    1.0 if verification_report.overall_status.value == "supported"
+                    else 0.5
+                )
+                uncertainty = self.uncertainty_controller.estimator.estimate_for_answer(
+                    final_confidence,
+                    verification_conf,
+                    uncertainty
+                )
+
+            final_confidence = self.uncertainty_controller.calibrator.calibrate_confidence(
+                1.0 - uncertainty.overall,
+                uncertainty
+            )
+
+        # Stage 10: Output
+        elapsed_time = time.time() - start_time
+        output = VeraRAGOutput(
+            question=question,
+            answer=answer,
+            answer_claims=answer_claims,
+            evidence=evidence_pool[:20],
+            reasoning_chain=reasoning_chain,
+            conflict_report=conflict_graph.to_dict(),
+            verification_report=verification_report,
+            confidence=final_confidence,
+            uncertainty=uncertainty,
+            metadata={
+                "task_analysis": task_analysis.to_dict(),
+                "num_subquestions": len(subquestions),
+                "num_evidence": len(evidence_pool),
+                "num_conflicts": len(conflict_graph.get_conflicts()),
+                "elapsed_time": elapsed_time,
+                "retrieval_rounds": round_id + 1
+            }
+        )
+
+        emit("complete", {
+            "elapsed_time": elapsed_time,
+            "confidence": final_confidence,
+            "num_evidence": len(evidence_pool),
+            "num_conflicts": len(conflict_graph.get_conflicts())
+        })
+
+        return output
+
     def batch_query(
         self,
         questions: List[str],
