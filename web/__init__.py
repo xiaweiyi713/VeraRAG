@@ -1,0 +1,1 @@
+"""VeraRAG Web UI module."""
