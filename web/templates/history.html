@@ -26,7 +26,7 @@
                 <span class="text-xs text-gray-600">{{ (q.confidence * 100)|int }}%</span>
             </div>
         </div>
-        <div class="mt-2 text-xs text-gray-600">{{ q.created_at }}</div>
+        <div class="mt-2 text-xs text-gray-600">{{ q.created_at[:19] if q.created_at and q.created_at|length > 19 else q.created_at }}</div>
     </a>
     {% endfor %}
 </div>

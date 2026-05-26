@@ -22,7 +22,7 @@
             </div>
             <span class="text-xs text-gray-500">置信度 {{ (query.confidence * 100)|int }}%</span>
         </div>
-        <span class="text-xs text-gray-600">{{ query.created_at }}</span>
+        <span class="text-xs text-gray-600" title="{{ query.created_at }}">{{ query.created_at[:19] if query.created_at and query.created_at|length > 19 else query.created_at }}</span>
     </div>
 </div>
 
@@ -33,20 +33,21 @@
 </div>
 
 <!-- Claims -->
-{% if result.answer_claims %}
+{% if result and result.get('answer_claims') %}
 <div class="glass rounded-2xl p-6 mb-4">
     <h3 class="text-xs font-medium text-gray-500 mb-3">声明验证 ({{ result.answer_claims|length }})</h3>
     <div class="space-y-3">
         {% for c in result.answer_claims %}
         <div class="bg-white/[0.02] rounded-xl p-4 border border-white/5">
-            <p class="text-sm text-gray-300 mb-2">{{ c.claim }}</p>
+            <p class="text-sm text-gray-300 mb-2">{{ c.get('claim', '') }}</p>
             <div class="flex items-center gap-3 text-xs">
+                {% set st = c.get('verification_status', 'not_enough_info') %}
                 {% set status_colors = {'supported': 'text-emerald-400 bg-emerald-400/10', 'refuted': 'text-red-400 bg-red-400/10', 'not_enough_info': 'text-amber-400 bg-amber-400/10'} %}
                 {% set status_labels = {'supported': '已验证', 'refuted': '已反驳', 'not_enough_info': '证据不足'} %}
-                <span class="px-2 py-0.5 rounded-full {{ status_colors.get(c.verification_status, status_colors['not_enough_info']) }}">
-                    {{ status_labels.get(c.verification_status, c.verification_status) }}
+                <span class="px-2 py-0.5 rounded-full {{ status_colors.get(st, status_colors['not_enough_info']) }}">
+                    {{ status_labels.get(st, st) }}
                 </span>
-                <span class="text-gray-600">置信度 {{ "%.2f"|format(c.confidence) }}</span>
+                <span class="text-gray-600">置信度 {{ "%.2f"|format(c.get('confidence', 0)) }}</span>
             </div>
         </div>
         {% endfor %}
@@ -55,19 +56,20 @@
 {% endif %}
 
 <!-- Evidence -->
-{% if result.evidence %}
+{% if result and result.get('evidence') %}
 <div class="glass rounded-2xl p-6 mb-4">
     <h3 class="text-xs font-medium text-gray-500 mb-3">证据 ({{ result.evidence|length }})</h3>
     <div class="space-y-3">
         {% for e in result.evidence %}
         <div class="bg-white/[0.02] rounded-xl p-4 border border-white/5">
             <div class="flex items-center justify-between mb-2">
-                <span class="text-xs text-violet-400/80">{{ e.source }}</span>
-                <span class="text-xs text-gray-600">{{ "%.2f"|format(e.combined_score) }}</span>
+                <span class="text-xs text-violet-400/80">{{ e.get('source', '') }}</span>
+                <span class="text-xs text-gray-600">{{ "%.2f"|format(e.get('combined_score', 0)) }}</span>
             </div>
-            <p class="text-sm text-gray-300">{{ e.title }}</p>
-            {% if e.text_span %}
-            <p class="text-xs text-gray-500 mt-1">{{ e.text_span[:200] }}{% if e.text_span|length > 200 %}...{% endif %}</p>
+            <p class="text-sm text-gray-300">{{ e.get('title', '') }}</p>
+            {% set ts = e.get('text_span', '') or '' %}
+            {% if ts %}
+            <p class="text-xs text-gray-500 mt-1">{{ ts[:200] }}{% if ts|length > 200 %}...{% endif %}</p>
             {% endif %}
         </div>
         {% endfor %}
@@ -76,11 +78,12 @@
 {% endif %}
 
 <!-- Uncertainty -->
-{% if result.uncertainty %}
+{% if result and result.get('uncertainty') %}
+{% set u = result.uncertainty %}
 <div class="glass rounded-2xl p-6">
     <h3 class="text-xs font-medium text-gray-500 mb-3">不确定性分解</h3>
     <div class="space-y-3">
-        {% set dims = [('检索不确定性', result.uncertainty.retrieval_uncertainty), ('证据冲突', result.uncertainty.evidence_conflict), ('推理差距', result.uncertainty.reasoning_gap), ('来源可靠性', result.uncertainty.source_reliability), ('验证不确定性', result.uncertainty.verification_uncertainty)] %}
+        {% set dims = [('检索不确定性', u.get('retrieval_uncertainty', 0)), ('证据冲突', u.get('evidence_conflict', 0)), ('推理差距', u.get('reasoning_gap', 0)), ('来源可靠性', u.get('source_reliability', 0)), ('验证不确定性', u.get('verification_uncertainty', 0))] %}
         {% for label, val in dims %}
         <div>
             <div class="flex justify-between text-xs mb-1">
@@ -94,7 +97,7 @@
         {% endfor %}
         <div class="pt-3 border-t border-white/5 flex justify-between text-sm">
             <span class="text-gray-300">总体不确定性</span>
-            <span class="font-medium {{ 'text-amber-400' if result.uncertainty.overall_uncertainty > 0.5 else 'text-emerald-400' }}">{{ "%.2f"|format(result.uncertainty.overall_uncertainty) }}</span>
+            <span class="font-medium {{ 'text-amber-400' if u.get('overall_uncertainty', 0) > 0.5 else 'text-emerald-400' }}">{{ "%.2f"|format(u.get('overall_uncertainty', 0)) }}</span>
         </div>
     </div>
 </div>
