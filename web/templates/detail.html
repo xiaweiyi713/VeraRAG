@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}VeraRAG - 查询详情{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="glass rounded-xl p-12 text-center">
+    <p class="text-red-400 text-sm">{{ error }}</p>
+    <a href="/history" class="inline-block mt-3 text-sm text-violet-400 hover:text-violet-300 transition">返回历史记录</a>
+</div>
+{% else %}
+{% set result = query.result_json %}
+
+<!-- Back + Question -->
+<div class="mb-6">
+    <a href="/history" class="text-sm text-gray-500 hover:text-gray-300 transition">&larr; 返回列表</a>
+    <h2 class="text-lg font-medium text-gray-200 mt-3">{{ query.question }}</h2>
+    <div class="flex items-center gap-4 mt-2">
+        <div class="flex items-center gap-2">
+            <div class="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div class="h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-500" style="width: {{ (query.confidence * 100)|int }}%"></div>
+            </div>
+            <span class="text-xs text-gray-500">置信度 {{ (query.confidence * 100)|int }}%</span>
+        </div>
+        <span class="text-xs text-gray-600">{{ query.created_at }}</span>
+    </div>
+</div>
+
+<!-- Answer -->
+<div class="glass rounded-2xl p-6 mb-4">
+    <h3 class="text-xs font-medium text-gray-500 mb-3">答案</h3>
+    <p class="text-gray-200 leading-relaxed text-sm">{{ query.answer }}</p>
+</div>
+
+<!-- Claims -->
+{% if result.answer_claims %}
+<div class="glass rounded-2xl p-6 mb-4">
+    <h3 class="text-xs font-medium text-gray-500 mb-3">声明验证 ({{ result.answer_claims|length }})</h3>
+    <div class="space-y-3">
+        {% for c in result.answer_claims %}
+        <div class="bg-white/[0.02] rounded-xl p-4 border border-white/5">
+            <p class="text-sm text-gray-300 mb-2">{{ c.claim }}</p>
+            <div class="flex items-center gap-3 text-xs">
+                {% set status_colors = {'supported': 'text-emerald-400 bg-emerald-400/10', 'refuted': 'text-red-400 bg-red-400/10', 'not_enough_info': 'text-amber-400 bg-amber-400/10'} %}
+                {% set status_labels = {'supported': '已验证', 'refuted': '已反驳', 'not_enough_info': '证据不足'} %}
+                <span class="px-2 py-0.5 rounded-full {{ status_colors.get(c.verification_status, status_colors['not_enough_info']) }}">
+                    {{ status_labels.get(c.verification_status, c.verification_status) }}
+                </span>
+                <span class="text-gray-600">置信度 {{ "%.2f"|format(c.confidence) }}</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Evidence -->
+{% if result.evidence %}
+<div class="glass rounded-2xl p-6 mb-4">
+    <h3 class="text-xs font-medium text-gray-500 mb-3">证据 ({{ result.evidence|length }})</h3>
+    <div class="space-y-3">
+        {% for e in result.evidence %}
+        <div class="bg-white/[0.02] rounded-xl p-4 border border-white/5">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs text-violet-400/80">{{ e.source }}</span>
+                <span class="text-xs text-gray-600">{{ "%.2f"|format(e.combined_score) }}</span>
+            </div>
+            <p class="text-sm text-gray-300">{{ e.title }}</p>
+            {% if e.text_span %}
+            <p class="text-xs text-gray-500 mt-1">{{ e.text_span[:200] }}{% if e.text_span|length > 200 %}...{% endif %}</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Uncertainty -->
+{% if result.uncertainty %}
+<div class="glass rounded-2xl p-6">
+    <h3 class="text-xs font-medium text-gray-500 mb-3">不确定性分解</h3>
+    <div class="space-y-3">
+        {% set dims = [('检索不确定性', result.uncertainty.retrieval_uncertainty), ('证据冲突', result.uncertainty.evidence_conflict), ('推理差距', result.uncertainty.reasoning_gap), ('来源可靠性', result.uncertainty.source_reliability), ('验证不确定性', result.uncertainty.verification_uncertainty)] %}
+        {% for label, val in dims %}
+        <div>
+            <div class="flex justify-between text-xs mb-1">
+                <span class="text-gray-400">{{ label }}</span>
+                <span class="text-gray-500">{{ "%.2f"|format(val) }}</span>
+            </div>
+            <div class="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div class="h-full rounded-full {{ 'bg-amber-500' if val > 0.5 else 'bg-emerald-500' }}" style="width: {{ (val * 100)|int }}%"></div>
+            </div>
+        </div>
+        {% endfor %}
+        <div class="pt-3 border-t border-white/5 flex justify-between text-sm">
+            <span class="text-gray-300">总体不确定性</span>
+            <span class="font-medium {{ 'text-amber-400' if result.uncertainty.overall_uncertainty > 0.5 else 'text-emerald-400' }}">{{ "%.2f"|format(result.uncertainty.overall_uncertainty) }}</span>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}
