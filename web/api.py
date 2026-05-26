@@ -33,8 +33,7 @@ def create_router(templates, db, config):
     @router.get("/", response_class=HTMLResponse)
     async def home(request: Request):
         """Render the home page with query input."""
-        return templates.TemplateResponse("index.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "index.html", {
             "config": config or {}
         })
 
@@ -42,8 +41,7 @@ def create_router(templates, db, config):
     async def history(request: Request):
         """Render the query history page."""
         queries = db.list_queries()
-        return templates.TemplateResponse("history.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "history.html", {
             "queries": queries
         })
 
@@ -52,13 +50,11 @@ def create_router(templates, db, config):
         """Render the detail page for a specific query."""
         query = db.get_query(query_id)
         if query is None:
-            return templates.TemplateResponse("detail.html", {
-                "request": request,
+            return templates.TemplateResponse(request, "detail.html", {
                 "query": None,
                 "error": "查询不存在"
             }, status_code=404)
-        return templates.TemplateResponse("detail.html", {
-            "request": request,
+        return templates.TemplateResponse(request, "detail.html", {
             "query": query,
             "error": None
         })
