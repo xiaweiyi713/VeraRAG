@@ -1,8 +1,11 @@
 """LLM Client supporting multiple backends including local models."""
 
+import logging
 import os
 import json
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 
 class LLMClient:
@@ -168,7 +171,7 @@ class LLMClient:
                 # For API providers, just check if API key is set
                 return bool(self.api_key)
         except Exception as e:
-            print(f"LLM check failed: {e}")
+            logger.warning("LLM check failed: %s", e)
             return False
 
 
@@ -194,36 +197,36 @@ def create_llm_client(
         import ollama
         client = ollama.Client(host="http://localhost:11434")
         client.list()
-        print("✓ 检测到 Ollama，使用本地模型")
+        logger.info("Detected Ollama, using local model")
         return LLMClient(provider="ollama", model=model or "qwen2.5:7b")
     except:
         pass
 
     # 2. Check OpenAI
     if os.getenv("OPENAI_API_KEY"):
-        print("✓ 检测到 OPENAI_API_KEY，使用 OpenAI")
+        logger.info("Detected OPENAI_API_KEY, using OpenAI")
         return LLMClient(provider="openai", model=model or "gpt-4o")
 
     # 3. Check Anthropic
     if os.getenv("ANTHROPIC_API_KEY"):
-        print("✓ 检测到 ANTHROPIC_API_KEY，使用 Claude")
+        logger.info("Detected ANTHROPIC_API_KEY, using Claude")
         return LLMClient(provider="anthropic", model=model or "claude-sonnet-4-20250514")
 
     # 4. Check 通义千问
     if os.getenv("DASHSCOPE_API_KEY"):
-        print("✓ 检测到 DASHSCOPE_API_KEY，使用通义千问")
+        logger.info("Detected DASHSCOPE_API_KEY, using DashScope")
         return LLMClient(provider="dashscope", model=model or "qwen-turbo")
 
     # 5. Check 智谱 AI
     if os.getenv("ZHIPUAI_API_KEY"):
-        print("✓ 检测到 ZHIPUAI_API_KEY，使用智谱 GLM")
+        logger.info("Detected ZHIPUAI_API_KEY, using ZhipuAI")
         return LLMClient(provider="zhipuai", model=model or "glm-4-flash")
 
     # 6. Check DeepSeek
     if os.getenv("DEEPSEEK_API_KEY"):
-        print("✓ 检测到 DEEPSEEK_API_KEY，使用 DeepSeek")
+        logger.info("Detected DEEPSEEK_API_KEY, using DeepSeek")
         return LLMClient(provider="deepseek", model=model or "deepseek-chat")
 
     # Default to Ollama (will show error if not available)
-    print("⚠ 未检测到 API Key，尝试使用 Ollama 本地模型...")
+    logger.warning("No API key detected, falling back to Ollama local model")
     return LLMClient(provider="ollama", model=model or "qwen2.5:7b")

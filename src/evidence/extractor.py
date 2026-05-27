@@ -99,17 +99,47 @@ Output ONLY valid JSON, no other text."""
             # Extract temporal expressions
             time_expressions = self._extract_temporal_expressions(sent)
 
+            # Determine verifiability and support type
+            verifiable = self._is_verifiable(sent, numbers, claim_entities)
+            support_type = self._infer_support_type(sent, numbers, claim_entities, time_expressions)
+
             claim = Claim(
                 claim_id=f"C{uuid.uuid4().hex[:8]}",
                 claim=sent,
                 claim_type=claim_type,
                 entities=claim_entities,
                 numbers=numbers,
-                time_expressions=time_expressions
+                time_expressions=time_expressions,
+                verifiable=verifiable,
+                support_type=support_type,
             )
             claims.append(claim)
 
         return claims
+
+    @staticmethod
+    def _is_verifiable(text: str, numbers: list, entities: list) -> bool:
+        """Heuristic: a claim is verifiable if it contains concrete information."""
+        # Claims with numbers or entities are likely verifiable
+        if numbers or entities:
+            return True
+        # Speculative/opinion language makes it hard to verify
+        speculative = ["可能", "或许", "也许", "大概", "might", "maybe", "perhaps", "possibly", "arguably"]
+        lower = text.lower()
+        if any(kw in lower for kw in speculative):
+            return False
+        return True
+
+    @staticmethod
+    def _infer_support_type(text: str, numbers: list, entities: list, time_expr: list) -> str:
+        """Infer how this claim would be supported by evidence."""
+        has_factual_signal = bool(numbers) or bool(time_expr)
+        has_entity = bool(entities)
+        if has_factual_signal and has_entity:
+            return "direct"
+        if has_factual_signal or has_entity:
+            return "indirect"
+        return "none"
 
     def _classify_claim_type(self, claim_text: str) -> ClaimType:
         """Classify the type of a claim."""
@@ -193,12 +223,19 @@ Output JSON:
             "claim_type": "factual|numerical|temporal|causal|comparative",
             "entities": ["entity1", "entity2"],
             "numbers": ["any numbers mentioned"],
-            "time_expressions": ["any temporal expressions"]
+            "time_expressions": ["any temporal expressions"],
+            "verifiable": true,
+            "support_type": "direct|indirect|none"
         }}
     ]
 }}
 
 Limit to {max_claims} claims.
+
+support_type rules:
+- "direct": claim contains specific numbers/dates/entities that can be looked up
+- "indirect": claim is factual but requires inference to verify
+- "none": claim is speculative or opinion-based
 """
 
         try:
@@ -217,7 +254,9 @@ Limit to {max_claims} claims.
                     claim_type=ClaimType(c_data.get("claim_type", "factual")),
                     entities=c_data.get("entities", []),
                     numbers=c_data.get("numbers", []),
-                    time_expressions=c_data.get("time_expressions", [])
+                    time_expressions=c_data.get("time_expressions", []),
+                    verifiable=c_data.get("verifiable", True),
+                    support_type=c_data.get("support_type", "none"),
                 )
                 claims.append(claim)
 

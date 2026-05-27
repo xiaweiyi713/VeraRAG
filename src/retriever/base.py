@@ -79,8 +79,12 @@ class BaseRetriever(ABC):
 
     def save_index(self, path: str) -> None:
         """Save index to disk."""
-        pass
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support save_index"
+        )
 
     def load_index(self, path: str) -> None:
         """Load index from disk."""
-        pass
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support load_index"
+        )

@@ -270,7 +270,7 @@ Output JSON:
                     "conflict_type": conflict.conflict_type.value,
                     "source_id": conflict.source_id,
                     "target_id": conflict.target_id,
-                    "confidence": conflict.conflict
+                    "confidence": conflict.confidence
                 })
 
         return ignored

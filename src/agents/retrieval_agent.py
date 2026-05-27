@@ -31,7 +31,12 @@ class DynamicRetrievalAgent(BaseAgent):
         "it", "its", "and", "but", "or", "nor", "not", "so", "yet", "both",
         "either", "neither", "each", "every", "all", "any", "few", "more",
         "most", "other", "some", "such", "no", "only", "own", "same", "than",
-        "too", "very", "just", "because", "if", "when", "where", "how", "why"
+        "too", "very", "just", "because", "if", "when", "where", "how", "why",
+        # Chinese stopwords
+        "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一",
+        "一个", "上", "也", "很", "到", "说", "要", "去", "你", "会", "着", "没有",
+        "看", "好", "自己", "这", "他", "她", "它", "吗", "吧", "呢", "啊",
+        "什么", "怎么", "哪些", "哪个", "为什么", "如何",
     }
 
     # Common synonym mappings for query expansion
@@ -46,6 +51,20 @@ class DynamicRetrievalAgent(BaseAgent):
         "important": ["significant", "critical", "key", "major"],
         "problem": ["issue", "challenge", "difficulty"],
         "compare": ["contrast", "differ", "distinction"],
+        # Chinese synonyms
+        "影响": ["效果", "后果", "作用"],
+        "原因": ["因素", "起因", "驱动"],
+        "提升": ["增强", "改善", "提高"],
+        "减少": ["降低", "下降", "缩减"],
+        "关系": ["联系", "关联", "连接"],
+        "机制": ["原理", "过程", "方法"],
+        "结果": ["结论", "发现", "成果"],
+        "重要": ["关键", "核心", "显著"],
+        "问题": ["挑战", "难点", "困境"],
+        "比较": ["对比", "差异", "区别"],
+        "发展": ["进展", "演变", "趋势"],
+        "政策": ["规定", "法规", "制度"],
+        "技术": ["科技", "工艺", "方法"],
     }
 
     def __init__(
@@ -209,15 +228,35 @@ Output ONLY valid JSON, no other text."""
         return variants[:5]
 
     def _generate_counter_evidence_queries(self, question: str) -> List[str]:
-        """Generate queries to find counter-evidence."""
-        # Add negation terms
-        counter_terms = ["not", "false", "incorrect", "debunked", "myth", "contradiction", "disputed"]
+        """Generate queries to find counter-evidence via three retrieval paths.
 
+        Paths:
+          1. challenge_query: look for explicit contradictions
+          2. temporal_query: look for newer/different timeframe versions
+          3. alternative_query: look for alternative viewpoints
+        """
         queries = []
-        for term in counter_terms:
+
+        # Path 1: Challenge – seek explicit contradictions
+        challenge_terms_en = ["not", "false", "incorrect", "debunked", "myth", "contradiction", "disputed"]
+        challenge_terms_cn = ["不实", "错误", "辟谣", "争议", "反驳", "质疑", "不同"]
+        for term in challenge_terms_cn[:3]:
+            queries.append(f"{question} {term}")
+        for term in challenge_terms_en[:2]:
             queries.append(f"{question} {term}")
 
-        return queries
+        # Path 2: Temporal – seek latest or alternative timeframe versions
+        temporal_prefixes_cn = ["最新", "更新", "当前", "截至目前"]
+        temporal_prefixes_en = ["latest", "updated", "current", "as of 2024"]
+        for prefix in temporal_prefixes_cn[:2]:
+            queries.append(f"{prefix} {question}")
+        queries.append(f"{question} {temporal_prefixes_en[0]}")
+
+        # Path 3: Alternative viewpoint
+        alt_terms_cn = ["不同观点", "反对意见", "替代解释"]
+        queries.append(f"{question} {alt_terms_cn[0]}")
+
+        return queries[:8]
 
     def _select_highest_uncertainty_subquestion(
         self,

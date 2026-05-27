@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>VeraBench - Dataset Overview</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-200 p-8 min-h-screen flex flex-col items-center">
+
+<div class="max-w-4xl w-full">
+  <h1 class="text-2xl font-bold text-white mb-1">VeraBench Dataset</h1>
+  <p class="text-sm text-gray-500 mb-8">A benchmark for verifiable reasoning with 6 question types and annotated conflict signals</p>
+
+  <!-- Stats Cards -->
+  <div class="grid grid-cols-4 gap-4 mb-8">
+    <div class="rounded-xl border border-white/10 p-4 text-center">
+      <div class="text-3xl font-bold text-violet-400">33</div>
+      <div class="text-xs text-gray-500 mt-1">Corpus Documents</div>
+    </div>
+    <div class="rounded-xl border border-white/10 p-4 text-center">
+      <div class="text-3xl font-bold text-emerald-400">48</div>
+      <div class="text-xs text-gray-500 mt-1">Annotated Questions</div>
+    </div>
+    <div class="rounded-xl border border-white/10 p-4 text-center">
+      <div class="text-3xl font-bold text-amber-400">6</div>
+      <div class="text-xs text-gray-500 mt-1">Question Types</div>
+    </div>
+    <div class="rounded-xl border border-white/10 p-4 text-center">
+      <div class="text-3xl font-bold text-sky-400">8</div>
+      <div class="text-xs text-gray-500 mt-1">Domain Themes</div>
+    </div>
+  </div>
+
+  <!-- Question Types -->
+  <div class="overflow-hidden rounded-xl border border-white/10 mb-8">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-white/10">
+          <th class="text-left px-4 py-3 text-gray-400 font-medium">Question Type</th>
+          <th class="text-center px-4 py-3 text-gray-400 font-medium">Count</th>
+          <th class="text-left px-4 py-3 text-gray-400 font-medium">Expected Behavior</th>
+          <th class="text-left px-4 py-3 text-gray-400 font-medium">Challenge</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="border-b border-white/5">
+          <td class="px-4 py-3 font-medium">single_evidence</td>
+          <td class="text-center px-4 py-3">8</td>
+          <td class="px-4 py-3 text-gray-400">answer_with_citation</td>
+          <td class="px-4 py-3 text-xs text-gray-500">Basic retrieval and citation</td>
+        </tr>
+        <tr class="border-b border-white/5">
+          <td class="px-4 py-3 font-medium">multi_evidence</td>
+          <td class="text-center px-4 py-3">8</td>
+          <td class="px-4 py-3 text-gray-400">answer_with_citation</td>
+          <td class="px-4 py-3 text-xs text-gray-500">Multi-hop reasoning across documents</td>
+        </tr>
+        <tr class="border-b border-white/5">
+          <td class="px-4 py-3 font-medium">conflict</td>
+          <td class="text-center px-4 py-3">8</td>
+          <td class="px-4 py-3 text-gray-400">answer_with_conflict_note</td>
+          <td class="px-4 py-3 text-xs text-gray-500">Detect and report evidence contradictions</td>
+        </tr>
+        <tr class="border-b border-white/5">
+          <td class="px-4 py-3 font-medium">temporal</td>
+          <td class="text-center px-4 py-3">8</td>
+          <td class="px-4 py-3 text-gray-400">answer_with_citation</td>
+          <td class="px-4 py-3 text-xs text-gray-500">Time-sensitive information, outdated evidence</td>
+        </tr>
+        <tr class="border-b border-white/5">
+          <td class="px-4 py-3 font-medium">unanswerable</td>
+          <td class="text-center px-4 py-3">8</td>
+          <td class="px-4 py-3 text-gray-400">abstain</td>
+          <td class="px-4 py-3 text-xs text-gray-500">No sufficient evidence exists</td>
+        </tr>
+        <tr>
+          <td class="px-4 py-3 font-medium">misleading</td>
+          <td class="text-center px-4 py-3">8</td>
+          <td class="px-4 py-3 text-gray-400">correct_premise</td>
+          <td class="px-4 py-3 text-xs text-gray-500">Question contains false premises</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Domain Themes -->
+  <h2 class="text-lg font-semibold text-white mb-4">Corpus Domain Themes</h2>
+  <div class="grid grid-cols-4 gap-3">
+    <div class="rounded-lg border border-white/10 p-3 text-center text-xs">
+      <div class="text-gray-300 font-medium">AI Policy</div>
+      <div class="text-gray-600 mt-1">5 docs</div>
+    </div>
+    <div class="rounded-lg border border-white/10 p-3 text-center text-xs">
+      <div class="text-gray-300 font-medium">Tech Companies</div>
+      <div class="text-gray-600 mt-1">5 docs</div>
+    </div>
+    <div class="rounded-lg border border-white/10 p-3 text-center text-xs">
+      <div class="text-gray-300 font-medium">Climate</div>
+      <div class="text-gray-600 mt-1">4 docs</div>
+    </div>
+    <div class="rounded-lg border border-white/10 p-3 text-center text-xs">
+      <div class="text-gray-300 font-medium">Quantum Computing</div>
+      <div class="text-gray-600 mt-1">4 docs</div>
+    </div>
+    <div class="rounded-lg border border-white/10 p-3 text-center text-xs">
+      <div class="text-gray-300 font-medium">New Energy Vehicles</div>
+      <div class="text-gray-600 mt-1">5 docs</div>
+    </div>
+    <div class="rounded-lg border border-white/10 p-3 text-center text-xs">
+      <div class="text-gray-300 font-medium">Semiconductor</div>
+      <div class="text-gray-600 mt-1">4 docs</div>
+    </div>
+    <div class="rounded-lg border border-white/10 p-3 text-center text-xs">
+      <div class="text-gray-300 font-medium">AI Medical</div>
+      <div class="text-gray-600 mt-1">3 docs</div>
+    </div>
+    <div class="rounded-lg border border-white/10 p-3 text-center text-xs">
+      <div class="text-gray-300 font-medium">LLM History</div>
+      <div class="text-gray-600 mt-1">3 docs</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -35,7 +35,7 @@ env/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Data
+# Data (keep verabench benchmark, exclude runtime data)
 data/raw/*
 data/processed/*
 data/indexes/*
@@ -52,9 +52,10 @@ experiments/logs/
 .models/
 .cache/
 
-# Environment variables
+# Environment variables & secrets
 .env
 .env.local
+.verarag_key
 
 # OS
 .DS_Store
@@ -65,3 +66,9 @@ Thumbs.db
 
 # Test cache
 .pytest_cache/
+
+# Claude Code session files
+.claude/
+
+# Claude Code plugin docs (internal tooling)
+docs/superpowers/

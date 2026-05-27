@@ -7,15 +7,15 @@ import argparse
 from pathlib import Path
 from typing import Dict, Any, List
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.pipeline.verarag import VeraRAG
-from src.configs import get_dataset_config
+from configs import get_dataset_config
 from src.evaluation.answer_metrics import AnswerMetrics
-from src.evidence.conflict_metrics import ConflictMetrics
-from src.evidence.calibration_metrics import CalibrationMetrics
-from src.evidence.hallucination_metrics import HallucinationMetrics
+from src.evaluation.conflict_metrics import ConflictMetrics
+from src.evaluation.calibration_metrics import CalibrationMetrics
+from src.evaluation.hallucination_metrics import HallucinationMetrics
 
 
 def load_ckt_conflict(data_path: str) -> List[Dict[str, Any]]:
@@ -135,7 +135,7 @@ def evaluate_ckt_conflict(
         brier = CalibrationMetrics.brier_score(confidences, correct)
 
         # Unsupported claim rate (hallucination)
-        from src.evidence.hallucination_metrics import HallucinationMetrics
+        from src.evaluation.hallucination_metrics import HallucinationMetrics
 
         unsupported_rates = []
         for p in predictions:

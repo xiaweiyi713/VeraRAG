@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>VeraRAG - Ablation Study Results</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-200 p-8 min-h-screen flex flex-col items-center">
+
+<div class="max-w-4xl w-full">
+  <h1 class="text-2xl font-bold text-white mb-1">VeraRAG Ablation Study</h1>
+  <p class="text-sm text-gray-500 mb-8">Component-wise contribution analysis on VeraBench (48 questions, 6 types)</p>
+
+  <!-- Main Results Table -->
+  <div class="overflow-hidden rounded-xl border border-white/10 mb-8">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-white/10">
+          <th class="text-left px-4 py-3 text-gray-400 font-medium">Configuration</th>
+          <th class="text-right px-4 py-3 text-gray-400 font-medium">Answer F1</th>
+          <th class="text-right px-4 py-3 text-gray-400 font-medium">Evidence Recall</th>
+          <th class="text-right px-4 py-3 text-gray-400 font-medium">Conflict F1</th>
+          <th class="text-right px-4 py-3 text-gray-400 font-medium">Confidence</th>
+          <th class="text-right px-4 py-3 text-gray-400 font-medium">Δ F1</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="border-b border-white/5 bg-violet-500/5">
+          <td class="px-4 py-3 font-medium text-violet-300">Full Pipeline (Ours)</td>
+          <td class="text-right px-4 py-3">0.859</td>
+          <td class="text-right px-4 py-3">0.879</td>
+          <td class="text-right px-4 py-3">0.839</td>
+          <td class="text-right px-4 py-3">0.848</td>
+          <td class="text-right px-4 py-3 text-gray-500">baseline</td>
+        </tr>
+        <tr class="border-b border-white/5">
+          <td class="px-4 py-3">– Conflict Detection</td>
+          <td class="text-right px-4 py-3">0.837</td>
+          <td class="text-right px-4 py-3">0.860</td>
+          <td class="text-right px-4 py-3 text-red-400">0.459</td>
+          <td class="text-right px-4 py-3">0.821</td>
+          <td class="text-right px-4 py-3 text-red-400">-0.022</td>
+        </tr>
+        <tr class="border-b border-white/5">
+          <td class="px-4 py-3">– Uncertainty Estimation</td>
+          <td class="text-right px-4 py-3">0.799</td>
+          <td class="text-right px-4 py-3">0.807</td>
+          <td class="text-right px-4 py-3">0.774</td>
+          <td class="text-right px-4 py-3">0.764</td>
+          <td class="text-right px-4 py-3 text-red-400">-0.060</td>
+        </tr>
+        <tr class="border-b border-white/5">
+          <td class="px-4 py-3">– Verification Layer</td>
+          <td class="text-right px-4 py-3 text-red-400">0.739</td>
+          <td class="text-right px-4 py-3">0.837</td>
+          <td class="text-right px-4 py-3">0.759</td>
+          <td class="text-right px-4 py-3">0.695</td>
+          <td class="text-right px-4 py-3 text-red-400">-0.120</td>
+        </tr>
+        <tr class="border-b border-white/5">
+          <td class="px-4 py-3">– Repair Agent</td>
+          <td class="text-right px-4 py-3">0.803</td>
+          <td class="text-right px-4 py-3">0.866</td>
+          <td class="text-right px-4 py-3">0.753</td>
+          <td class="text-right px-4 py-3">0.741</td>
+          <td class="text-right px-4 py-3 text-red-400">-0.056</td>
+        </tr>
+        <tr class="border-b border-white/5">
+          <td class="px-4 py-3 text-amber-400">Minimal (all disabled)</td>
+          <td class="text-right px-4 py-3 text-red-400">0.614</td>
+          <td class="text-right px-4 py-3 text-red-400">0.649</td>
+          <td class="text-right px-4 py-3 text-red-400">0.321</td>
+          <td class="text-right px-4 py-3 text-red-400">0.563</td>
+          <td class="text-right px-4 py-3 text-red-400">-0.245</td>
+        </tr>
+        <tr>
+          <td class="px-4 py-3">Single Round Retrieval</td>
+          <td class="text-right px-4 py-3">0.721</td>
+          <td class="text-right px-4 py-3 text-red-400">0.588</td>
+          <td class="text-right px-4 py-3">0.746</td>
+          <td class="text-right px-4 py-3">0.675</td>
+          <td class="text-right px-4 py-3 text-red-400">-0.138</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Baseline Comparison Table -->
+  <h2 class="text-lg font-semibold text-white mb-4">Baseline Comparison</h2>
+  <div class="overflow-hidden rounded-xl border border-white/10 mb-8">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-white/10">
+          <th class="text-left px-4 py-3 text-gray-400 font-medium">Method</th>
+          <th class="text-right px-4 py-3 text-gray-400 font-medium">Conflict Detection</th>
+          <th class="text-right px-4 py-3 text-gray-400 font-medium">Uncertainty</th>
+          <th class="text-right px-4 py-3 text-gray-400 font-medium">Verification</th>
+          <th class="text-right px-4 py-3 text-gray-400 font-medium">Self-Critique</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="border-b border-white/5">
+          <td class="px-4 py-3">Vanilla RAG</td>
+          <td class="text-right px-4 py-3 text-red-400">No</td>
+          <td class="text-right px-4 py-3 text-red-400">No</td>
+          <td class="text-right px-4 py-3 text-red-400">No</td>
+          <td class="text-right px-4 py-3 text-red-400">No</td>
+        </tr>
+        <tr class="border-b border-white/5">
+          <td class="px-4 py-3">Hybrid RAG</td>
+          <td class="text-right px-4 py-3 text-red-400">No</td>
+          <td class="text-right px-4 py-3 text-red-400">No</td>
+          <td class="text-right px-4 py-3 text-red-400">No</td>
+          <td class="text-right px-4 py-3 text-red-400">No</td>
+        </tr>
+        <tr class="border-b border-white/5">
+          <td class="px-4 py-3">Self-RAG</td>
+          <td class="text-right px-4 py-3 text-red-400">No</td>
+          <td class="text-right px-4 py-3 text-red-400">No</td>
+          <td class="text-right px-4 py-3 text-amber-400">Partial</td>
+          <td class="text-right px-4 py-3 text-emerald-400">Yes</td>
+        </tr>
+        <tr class="bg-violet-500/5">
+          <td class="px-4 py-3 font-medium text-violet-300">VeraRAG (Ours)</td>
+          <td class="text-right px-4 py-3 text-emerald-400">8 types</td>
+          <td class="text-right px-4 py-3 text-emerald-400">5-dim</td>
+          <td class="text-right px-4 py-3 text-emerald-400">NLI+LLM</td>
+          <td class="text-right px-4 py-3 text-emerald-400">Yes</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Key Findings -->
+  <h2 class="text-lg font-semibold text-white mb-4">Key Findings</h2>
+  <div class="grid grid-cols-3 gap-4">
+    <div class="rounded-xl border border-white/10 p-4">
+      <div class="text-3xl font-bold text-violet-400 mb-1">-0.380</div>
+      <div class="text-xs text-gray-500">Conflict F1 drop</div>
+      <div class="text-xs text-gray-400 mt-2">Without conflict detection, numeric and temporal contradictions go undetected</div>
+    </div>
+    <div class="rounded-xl border border-white/10 p-4">
+      <div class="text-3xl font-bold text-amber-400 mb-1">-0.120</div>
+      <div class="text-xs text-gray-500">Answer F1 drop (no verification)</div>
+      <div class="text-xs text-gray-400 mt-2">Verification is the single most impactful component for answer quality</div>
+    </div>
+    <div class="rounded-xl border border-white/10 p-4">
+      <div class="text-3xl font-bold text-emerald-400 mb-1">-0.245</div>
+      <div class="text-xs text-gray-500">Full F1 drop (minimal)</div>
+      <div class="text-xs text-gray-400 mt-2">Removing all optional stages degrades performance by 28.5%</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

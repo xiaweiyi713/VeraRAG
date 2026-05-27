@@ -7,13 +7,14 @@
 <div class="mb-8">
     <form id="query-form" class="relative">
         <div class="glass rounded-2xl p-1.5">
-            <div class="flex items-end gap-3 p-3">
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-end gap-3 p-3 sm:p-4">
                 <textarea
                     id="question-input"
                     rows="2"
                     maxlength="2000"
                     placeholder="输入你的问题，VeraRAG 将进行可验证的多步推理..."
-                    class="flex-1 bg-transparent text-gray-200 placeholder-gray-500 resize-none outline-none text-base leading-relaxed"
+                    class="flex-1 bg-transparent resize-none outline-none text-base leading-relaxed"
+                    style="color: var(--text-primary)"
                 ></textarea>
                 <button
                     type="submit"
@@ -25,6 +26,20 @@
             </div>
         </div>
     </form>
+
+    <!-- File Upload -->
+    <div id="upload-area" class="mt-3 glass rounded-xl p-3 text-center cursor-pointer transition hover:opacity-80">
+        <input type="file" id="file-input" accept=".pdf,.txt,.md" class="hidden">
+        <p class="text-xs" style="color: var(--text-muted)">
+            <span style="color: var(--accent)">点击上传</span> 或拖拽 PDF/TXT/MD 文件到此处
+        </p>
+        <div id="upload-progress" class="hidden mt-2">
+            <div class="w-full h-1 rounded-full overflow-hidden" style="background: var(--border-color)">
+                <div id="upload-bar" class="h-full rounded-full transition-all" style="width: 0%; background: var(--accent)"></div>
+            </div>
+            <p id="upload-status" class="text-xs mt-1" style="color: var(--text-muted)"></p>
+        </div>
+    </div>
 </div>
 
 <!-- Pipeline Progress (hidden until query starts) -->
@@ -54,10 +69,12 @@
 
     <!-- Tabs -->
     <div class="glass rounded-2xl overflow-hidden">
-        <div class="flex border-b border-white/5">
+        <div class="flex border-b overflow-x-auto flex-nowrap" style="border-color: var(--border-color)">
             <button class="tab-btn active px-5 py-3 text-sm font-medium transition" data-tab="evidence">证据</button>
-            <button class="tab-btn px-5 py-3 text-sm font-medium text-gray-500 transition" data-tab="claims">声明验证</button>
+            <button class="tab-btn px-5 py-3 text-sm font-medium text-gray-500 transition" data-tab="claims">Claim Ledger</button>
+            <button class="tab-btn px-5 py-3 text-sm font-medium text-gray-500 transition" data-tab="conflict">冲突图</button>
             <button class="tab-btn px-5 py-3 text-sm font-medium text-gray-500 transition" data-tab="uncertainty">不确定性</button>
+            <button class="tab-btn px-5 py-3 text-sm font-medium text-gray-500 transition" data-tab="repair">修复记录</button>
         </div>
 
         <div id="tab-evidence" class="tab-content p-5">
@@ -66,8 +83,14 @@
         <div id="tab-claims" class="tab-content p-5 hidden">
             <div id="claims-list" class="space-y-3"></div>
         </div>
+        <div id="tab-conflict" class="tab-content p-5 hidden">
+            <div id="conflict-graph"></div>
+        </div>
         <div id="tab-uncertainty" class="tab-content p-5 hidden">
             <div id="uncertainty-detail"></div>
+        </div>
+        <div id="tab-repair" class="tab-content p-5 hidden">
+            <div id="repair-detail"></div>
         </div>
     </div>
 </div>

@@ -10,40 +10,18 @@ class AnswerMetrics:
 
     Includes:
     - Exact Match (EM)
-    - F1 Score
-    - Token-level accuracy
+    - Token-level F1 Score
+    - Soft F1 (keyword/number overlap, better for Chinese free-text)
     """
 
     @staticmethod
     def exact_match(predicted: str, reference: str) -> float:
-        """
-        Calculate exact match score.
-
-        Args:
-            predicted: Predicted answer
-            reference: Reference/ground truth answer
-
-        Returns:
-            1.0 if exact match, 0.0 otherwise
-        """
-        # Normalize whitespace and case
         pred_normalized = AnswerMetrics._normalize_answer(predicted)
         ref_normalized = AnswerMetrics._normalize_answer(reference)
-
         return 1.0 if pred_normalized == ref_normalized else 0.0
 
     @staticmethod
     def f1_score(predicted: str, reference: str) -> float:
-        """
-        Calculate F1 score between predicted and reference answers.
-
-        Args:
-            predicted: Predicted answer
-            reference: Reference/ground truth answer
-
-        Returns:
-            F1 score (0-1)
-        """
         pred_tokens = AnswerMetrics._tokenize(predicted)
         ref_tokens = AnswerMetrics._tokenize(reference)
 
@@ -62,6 +40,57 @@ class AnswerMetrics:
 
         f1 = 2 * precision * recall / (precision + recall)
         return f1
+
+    @staticmethod
+    def soft_f1_score(predicted: str, reference: str) -> float:
+        """Keyword/number overlap F1 for Chinese free-text answers.
+
+        Extracts key entities (numbers, proper nouns, domain terms) from both
+        answers and computes overlap. More lenient than token-level F1.
+        """
+        pred_keys = AnswerMetrics._extract_keywords(predicted)
+        ref_keys = AnswerMetrics._extract_keywords(reference)
+
+        if not pred_keys and not ref_keys:
+            return 1.0
+        if not pred_keys or not ref_keys:
+            return 0.0
+
+        common = set(pred_keys) & set(ref_keys)
+
+        precision = len(common) / len(pred_keys)
+        recall = len(common) / len(ref_keys)
+
+        if precision + recall == 0:
+            return 0.0
+
+        return 2 * precision * recall / (precision + recall)
+
+    @staticmethod
+    def _extract_keywords(text: str) -> List[str]:
+        """Extract keywords: numbers, English words, Chinese segments (2+ chars)."""
+        keywords = []
+
+        # Numbers (including decimals and percentages)
+        numbers = re.findall(r'\d+\.?\d*%?', text)
+        keywords.extend(numbers)
+
+        # English words
+        english = re.findall(r'[A-Za-z]+(?:[-][A-Za-z]+)*', text)
+        keywords.extend(w.lower() for w in english if len(w) > 1)
+
+        # Chinese key phrases: split by punctuation, take segments 2-10 chars
+        chinese_segments = re.split(r'[，。、；：！？\s,;:!?\(\)（）【】《》""''\-/]', text)
+        for seg in chinese_segments:
+            seg = seg.strip()
+            if 2 <= len(seg) <= 20:
+                keywords.append(seg)
+            elif len(seg) > 20:
+                # Take character bigrams for long segments
+                for i in range(0, min(len(seg), 40) - 1):
+                    keywords.append(seg[i:i + 2])
+
+        return keywords
 
     @staticmethod
     def batch_exact_match(predictions: List[str], references: List[str]) -> float:

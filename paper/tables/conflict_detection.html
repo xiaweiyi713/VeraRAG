@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>VeraRAG - Conflict Detection Types</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-200 p-8 min-h-screen flex flex-col items-center">
+
+<div class="max-w-3xl w-full">
+  <h1 class="text-2xl font-bold text-white mb-1">Conflict Detection Taxonomy</h1>
+  <p class="text-sm text-gray-500 mb-8">8-type conflict detection with severity grading and resolution strategies</p>
+
+  <div class="space-y-3">
+    <div class="rounded-xl border border-white/10 p-4 flex items-start gap-4">
+      <span class="text-2xl mt-0.5">#</span>
+      <div class="flex-1">
+        <div class="flex items-center gap-3 mb-1">
+          <span class="font-semibold text-white">Numeric Conflict</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-red-400/10 text-red-400">HIGH</span>
+        </div>
+        <p class="text-xs text-gray-400">Detects contradictory numerical claims (e.g., "20%→8%" vs "reduced by ~50%"). Ratio > 1.1 triggers flag.</p>
+        <span class="text-xs text-gray-600 mt-1 block">Resolver: flag_for_verification</span>
+      </div>
+    </div>
+
+    <div class="rounded-xl border border-white/10 p-4 flex items-start gap-4">
+      <span class="text-2xl mt-0.5">T</span>
+      <div class="flex-1">
+        <div class="flex items-center gap-3 mb-1">
+          <span class="font-semibold text-white">Temporal Conflict</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-400">MEDIUM</span>
+        </div>
+        <p class="text-xs text-gray-400">Detects time-based contradictions (outdated claims, contradictory date ranges for same entity).</p>
+        <span class="text-xs text-gray-600 mt-1 block">Resolver: prefer_recent</span>
+      </div>
+    </div>
+
+    <div class="rounded-xl border border-white/10 p-4 flex items-start gap-4">
+      <span class="text-2xl mt-0.5">E</span>
+      <div class="flex-1">
+        <div class="flex items-center gap-3 mb-1">
+          <span class="font-semibold text-white">Entity Mismatch</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-400">MEDIUM</span>
+        </div>
+        <p class="text-xs text-gray-400">Same entity referenced with contradictory attributes. Chinese negation detection (有/没有, 是/不是).</p>
+        <span class="text-xs text-gray-600 mt-1 block">Resolver: cross_reference</span>
+      </div>
+    </div>
+
+    <div class="rounded-xl border border-white/10 p-4 flex items-start gap-4">
+      <span class="text-2xl mt-0.5">S</span>
+      <div class="flex-1">
+        <div class="flex items-center gap-3 mb-1">
+          <span class="font-semibold text-white">Scope Conflict</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-blue-400/10 text-blue-400">LOW</span>
+        </div>
+        <p class="text-xs text-gray-400">Global claims vs regional/narrow findings (e.g., "all markets" vs "Chinese market").</p>
+        <span class="text-xs text-gray-600 mt-1 block">Resolver: narrow_scope_preferred</span>
+      </div>
+    </div>
+
+    <div class="rounded-xl border border-white/10 p-4 flex items-start gap-4">
+      <span class="text-2xl mt-0.5">C</span>
+      <div class="flex-1">
+        <div class="flex items-center gap-3 mb-1">
+          <span class="font-semibold text-white">Causal Conflict</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-400">MEDIUM</span>
+        </div>
+        <p class="text-xs text-gray-400">Opposing causal claims (e.g., "X 导致 Y" vs "X 与 Y 无关").</p>
+        <span class="text-xs text-gray-600 mt-1 block">Resolver: seek_additional_evidence</span>
+      </div>
+    </div>
+
+    <div class="rounded-xl border border-white/10 p-4 flex items-start gap-4">
+      <span class="text-2xl mt-0.5">G</span>
+      <div class="flex-1">
+        <div class="flex items-center gap-3 mb-1">
+          <span class="font-semibold text-white">Granularity Conflict</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-blue-400/10 text-blue-400">LOW</span>
+        </div>
+        <p class="text-xs text-gray-400">Fine-grained (quarterly) vs coarse-grained (annual) claims for the same metric.</p>
+        <span class="text-xs text-gray-600 mt-1 block">Resolver: prefer_fine_grained</span>
+      </div>
+    </div>
+
+    <div class="rounded-xl border border-white/10 p-4 flex items-start gap-4">
+      <span class="text-2xl mt-0.5">D</span>
+      <div class="flex-1">
+        <div class="flex items-center gap-3 mb-1">
+          <span class="font-semibold text-white">Definitional Conflict</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-400">MEDIUM</span>
+        </div>
+        <p class="text-xs text-gray-400">Same term defined differently across sources (e.g., different definitions of "AI safety").</p>
+        <span class="text-xs text-gray-600 mt-1 block">Resolver: clarify_definition</span>
+      </div>
+    </div>
+
+    <div class="rounded-xl border border-white/10 p-4 flex items-start gap-4">
+      <span class="text-2xl mt-0.5">R</span>
+      <div class="flex-1">
+        <div class="flex items-center gap-3 mb-1">
+          <span class="font-semibold text-white">Source Reliability</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-blue-400/10 text-blue-400">LOW</span>
+        </div>
+        <p class="text-xs text-gray-400">Large credibility gap between sources (official/paper=5 vs blog/wiki=1-2). Gap >= 2 triggers flag.</p>
+        <span class="text-xs text-gray-600 mt-1 block">Resolver: prefer_higher_credibility</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

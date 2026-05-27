@@ -34,20 +34,27 @@ class HybridRetriever(BaseRetriever):
             config=sparse_config,
             **{k: v for k, v in kwargs.items() if k in ['k1', 'b', 'epsilon']}
         )
-        self.dense_retriever = DenseRetriever(
-            config=dense_config,
-            **{k: v for k, v in kwargs.items() if k in ['model_name', 'device', 'batch_size']}
-        )
+
+        # Dense retriever is optional — may not have sentence-transformers installed
+        self._dense_available = True
+        try:
+            self.dense_retriever = DenseRetriever(
+                config=dense_config,
+                **{k: v for k, v in kwargs.items() if k in ['model_name', 'device', 'batch_size']}
+            )
+        except ImportError:
+            self._dense_available = False
+            self.dense_retriever = None
+            import logging
+            logging.getLogger("verarag").warning("DenseRetriever unavailable (sentence-transformers not installed), using BM25 only")
 
     def index_documents(self, documents: List[Dict[str, Any]]) -> None:
-        """
-        Build indexes for both sparse and dense retrievers.
-
-        Args:
-            documents: List of documents with 'id' and 'text' fields
-        """
         self.sparse_retriever.index_documents(documents)
-        self.dense_retriever.index_documents(documents)
+        if self._dense_available and self.dense_retriever:
+            try:
+                self.dense_retriever.index_documents(documents)
+            except ImportError:
+                self._dense_available = False
 
     def retrieve(
         self,
@@ -56,20 +63,16 @@ class HybridRetriever(BaseRetriever):
         fetch_k: int = 100,
         **kwargs
     ) -> List[RetrievalResult]:
-        """
-        Retrieve using hybrid approach.
-
-        Args:
-            query: Query string
-            top_k: Number of final results to return
-            fetch_k: Number of results to fetch from each retriever before fusion
-
-        Returns:
-            List of retrieval results sorted by combined score
-        """
-        # Retrieve from both retrievers
         sparse_results = self.sparse_retriever.retrieve(query, top_k=fetch_k)
-        dense_results = self.dense_retriever.retrieve(query, top_k=fetch_k)
+
+        if not self._dense_available or not self.dense_retriever:
+            return sparse_results[:top_k]
+
+        try:
+            dense_results = self.dense_retriever.retrieve(query, top_k=fetch_k)
+        except ImportError:
+            self._dense_available = False
+            return sparse_results[:top_k]
 
         # Combine scores using reciprocal rank fusion
         combined_scores = self._reciprocal_rank_fusion(

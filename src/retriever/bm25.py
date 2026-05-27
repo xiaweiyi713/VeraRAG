@@ -35,11 +35,20 @@ class BM25Retriever(BaseRetriever):
         self.index = None
 
     def _tokenize(self, text: str) -> List[str]:
-        """Simple tokenization."""
-        # Lowercase and split on non-alphanumeric
+        """Tokenize with Chinese + English support."""
         text = text.lower()
-        tokens = re.findall(r'\w+', text)
-        return tokens
+        # Try jieba for Chinese word segmentation
+        try:
+            import jieba
+            # jieba handles mixed Chinese/English text
+            tokens = list(jieba.cut(text))
+            # Filter whitespace and single chars (keep meaningful tokens)
+            tokens = [t.strip() for t in tokens if t.strip() and len(t.strip()) > 0]
+            return tokens
+        except ImportError:
+            # Fallback: character bigrams for CJK + word splitting for English
+            tokens = re.findall(r'\w+', text)
+            return tokens
 
     def _build_index(self) -> None:
         """Build BM25 index from corpus."""
@@ -116,7 +125,7 @@ class BM25Retriever(BaseRetriever):
         # Build results
         results = []
         for idx in top_indices:
-            if scores[idx] > 0:  # Only include matches
+            if scores[idx] > 0:
                 results.append(RetrievalResult(
                     doc_id=self.doc_ids[idx],
                     content=self.corpus[idx],

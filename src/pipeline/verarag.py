@@ -58,18 +58,25 @@ class VeraRAG:
         self.llm_client = LLMClient(
             provider=llm_config.get("provider", "openai"),
             model=llm_config.get("model", "gpt-4o"),
-            api_key=os.getenv(llm_config.get("api_key_env", "OPENAI_API_KEY")),
+            api_key=llm_config.get("api_key") or os.getenv(llm_config.get("api_key_env", "OPENAI_API_KEY")),
+            base_url=llm_config.get("base_url"),
             temperature=llm_config.get("temperature", 0.7),
             max_tokens=llm_config.get("max_tokens", 2000)
         )
 
-        # Retriever
+        # Retriever — fall back to BM25 if sentence-transformers not available
         retriever_config = self.config.get("retriever", {})
-        self.retriever = HybridRetriever(
-            config=retriever_config,
-            sparse_weight=retriever_config.get("sparse_weight", 0.3),
-            dense_weight=retriever_config.get("dense_weight", 0.7)
-        )
+        try:
+            self.retriever = HybridRetriever(
+                config=retriever_config,
+                sparse_weight=retriever_config.get("sparse_weight", 0.3),
+                dense_weight=retriever_config.get("dense_weight", 0.7)
+            )
+        except ImportError:
+            from ..retriever.bm25 import BM25Retriever
+            self.retriever = BM25Retriever(config=retriever_config)
+            import logging
+            logging.getLogger("verarag").warning("sentence-transformers not installed, using BM25 only")
 
         # Agents
         self.task_analyzer = TaskAnalyzer(self.config, self.llm_client)
@@ -141,10 +148,12 @@ class VeraRAG:
             return result
 
         from ..utils.data_structures import Evidence
-        import uuid
+
+        # Use stable ID from retriever result (doc_id based) instead of UUID
+        stable_id = result.doc_id if hasattr(result, 'doc_id') and result.doc_id else result.metadata.get("doc_id", "")
 
         return Evidence(
-            evidence_id=f"E{uuid.uuid4().hex[:8]}",
+            evidence_id=stable_id,
             source=result.metadata.get("source", "unknown"),
             title=result.title,
             text_span=result.content,
@@ -196,6 +205,7 @@ class VeraRAG:
         # Stage 3 & 4 & 5: Dynamic Retrieval, Normalization, Conflict Graph
         evidence_pool: List[Evidence] = []
         conflict_graph = EvidenceConflictGraph()
+        prev_decision = None
 
         for round_id in range(max_rounds):
             emit("stage", {
@@ -205,11 +215,25 @@ class VeraRAG:
                 "status": "started"
             })
 
+            # Determine retrieval strategy based on previous uncertainty decision
+            from ..uncertainty.controller import Action
+            retrieve_budget = 50
+            seek_counter = False
+            if round_id > 0 and prev_decision is not None:
+                if prev_decision.action == Action.RESOLVE_CONFLICTS:
+                    # Prioritize counter-evidence for conflicting claims
+                    seek_counter = True
+                    retrieve_budget = 30
+                elif prev_decision.action == Action.CONTINUE_RETRIEVAL:
+                    # Broader retrieval with higher budget
+                    retrieve_budget = 80
+            prev_decision = None
+
             evidence_pool = self.retrieval_agent.dynamic_retrieve(
                 subquestions,
                 evidence_pool,
                 max_rounds=1,
-                budget_per_round=50
+                budget_per_round=retrieve_budget
             )
 
             if round_id == 0:
@@ -244,6 +268,7 @@ class VeraRAG:
                     current_round=round_id,
                     max_rounds=max_rounds
                 )
+                prev_decision = decision
                 emit("uncertainty", {
                     "action": decision.action.value,
                     "confidence": decision.confidence,

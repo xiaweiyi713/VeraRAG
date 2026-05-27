@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "verarag"
+version = "0.1.0"
+description = "Verifiable Agentic Retrieval-Augmented Reasoning"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "VeraRAG Team"},
+]
+keywords = ["rag", "nlp", "verification", "reasoning"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "numpy>=1.21.0",
+    "scikit-learn>=1.0.0",
+    "openai>=1.0.0",
+    "anthropic>=0.5.0",
+    "rank-bm25>=0.2.2",
+    "jieba>=0.42.1",
+    "pyyaml>=6.0",
+    "tqdm>=4.65.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "jinja2>=3.1.0",
+    "sse-starlette>=1.8.0",
+    "httpx>=0.25.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dense = ["sentence-transformers>=2.2.0", "faiss-cpu>=1.7.0"]
+ollama = ["ollama>=0.1.0"]
+pdf = ["pymupdf>=1.23.0"]
+eval = ["matplotlib>=3.5.0", "seaborn>=0.12.0"]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=22.0.0",
+    "flake8>=5.0.0",
+    "mypy>=1.0.0",
+]
+all = ["verarag[dense,ollama,pdf,eval,dev]"]
+
+[project.scripts]
+verarag-web = "web.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "web*", "configs*", "experiments*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]

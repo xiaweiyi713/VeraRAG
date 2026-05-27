@@ -9,18 +9,25 @@ pandas>=1.3.0
 # LLM clients
 openai>=1.0.0
 anthropic>=0.5.0
+ollama>=0.1.0
 
 # Retrieval
 rank-bm25>=0.2.2
 sentence-transformers>=2.2.0
 faiss-cpu>=1.7.0  # Use faiss-gpu for CUDA support
+jieba>=0.42.1
 
 # NLP
-spacy>=3.4.0
 nltk>=3.8.0
+
+# Document ingestion
+pymupdf>=1.23.0
 
 # Configuration
 pyyaml>=6.0
+
+# Security
+cryptography>=42.0.0
 
 # Evaluation
 tqdm>=4.65.0
@@ -29,14 +36,10 @@ seaborn>=0.12.0
 
 # Development
 pytest>=7.0.0
+pytest-cov>=4.0.0
 black>=22.0.0
 flake8>=5.0.0
 mypy>=1.0.0
-
-# Optional: for local LLM support
-# transformers>=4.30.0
-# accelerate>=0.20.0
-# bitsandbytes>=0.41.0
 
 # Web UI
 fastapi>=0.104.0
@@ -44,3 +47,4 @@ uvicorn[standard]>=0.24.0
 jinja2>=3.1.0
 sse-starlette>=1.8.0
 httpx>=0.25.0
+pydantic>=2.0.0

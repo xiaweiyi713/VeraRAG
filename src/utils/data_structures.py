@@ -49,6 +49,9 @@ class ConflictType(Enum):
     ENTITY_MISMATCH = "entity_mismatch"
     SOURCE_DISAGREEMENT = "source_disagreement"
     DEFINITIONAL_CONFLICT = "definitional_conflict"
+    SCOPE_CONFLICT = "scope_conflict"
+    CAUSAL_CONFLICT = "causal_conflict"
+    GRANULARITY_CONFLICT = "granularity_conflict"
     UNRELATED = "unrelated"
 
 
@@ -70,6 +73,8 @@ class Claim:
     time_expressions: List[str] = field(default_factory=list)
     source_span: Optional[str] = None
     confidence: float = 1.0
+    verifiable: bool = True
+    support_type: str = "direct"  # direct | indirect | none
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -80,7 +85,9 @@ class Claim:
             "numbers": self.numbers,
             "time_expressions": self.time_expressions,
             "source_span": self.source_span,
-            "confidence": self.confidence
+            "confidence": self.confidence,
+            "verifiable": self.verifiable,
+            "support_type": self.support_type,
         }
 
 
@@ -135,6 +142,8 @@ class ConflictEdge:
     conflict_type: ConflictType
     confidence: float
     rationale: str = ""
+    severity: str = "medium"
+    resolver_strategy: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -142,7 +151,9 @@ class ConflictEdge:
             "target_id": self.target_id,
             "conflict_type": self.conflict_type.value,
             "confidence": self.confidence,
-            "rationale": self.rationale
+            "rationale": self.rationale,
+            "severity": self.severity,
+            "resolver_strategy": self.resolver_strategy,
         }
 
 
@@ -198,7 +209,10 @@ class EvidenceConflictGraph:
                 ConflictType.TEMPORAL_CONFLICT,
                 ConflictType.ENTITY_MISMATCH,
                 ConflictType.SOURCE_DISAGREEMENT,
-                ConflictType.DEFINITIONAL_CONFLICT
+                ConflictType.DEFINITIONAL_CONFLICT,
+                ConflictType.SCOPE_CONFLICT,
+                ConflictType.CAUSAL_CONFLICT,
+                ConflictType.GRANULARITY_CONFLICT,
             }
         ]
 
@@ -304,6 +318,9 @@ class AnswerClaim:
     conflicting_evidence: List[str] = field(default_factory=list)
     confidence: float = 0.8
     verification_status: VerificationStatus = VerificationStatus.NOT_ENOUGH_INFO
+    claim_type: str = "factual"  # factual | inference | prediction
+    verifiable: bool = True
+    support_type: str = "none"  # direct | indirect | none
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -311,7 +328,10 @@ class AnswerClaim:
             "supporting_evidence": self.supporting_evidence,
             "conflicting_evidence": self.conflicting_evidence,
             "confidence": self.confidence,
-            "verification_status": self.verification_status.value
+            "verification_status": self.verification_status.value,
+            "claim_type": self.claim_type,
+            "verifiable": self.verifiable,
+            "support_type": self.support_type,
         }
 
 

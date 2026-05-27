@@ -3,12 +3,17 @@
 import asyncio
 import json
 import os
+import re
 import sys
+import tempfile
+import threading
+import time
+import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -16,6 +21,34 @@ from sse_starlette.sse import EventSourceResponse
 _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
+
+
+# --- Shared BM25 retriever (lazy loaded, thread-safe) ---
+_bm25_retriever = None
+_bm25_chunks = None
+_bm25_lock = threading.Lock()
+
+
+def _get_bm25():
+    """Lazy-load BM25 index from VeraBench corpus with thread safety."""
+    global _bm25_retriever, _bm25_chunks
+    if _bm25_retriever is not None:
+        return _bm25_retriever, _bm25_chunks
+
+    with _bm25_lock:
+        if _bm25_retriever is not None:
+            return _bm25_retriever, _bm25_chunks
+
+        corpus_path = os.path.join(_project_root, "data", "verabench", "corpus.jsonl")
+        if not os.path.exists(corpus_path):
+            return None, []
+
+        from src.ingestion.pipeline import IngestionPipeline
+        pipeline = IngestionPipeline(chunk_size=512, chunk_overlap=64, chunk_strategy="fixed")
+        chunks, retriever = pipeline.ingest_and_index(corpus_path, retriever_type="bm25")
+        _bm25_retriever = retriever
+        _bm25_chunks = {c.chunk_id: c for c in chunks}
+        return _bm25_retriever, _bm25_chunks
 
 
 class QueryRequest(BaseModel):
@@ -78,13 +111,18 @@ def create_router(templates, db, config):
     async def status():
         llm_cfg = db.get_llm_config()
         has_provider = bool(llm_cfg.get("provider"))
-        return JSONResponse({
-            "status": "running",
-            "config_loaded": config is not None,
-            "llm_provider": llm_cfg.get("provider", ""),
-            "llm_model": llm_cfg.get("model", ""),
-            "llm_configured": has_provider
-        })
+
+        # Build effective config (priority: Web DB > config yaml > defaults)
+        effective = {
+            "llm_provider": llm_cfg.get("provider") or (config or {}).get("llm", {}).get("provider", ""),
+            "llm_model": llm_cfg.get("model") or (config or {}).get("llm", {}).get("model", ""),
+            "llm_configured": has_provider or bool((config or {}).get("llm", {}).get("provider")),
+            "llm_base_url_set": bool(llm_cfg.get("base_url")),
+        }
+
+        effective["status"] = "running"
+        effective["config_loaded"] = config is not None
+        return JSONResponse(effective)
 
     @router.get("/api/config")
     async def get_config():
@@ -292,5 +330,274 @@ def create_router(templates, db, config):
             yield {"event": "saved", "data": json.dumps({"result_id": result_id})}
 
         return EventSourceResponse(demo_generator())
+
+    @router.post("/query/retrieval-demo")
+    async def retrieval_demo(request: DemoQueryRequest):
+        """Retrieval demo: real BM25 search + simulated pipeline stages."""
+        question = request.question
+        retriever, chunks_map = _get_bm25()
+
+        if retriever is None:
+            # Fallback to full demo if no corpus
+            return await demo_query(request)
+
+        # Real BM25 retrieval
+        raw_results = retriever.retrieve(question, top_k=5)
+        evidence_list = []
+        for i, r in enumerate(raw_results):
+            evidence_list.append({
+                "evidence_id": f"E{i+1}",
+                "source": r.metadata.get("source", "unknown"),
+                "title": r.title,
+                "text_span": r.content[:300],
+                "doc_id": r.doc_id,
+                "combined_score": round(r.score / max(r2.score for r2 in raw_results) * 0.9, 2) if raw_results else 0.5,
+                "credibility_score": 0.8,
+                "relevance_score": 0.8,
+            })
+
+        # Generate simulated claims from evidence
+        claims = []
+        for i, ev in enumerate(evidence_list[:3]):
+            text = ev["text_span"]
+            # Extract a sentence-like claim
+            sentences = re.split(r'[。.！!？?]', text)
+            claim_text = sentences[0].strip()[:60] if sentences else text[:60]
+            if claim_text:
+                claims.append({
+                    "claim": claim_text,
+                    "verification_status": "supported" if i < 2 else "not_enough_info",
+                    "confidence": round(0.7 + i * 0.05, 2),
+                    "supporting_evidence": [ev["evidence_id"]],
+                    "conflicting_evidence": [],
+                })
+
+        # Simulated answer
+        top_titles = [e["title"] for e in evidence_list[:3]]
+        answer_parts = [f"根据{len(evidence_list)}条证据的检索分析："]
+        for cl in claims:
+            answer_parts.append(cl["claim"] + "。")
+        demo_answer = "".join(answer_parts)
+
+        confidence = round(0.65 + len(evidence_list) * 0.03, 2)
+
+        # Detect potential conflicts
+        conflict_edges = []
+        sources = set()
+        for ev in evidence_list:
+            sources.add(ev["source"])
+        if len(sources) > 1 and len(evidence_list) >= 3:
+            conflict_edges.append({
+                "source_id": evidence_list[0]["evidence_id"],
+                "target_id": evidence_list[2]["evidence_id"],
+                "conflict_type": "source_disagreement",
+                "confidence": 0.5,
+                "rationale": "不同来源的信息可能存在差异",
+                "severity": "low",
+            })
+
+        # Build events
+        retrieval_events = [
+            ("stage", {"stage": "task_analysis", "status": "started"}),
+            ("task_analysis", {
+                "task_type": "fact_verification",
+                "complexity": "medium",
+                "keywords": re.findall(r'[一-鿿A-Za-z0-9]+', question)[:5],
+                "requires_retrieval": True,
+                "requires_conflict_check": len(evidence_list) > 2,
+                "estimated_hops": 1,
+            }),
+            ("stage", {"stage": "decomposition", "status": "started"}),
+            ("decomposition", {
+                "subquestions": [{"id": f"sq{i}", "question": f"关于「{question}」的{'核心事实' if i == 0 else '证据支持'}", "status": "pending", "coverage_score": 0.0} for i in range(2)]
+            }),
+            ("stage", {"stage": "retrieval", "round": 1, "total_rounds": 1, "status": "started"}),
+            ("evidence", {
+                "round": 1, "new_count": len(evidence_list), "total": len(evidence_list),
+                "evidence": evidence_list,
+            }),
+        ]
+
+        if conflict_edges:
+            retrieval_events.append(("conflict", {
+                "conflicts": len(conflict_edges), "conflict_score": 0.25,
+                "edges": conflict_edges,
+            }))
+
+        retrieval_events.extend([
+            ("uncertainty", {"action": "proceed", "confidence": confidence, "reason": "证据充足，可进行推理"}),
+            ("stage", {"stage": "reasoning", "status": "started"}),
+            ("reasoning", {
+                "answer": demo_answer,
+                "claims": claims,
+                "steps": [
+                    {"step": 1, "description": f"检索到{len(evidence_list)}条相关证据", "confidence": 0.85},
+                    {"step": 2, "description": "交叉验证证据一致性", "confidence": 0.78},
+                    {"step": 3, "description": "综合推理生成答案", "confidence": confidence},
+                ],
+            }),
+            ("stage", {"stage": "verification", "status": "started"}),
+            ("verification", {
+                "claim_verifications": [{"claim": c["claim"], "status": c["verification_status"]} for c in claims],
+                "overall_status": "supported",
+                "issues": [],
+                "missing_evidence_for": [],
+                "has_critical_issues": False,
+            }),
+            ("complete", {
+                "elapsed_time": 1.2,
+                "confidence": confidence,
+                "num_evidence": len(evidence_list),
+                "num_conflicts": len(conflict_edges),
+            }),
+        ])
+
+        # Save
+        result_id = db.save_query(
+            question=question,
+            answer=demo_answer,
+            confidence=confidence,
+            result_json={
+                "retrieval_demo": True,
+                "question": question,
+                "answer": demo_answer,
+                "answer_claims": claims,
+                "evidence": evidence_list,
+                "confidence": confidence,
+                "uncertainty": {
+                    "retrieval_uncertainty": 0.15,
+                    "evidence_conflict": 0.10 if conflict_edges else 0.05,
+                    "reasoning_gap": 0.20,
+                    "source_reliability": 0.10,
+                    "verification_uncertainty": 0.08,
+                    "overall_uncertainty": round(1 - confidence, 2),
+                },
+            },
+        )
+
+        async def retrieval_generator():
+            for event_type, data in retrieval_events:
+                await asyncio.sleep(0.3)
+                yield {"event": event_type, "data": json.dumps(data, ensure_ascii=False)}
+            yield {"event": "saved", "data": json.dumps({"result_id": result_id})}
+
+        return EventSourceResponse(retrieval_generator())
+
+    # --- File Upload ---
+
+    @router.post("/upload")
+    async def upload_file(request: Request):
+        """Upload a document (PDF/TXT/MD) and add to index."""
+        from fastapi import HTTPException
+
+        content_type = request.headers.get("content-type", "")
+        if "multipart/form-data" not in content_type:
+            raise HTTPException(400, "Expected multipart/form-data")
+
+        form = await request.form()
+        upload = form.get("file")
+        if not upload:
+            raise HTTPException(400, "No file provided")
+
+        filename = upload.filename or "unknown"
+        suffix = Path(filename).suffix.lower()
+
+        raw_bytes = await upload.read()
+        text = ""
+
+        if suffix == ".pdf":
+            try:
+                import fitz
+                doc = fitz.open(stream=raw_bytes, filetype="pdf")
+                text = "\n".join(page.get_text() for page in doc)
+                doc.close()
+            except ImportError:
+                raise HTTPException(500, "PyMuPDF not installed")
+            except Exception as e:
+                raise HTTPException(400, f"PDF parse error: {e}")
+        elif suffix in (".txt", ".md"):
+            text = raw_bytes.decode("utf-8", errors="replace")
+        else:
+            raise HTTPException(400, f"Unsupported file type: {suffix}")
+
+        if not text.strip():
+            raise HTTPException(400, "No text extracted from file")
+
+        # Ingest into BM25 index
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tmp:
+            tmp.write(text)
+            tmp_path = tmp.name
+
+        try:
+            from src.ingestion.pipeline import IngestionPipeline
+            ip = IngestionPipeline(chunk_size=512, chunk_overlap=64, chunk_strategy="fixed")
+            chunks, retriever = ip.ingest_and_index(tmp_path, retriever_type="bm25")
+
+            with _bm25_lock:
+                if _bm25_retriever is not None:
+                    # Merge: rebuild combined index
+                    existing_docs = [
+                        {"id": did, "text": _bm25_retriever.corpus.get(i, ""), "title": _bm25_retriever.doc_metadata.get(i, {}).get("title", "")}
+                        for i, did in enumerate(_bm25_retriever.doc_ids)
+                    ]
+                    new_docs = [{"id": c.chunk_id, "text": c.text, "title": filename} for c in chunks]
+                    all_docs = existing_docs + new_docs
+                    combined = IngestionPipeline(chunk_size=512, chunk_overlap=64, chunk_strategy="fixed")
+                    combined_chunks, combined_retriever = combined.ingest_and_index_from_docs(all_docs, retriever_type="bm25")
+                    _bm25_retriever = combined_retriever
+                    _bm25_chunks.update({c.chunk_id: c for c in combined_chunks})
+                else:
+                    _bm25_retriever = retriever
+                    _bm25_chunks = {c.chunk_id: c for c in chunks}
+        finally:
+            os.unlink(tmp_path)
+
+        return JSONResponse({
+            "status": "ok",
+            "filename": filename,
+            "chunks": len(chunks),
+            "chars": len(text),
+        })
+
+    # --- Export ---
+
+    @router.get("/history/{query_id}/export")
+    async def export_result(request: Request, query_id: str, format: str = "md"):
+        query = db.get_query(query_id)
+        if query is None:
+            return JSONResponse({"error": "查询不存在"}, status_code=404)
+
+        if format == "md":
+            result = query.get("result_json", {}) if isinstance(query.get("result_json"), dict) else {}
+            claims = result.get("answer_claims", [])
+            evidence = result.get("evidence", [])
+
+            md = f"# {query['question']}\n\n"
+            md += f"**置信度**: {query['confidence']:.0%}\n\n"
+            md += f"## 答案\n\n{query['answer']}\n\n"
+
+            if claims:
+                md += "## 声明验证\n\n"
+                for c in claims:
+                    status = c.get("verification_status", "?")
+                    icon = {"supported": "✅", "refuted": "❌", "not_enough_info": "⚠️"}.get(status, "○")
+                    md += f"- {icon} {c.get('claim', '')} (置信度: {c.get('confidence', 0):.2f})\n"
+                md += "\n"
+
+            if evidence:
+                md += "## 证据\n\n"
+                for e in evidence:
+                    md += f"- **{e.get('title', '')}** ({e.get('source', '')}) — 分数: {e.get('combined_score', 0):.2f}\n"
+                    if e.get('text_span'):
+                        md += f"  > {e['text_span'][:200]}\n"
+                md += "\n"
+
+            return Response(
+                content=md,
+                media_type="text/markdown",
+                headers={"Content-Disposition": f"attachment; filename=query_{query_id}.md"}
+            )
+
+        return JSONResponse({"error": "不支持的格式"}, status_code=400)
 
     return router

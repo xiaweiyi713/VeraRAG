@@ -83,7 +83,10 @@ Generate a JSON response with this structure:
             "claim": "Specific claim made in the answer",
             "supporting_evidence": ["E1", "E3"],
             "conflicting_evidence": ["E5"],
-            "confidence": 0.8
+            "confidence": 0.8,
+            "claim_type": "factual",
+            "verifiable": true,
+            "support_type": "direct"
         }}
     ],
     "reasoning_chain": [
@@ -103,6 +106,10 @@ Guidelines:
 4. Cite specific evidence for each claim
 5. Assign confidence scores based on evidence strength
 6. Include a clear reasoning chain
+7. For each answer_claim, classify:
+   - claim_type: "factual" (directly from evidence), "inference" (derived), or "prediction" (forward-looking)
+   - verifiable: true if the claim can be checked against evidence
+   - support_type: "direct" (evidence explicitly states it), "indirect" (requires inference), or "none" (unsupported)
 """
 
         response = self._call_llm(
@@ -121,7 +128,10 @@ Guidelines:
                     claim=c.get("claim", ""),
                     supporting_evidence=c.get("supporting_evidence", []),
                     conflicting_evidence=c.get("conflicting_evidence", []),
-                    confidence=c.get("confidence", 0.5)
+                    confidence=c.get("confidence", 0.5),
+                    claim_type=c.get("claim_type", "factual"),
+                    verifiable=c.get("verifiable", True),
+                    support_type=c.get("support_type", "none"),
                 )
                 for c in data.get("answer_claims", [])
             ]
