@@ -192,7 +192,7 @@ Output a JSON array of reasoning steps:
                 response_format="json"
             )
             data = json.loads(response)
-            return data.get("reasoning_plan", [])
+            return list(data.get("reasoning_plan", []))
         except Exception:
             # Fallback reasoning plan
             return [

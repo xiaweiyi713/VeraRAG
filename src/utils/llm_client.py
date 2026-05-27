@@ -101,7 +101,7 @@ class LLMClient:
                 kwargs["response_format"] = {"type": "json_object"}
 
             response = client.chat.completions.create(model=self.model, **kwargs)
-            return response.choices[0].message.content
+            return response.choices[0].message.content  # type: ignore[no-any-return]
 
         elif self.provider == "anthropic":
             messages = [{"role": "user", "content": prompt}]
@@ -115,7 +115,7 @@ class LLMClient:
                 kwargs["system"] = system_prompt
 
             response = client.messages.create(**kwargs)
-            return response.content[0].text
+            return response.content[0].text  # type: ignore[no-any-return]
 
         elif self.provider == "ollama":
             # Ollama API
@@ -132,7 +132,7 @@ class LLMClient:
 
             # Ollama returns a generator for chat
             response = client.chat(**kwargs)
-            return response["message"]["content"]
+            return response["message"]["content"]  # type: ignore[no-any-return]
 
         elif self.provider in ["dashscope", "zhipuai", "deepseek"]:
             # These use OpenAI-compatible API
@@ -148,7 +148,7 @@ class LLMClient:
                 kwargs["response_format"] = {"type": "json_object"}
 
             response = client.chat.completions.create(model=self.model, **kwargs)
-            return response.choices[0].message.content
+            return response.choices[0].message.content  # type: ignore[no-any-return]
 
         else:
             raise ValueError(f"Unknown provider: {self.provider}")

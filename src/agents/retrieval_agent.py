@@ -285,12 +285,13 @@ Output ONLY valid JSON, no other text."""
 
     def _result_to_evidence(self, result: RetrievalResult, evidence_id: str) -> Evidence:
         """Convert a RetrievalResult to an Evidence object."""
+        meta = result.metadata or {}
         return Evidence(
             evidence_id=evidence_id,
-            source=result.metadata.get("source", "unknown"),
+            source=meta.get("source", "unknown"),
             title=result.title,
             text_span=result.content,
-            url=result.metadata.get("url"),
+            url=meta.get("url"),
             relevance_score=min(1.0, result.score)  # Normalize score
         )
 

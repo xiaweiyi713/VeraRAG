@@ -115,7 +115,7 @@ class HybridRetriever(BaseRetriever):
         Returns:
             Dictionary mapping doc_id to combined score
         """
-        scores = {}
+        scores: dict[str, float] = {}
 
         for results, weight in zip(result_lists, weights):  # noqa: B905
             for rank, result in enumerate(results):
@@ -129,15 +129,15 @@ class HybridRetriever(BaseRetriever):
     def save_index(self, path: str) -> None:
         """Save both indexes to disk."""
         from pathlib import Path
-        path = Path(path)
+        save_dir = Path(path)
 
-        self.sparse_retriever.save_index(str(path / "sparse_index.pkl"))
-        self.dense_retriever.save_index(str(path / "dense_index.pkl"))
+        self.sparse_retriever.save_index(str(save_dir / "sparse_index.pkl"))
+        self.dense_retriever.save_index(str(save_dir / "dense_index.pkl"))
 
     def load_index(self, path: str) -> None:
         """Load both indexes from disk."""
         from pathlib import Path
-        path = Path(path)
+        load_dir = Path(path)
 
-        self.sparse_retriever.load_index(str(path / "sparse_index.pkl"))
-        self.dense_retriever.load_index(str(path / "dense_index.pkl"))
+        self.sparse_retriever.load_index(str(load_dir / "sparse_index.pkl"))
+        self.dense_retriever.load_index(str(load_dir / "dense_index.pkl"))

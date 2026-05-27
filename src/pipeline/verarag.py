@@ -138,7 +138,7 @@ class VeraRAG:
         """Convert retrieval result to evidence."""
         # Handle both RetrievalResult and Evidence types
         if hasattr(result, 'evidence_id'):
-            return result
+            return result  # type: ignore[no-any-return]
 
         import uuid
 
@@ -380,7 +380,7 @@ def create_verarag(config_path: str | None = None) -> VeraRAG:
     config = None
 
     if config_path:
-        import yaml
+        import yaml  # type: ignore[import-untyped]
         with open(config_path) as f:
             config = yaml.safe_load(f)
 

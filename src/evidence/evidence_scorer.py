@@ -66,7 +66,7 @@ class EvidenceScorer:
             conflict * self.weights["conflict"]
         )
 
-        return max(0.0, min(1.0, composite))
+        return float(max(0.0, min(1.0, composite)))
 
     def _calculate_support_score(
         self,
@@ -94,13 +94,13 @@ class EvidenceScorer:
         conflict_graph: EvidenceConflictGraph
     ) -> float:
         """Calculate penalty based on conflicts."""
-        conflict_count = 0
+        conflict_count = 0.0
         total_count = 0
 
         for edge in conflict_graph.get_conflicts():
             if edge.source_id in [c.claim_id for c in evidence.claims]:
                 total_count += 1
-                conflict_count += 1 * edge.confidence
+                conflict_count += 1.0 * edge.confidence
 
         if total_count == 0:
             return 0.0

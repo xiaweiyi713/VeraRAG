@@ -1,5 +1,7 @@
 """Reranker for improving retrieval results in VeraRAG."""
 
+from typing import Any
+
 import numpy as np
 
 from .base import RetrievalResult
@@ -24,7 +26,7 @@ class Reranker:
         self.device = device
         self.batch_size = batch_size
         self.top_k = top_k
-        self.model = None
+        self.model: Any = None
 
     def _load_model(self):
         """Lazy load the model."""
@@ -165,10 +167,10 @@ class EvidenceAwareReranker(Reranker):
             norm_relevance = float(1 / (1 + np.exp(-relevance)))
 
             # Get credibility score from metadata
-            credibility = result.metadata.get('credibility_score', 0.5)
+            credibility = (result.metadata or {}).get('credibility_score', 0.5)
 
             # Get recency score (could be based on date)
-            recency = result.metadata.get('recency_score', 0.5)
+            recency = (result.metadata or {}).get('recency_score', 0.5)
 
             # Combine scores
             combined = (

@@ -127,8 +127,8 @@ class BM25Retriever(BaseRetriever):
 
     def save_index(self, path: str) -> None:
         """Save BM25 index to disk."""
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        save_path = Path(path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
 
         data = {
             'corpus': self.corpus,
@@ -139,7 +139,7 @@ class BM25Retriever(BaseRetriever):
             'epsilon': self.epsilon
         }
 
-        with open(path, 'wb') as f:
+        with open(save_path, 'wb') as f:
             pickle.dump(data, f)
 
     def load_index(self, path: str) -> None:

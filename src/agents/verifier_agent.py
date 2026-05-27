@@ -33,7 +33,7 @@ class VerifierAgent(BaseAgent):
     ):
         super().__init__(config, llm_client)
         self.use_nli = use_nli
-        self.nli_model = None
+        self.nli_model: Any = None
         self.system_prompt = """You are a fact-checking expert.
 Your job is to verify claims against evidence with high precision.
 Output ONLY valid JSON, no other text."""
@@ -269,7 +269,7 @@ Output JSON:
                     "conflict_type": conflict.conflict_type.value,
                     "source_id": conflict.source_id,
                     "target_id": conflict.target_id,
-                    "confidence": conflict.conflict
+                    "confidence": conflict.confidence
                 })
 
         return ignored

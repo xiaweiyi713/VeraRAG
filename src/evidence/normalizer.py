@@ -54,10 +54,11 @@ class EvidenceNormalizer:
     ) -> Evidence | None:
         """Normalize a single retrieval result."""
         # Extract metadata
-        source = result.metadata.get("source", "unknown")
-        date = result.metadata.get("date")
-        author = result.metadata.get("author")
-        url = result.metadata.get("url")
+        meta = result.metadata or {}
+        source = meta.get("source", "unknown")
+        date = meta.get("date")
+        author = meta.get("author")
+        url = meta.get("url")
 
         # Create evidence object
         evidence = Evidence(
@@ -77,7 +78,7 @@ class EvidenceNormalizer:
 
     def _estimate_credibility(self, result: RetrievalResult) -> float:
         """Estimate credibility score based on source."""
-        source = result.metadata.get("source", "").lower()
+        source = (result.metadata or {}).get("source", "").lower()
 
         # Known high-credibility sources
         high_sources = {
@@ -194,7 +195,7 @@ class EvidenceNormalizer:
 
         # Greedy dedup: keep item if not similar to any already-kept item
         kept = []
-        kept_indices = []
+        kept_indices: list[int] = []
 
         for i, ev in enumerate(sorted_ev):
             is_duplicate = False

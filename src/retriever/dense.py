@@ -28,7 +28,7 @@ class DenseRetriever(BaseRetriever):
         self.model_name = model_name
         self.device = device
         self.batch_size = batch_size
-        self.model = None
+        self.model: Any = None
         self.embeddings: np.ndarray | None = None
         self.doc_ids: list[str] = []
         self.doc_texts: list[str] = []
@@ -52,7 +52,7 @@ class DenseRetriever(BaseRetriever):
             show_progress_bar=False,
             convert_to_numpy=True
         )
-        return embeddings
+        return embeddings  # type: ignore[no-any-return]
 
     def index_documents(self, documents: list[dict[str, Any]]) -> None:
         """
@@ -110,11 +110,11 @@ class DenseRetriever(BaseRetriever):
 
         # Get L2 norms for normalization
         doc_norms = np.linalg.norm(self.embeddings, axis=1)
-        query_norm = np.linalg.norm(query_embedding)
+        query_norm_raw = np.linalg.norm(query_embedding)
 
         # Handle zero norms
         doc_norms = np.where(doc_norms == 0, 1, doc_norms)
-        query_norm = query_norm if query_norm > 0 else 1
+        query_norm = float(query_norm_raw) if query_norm_raw > 0 else 1.0
 
         # Cosine similarity
         scores = scores / (doc_norms * query_norm)
@@ -137,8 +137,8 @@ class DenseRetriever(BaseRetriever):
 
     def save_index(self, path: str) -> None:
         """Save dense index to disk."""
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        save_path = Path(path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
 
         data = {
             'embeddings': self.embeddings,
@@ -148,7 +148,7 @@ class DenseRetriever(BaseRetriever):
             'model_name': self.model_name
         }
 
-        with open(path, 'wb') as f:
+        with open(save_path, 'wb') as f:
             pickle.dump(data, f)
 
     def load_index(self, path: str) -> None:
@@ -170,12 +170,13 @@ class FAISSRetriever(DenseRetriever):
 
     def __init__(self, config: dict[str, Any] | None = None, **kwargs):
         super().__init__(config, **kwargs)
-        self.faiss_index = None
+        self.faiss_index: Any = None
 
     def _build_faiss_index(self) -> None:
         """Build FAISS index from embeddings."""
         import faiss
 
+        assert self.embeddings is not None
         dimension = self.embeddings.shape[1]
         # Use Inner Product (IP) for cosine similarity with normalized vectors
         self.faiss_index = faiss.IndexFlatIP(dimension)

@@ -30,7 +30,7 @@ class BaseAgent(ABC):
         if self.llm_client is None:
             raise ValueError("LLM client not configured")
 
-        return self.llm_client.generate(
+        return self.llm_client.generate(  # type: ignore[no-any-return]
             prompt=prompt,
             system_prompt=system_prompt,
             **kwargs
@@ -106,7 +106,7 @@ class LLMClient:
                 kwargs["response_format"] = {"type": "json_object"}
 
             response = client.chat.completions.create(model=self.model, **kwargs)
-            return response.choices[0].message.content
+            return response.choices[0].message.content  # type: ignore[no-any-return]
 
         elif self.provider == "anthropic":
             messages = [{"role": "user", "content": prompt}]
@@ -120,7 +120,7 @@ class LLMClient:
                 kwargs["system"] = system_prompt
 
             response = client.messages.create(**kwargs)
-            return response.content[0].text
+            return response.content[0].text  # type: ignore[no-any-return]
 
         elif self.provider == "ollama":
             kwargs = {"model": self.model, "prompt": prompt}
@@ -130,7 +130,7 @@ class LLMClient:
                 kwargs["num_predict"] = max_tokens
 
             response = client.generate(**kwargs)
-            return response["response"]
+            return response["response"]  # type: ignore[no-any-return]
 
         else:
             raise ValueError(f"Unknown provider: {self.provider}")

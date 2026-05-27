@@ -12,7 +12,7 @@ class RetrievalResult:
     content: str
     title: str = ""
     score: float = 0.0
-    metadata: dict[str, Any] = None
+    metadata: dict[str, Any] | None = None
 
     def __post_init__(self):
         if self.metadata is None:

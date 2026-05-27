@@ -392,9 +392,9 @@ class VeraRAGOutput:
     evidence: list[Evidence]
     reasoning_chain: list[ReasoningStep]
     conflict_report: dict[str, Any]
-    verification_report: VerificationReport
-    confidence: float
-    uncertainty: UncertaintyBreakdown
+    verification_report: VerificationReport | None = None
+    confidence: float = 0.0
+    uncertainty: UncertaintyBreakdown = field(default_factory=UncertaintyBreakdown)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -405,7 +405,7 @@ class VeraRAGOutput:
             "evidence": [e.to_dict() for e in self.evidence],
             "reasoning_chain": [r.to_dict() for r in self.reasoning_chain],
             "conflict_report": self.conflict_report,
-            "verification_report": self.verification_report.to_dict(),
+            "verification_report": self.verification_report.to_dict() if self.verification_report else None,
             "confidence": self.confidence,
             "uncertainty": self.uncertainty.to_dict(),
             "metadata": self.metadata
