@@ -7,7 +7,7 @@
 <div class="mb-8">
     <form id="query-form" class="relative">
         <div class="glass rounded-2xl p-1.5">
-            <div class="flex items-end gap-3 p-3">
+            <div class="flex flex-col sm:flex-row sm:items-end gap-3 p-3">
                 <textarea
                     id="question-input"
                     rows="2"
@@ -18,7 +18,7 @@
                 <button
                     type="submit"
                     id="submit-btn"
-                    class="px-6 py-2.5 bg-gradient-to-r from-violet-600 to-emerald-600 hover:from-violet-500 hover:to-emerald-500 text-white rounded-xl font-medium text-sm transition-all whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+                    class="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-violet-600 to-emerald-600 hover:from-violet-500 hover:to-emerald-500 text-white rounded-xl font-medium text-sm transition-all whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                     开始推理
                 </button>
@@ -43,7 +43,7 @@
 
 <!-- Pipeline Progress (hidden until query starts) -->
 <div id="pipeline-panel" class="hidden mb-8 fade-in">
-    <div class="glass rounded-2xl p-6">
+    <div class="glass rounded-2xl p-4 sm:p-6">
         <h3 class="text-sm font-medium text-gray-400 mb-4">推理过程</h3>
         <div id="stages-container" class="space-y-3">
         </div>
@@ -53,8 +53,8 @@
 <!-- Result (hidden until complete) -->
 <div id="result-panel" class="hidden fade-in">
     <!-- Answer -->
-    <div class="glass rounded-2xl p-6 mb-4">
-        <div class="flex items-center justify-between mb-4">
+    <div class="glass rounded-2xl p-4 sm:p-6 mb-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
             <h3 class="text-sm font-medium text-gray-400">推理结果</h3>
             <div class="flex items-center gap-3">
                 <span id="confidence-label" class="text-xs text-gray-500"></span>
@@ -68,19 +68,19 @@
 
     <!-- Tabs -->
     <div class="glass rounded-2xl overflow-hidden">
-        <div class="flex border-b [border-color:var(--border-color)]">
+        <div class="flex border-b [border-color:var(--border-color)] overflow-x-auto flex-nowrap" style="-webkit-overflow-scrolling: touch;">
             <button class="tab-btn active px-5 py-3 text-sm font-medium transition" data-tab="evidence">证据</button>
             <button class="tab-btn px-5 py-3 text-sm font-medium text-gray-500 transition" data-tab="claims">声明验证</button>
             <button class="tab-btn px-5 py-3 text-sm font-medium text-gray-500 transition" data-tab="uncertainty">不确定性</button>
         </div>
 
-        <div id="tab-evidence" class="tab-content p-5">
+        <div id="tab-evidence" class="tab-content p-4 sm:p-5">
             <div id="evidence-list" class="space-y-3"></div>
         </div>
-        <div id="tab-claims" class="tab-content p-5 hidden">
+        <div id="tab-claims" class="tab-content p-4 sm:p-5 hidden">
             <div id="claims-list" class="space-y-3"></div>
         </div>
-        <div id="tab-uncertainty" class="tab-content p-5 hidden">
+        <div id="tab-uncertainty" class="tab-content p-4 sm:p-5 hidden">
             <div id="uncertainty-detail"></div>
         </div>
     </div>
@@ -88,7 +88,7 @@
 
 <!-- Error -->
 <div id="error-panel" class="hidden">
-    <div class="glass rounded-2xl p-6 border-red-500/20">
+    <div class="glass rounded-2xl p-4 sm:p-6 border-red-500/20">
         <p class="text-red-400 text-sm" id="error-text"></p>
     </div>
 </div>

@@ -79,13 +79,13 @@
 <body class="min-h-screen">
     <!-- Nav -->
     <nav class="border-b [border-color:var(--border-color)]">
-        <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
             <a href="/" class="flex items-center gap-2">
                 <span class="text-lg font-semibold gradient-text">VeraRAG</span>
                 <span class="text-xs text-gray-500 hidden sm:inline">Verifiable Agentic RAG</span>
             </a>
             <div class="flex items-center gap-4">
-                <span id="llm-status" class="text-xs text-gray-500 flex items-center gap-1.5">
+                <span id="llm-status" class="text-xs text-gray-500 items-center gap-1.5 hidden sm:flex">
                     <span class="w-1.5 h-1.5 rounded-full bg-gray-600 inline-block"></span>
                     检测中...
                 </span>
@@ -93,17 +93,17 @@
                     <span id="theme-icon">🌙</span>
                 </button>
                 <button id="settings-btn" class="text-sm text-gray-400 hover:text-gray-200 transition px-3 py-1.5 rounded-lg hover:bg-white/5">
-                    设置
+                    <span class="hidden sm:inline">设置</span><span class="sm:hidden">⚙️</span>
                 </button>
                 <a href="/history" class="text-sm text-gray-400 hover:text-gray-200 transition px-3 py-1.5 rounded-lg hover:bg-white/5">
-                    历史记录
+                    <span class="hidden sm:inline">历史记录</span><span class="sm:hidden">📋</span>
                 </a>
             </div>
         </div>
     </nav>
 
     <!-- Main -->
-    <main class="max-w-5xl mx-auto px-6 py-8">
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {% block content %}{% endblock %}
     </main>
 
