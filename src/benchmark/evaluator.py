@@ -1,22 +1,21 @@
 """VeraBench evaluator: runs pipeline on benchmark and computes metrics."""
 
-import json
 import logging
 import sys
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Callable
+from typing import Any
 
 # Ensure src is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from src.evaluation.answer_metrics import AnswerMetrics
 from src.evaluation.evidence_metrics import EvidenceMetrics
-from src.evidence.conflict_graph import ConflictType
 
-from .loader import VeraBench, BenchmarkQuestion, load_verabench
+from .loader import BenchmarkQuestion, VeraBench, load_verabench
 
 logger = logging.getLogger("verabench")
 
@@ -42,7 +41,7 @@ class QuestionResult:
     claims_refuted: int = 0
     claims_nei: int = 0
     difficulty: str = "medium"
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -58,11 +57,11 @@ class BenchmarkReport:
     behavior_accuracy: float = 0.0
     avg_confidence: float = 0.0
     avg_latency: float = 0.0
-    by_type: Dict[str, Dict[str, float]] = field(default_factory=dict)
-    by_difficulty: Dict[str, Dict[str, float]] = field(default_factory=dict)
-    results: List[QuestionResult] = field(default_factory=list)
+    by_type: dict[str, dict[str, float]] = field(default_factory=dict)
+    by_difficulty: dict[str, dict[str, float]] = field(default_factory=dict)
+    results: list[QuestionResult] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "total_questions": self.total_questions,
             "completed": self.completed,
@@ -83,9 +82,9 @@ class BenchmarkReport:
 class VeraBenchEvaluator:
     def __init__(
         self,
-        benchmark: Optional[VeraBench] = None,
-        data_dir: Optional[str] = None,
-        pipeline_factory: Optional[Callable] = None,
+        benchmark: VeraBench | None = None,
+        data_dir: str | None = None,
+        pipeline_factory: Callable | None = None,
     ):
         if benchmark:
             self.benchmark = benchmark
@@ -96,9 +95,9 @@ class VeraBenchEvaluator:
 
     def evaluate(
         self,
-        question_types: Optional[List[str]] = None,
-        max_questions: Optional[int] = None,
-        callback: Optional[Callable] = None,
+        question_types: list[str] | None = None,
+        max_questions: int | None = None,
+        callback: Callable | None = None,
     ) -> BenchmarkReport:
         questions = self.benchmark.questions
         if question_types:
@@ -106,7 +105,7 @@ class VeraBenchEvaluator:
         if max_questions:
             questions = questions[:max_questions]
 
-        results: List[QuestionResult] = []
+        results: list[QuestionResult] = []
         for i, q in enumerate(questions):
             if callback:
                 callback(i, len(questions), q)
@@ -118,9 +117,9 @@ class VeraBenchEvaluator:
     def evaluate_baseline(self, answer_fn: Callable[[str], str], **kwargs) -> BenchmarkReport:
         """Evaluate a baseline function (takes question, returns answer)."""
         questions = self.benchmark.questions
-        if "question_types" in kwargs and kwargs["question_types"]:
+        if kwargs.get("question_types"):
             questions = [q for q in questions if q.type in kwargs["question_types"]]
-        if "max_questions" in kwargs and kwargs["max_questions"]:
+        if kwargs.get("max_questions"):
             questions = questions[:kwargs["max_questions"]]
 
         results = []
@@ -167,7 +166,7 @@ class VeraBenchEvaluator:
         em = AnswerMetrics.exact_match(answer, q.ground_truth_answer)
         f1 = AnswerMetrics.f1_score(answer, q.ground_truth_answer)
 
-        predicted_evidence_ids = []
+        predicted_evidence_ids: list[str] = []
         gold_evidence_ids = [e.evidence_id for e in q.evidence]
         ep = EvidenceMetrics.evidence_precision(predicted_evidence_ids, gold_evidence_ids)
         er = EvidenceMetrics.evidence_recall(predicted_evidence_ids, gold_evidence_ids)
@@ -276,7 +275,7 @@ class VeraBenchEvaluator:
 
         return "answer_with_citation"
 
-    def _build_report(self, results: List[QuestionResult]) -> BenchmarkReport:
+    def _build_report(self, results: list[QuestionResult]) -> BenchmarkReport:
         if not results:
             return BenchmarkReport()
 
