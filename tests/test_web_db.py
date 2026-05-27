@@ -82,6 +82,23 @@ class TestDatabase(unittest.TestCase):
         result = self.db.get_query(query_id)
         self.assertIsNone(result)
 
+    def test_api_key_encryption(self):
+        """API keys should be stored encrypted in SQLite."""
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db = Database(os.path.join(tmpdir, "test.db"))
+            db.set_llm_config("openai", "gpt-4o", "sk-test-secret-key-12345")
+
+            conn = sqlite3.connect(db.db_path)
+            row = conn.execute("SELECT value FROM config WHERE key = 'llm_config'").fetchone()
+            conn.close()
+            raw_value = row[0]
+            assert "sk-test-secret-key-12345" not in raw_value
+
+            cfg = db.get_llm_config()
+            assert cfg["api_key"] == "sk-test-secret-key-12345"
+
 
 if __name__ == "__main__":
     unittest.main()

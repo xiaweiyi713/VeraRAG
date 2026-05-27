@@ -3,7 +3,46 @@
 import json
 import sqlite3
 import uuid
+from pathlib import Path
 from typing import Any
+
+
+class CryptoEngine:
+    """Fernet-based encryption for sensitive config values."""
+
+    def __init__(self, key_path: str = ".verarag_key"):
+        self.key_path = key_path
+        self._fernet = None
+
+    def _get_or_create_key(self) -> bytes:
+        path = Path(self.key_path)
+        if path.exists():
+            return path.read_bytes().strip()
+        from cryptography.fernet import Fernet
+        key = Fernet.generate_key()
+        path.write_bytes(key)
+        return key
+
+    @property
+    def fernet(self):
+        if self._fernet is None:
+            from cryptography.fernet import Fernet
+            key = self._get_or_create_key()
+            self._fernet = Fernet(key)
+        return self._fernet
+
+    def encrypt(self, plaintext: str) -> str:
+        if not plaintext:
+            return ""
+        return self.fernet.encrypt(plaintext.encode()).decode()
+
+    def decrypt(self, ciphertext: str) -> str:
+        if not ciphertext:
+            return ""
+        try:
+            return self.fernet.decrypt(ciphertext.encode()).decode()
+        except Exception:
+            return ciphertext
 
 
 class Database:
@@ -11,6 +50,7 @@ class Database:
 
     def __init__(self, db_path: str = "data/verarag.db"):
         self.db_path = db_path
+        self.crypto = CryptoEngine()
         self._init_db()
 
     def _init_db(self):
@@ -133,18 +173,21 @@ class Database:
 
     def get_llm_config(self) -> dict[str, Any]:
         """Get the full LLM configuration."""
-        return self.get_config("llm_config", {
+        cfg = self.get_config("llm_config", {
             "provider": "",
             "model": "",
             "api_key": "",
             "base_url": ""
         })
+        if cfg.get("api_key"):
+            cfg["api_key"] = self.crypto.decrypt(cfg["api_key"])
+        return cfg
 
     def set_llm_config(self, provider: str, model: str, api_key: str, base_url: str = "") -> None:
         """Save LLM configuration."""
         self.set_config("llm_config", {
             "provider": provider,
             "model": model,
-            "api_key": api_key,
+            "api_key": self.crypto.encrypt(api_key) if api_key else "",
             "base_url": base_url
         })

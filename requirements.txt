@@ -21,6 +21,7 @@ nltk>=3.8.0
 
 # Configuration
 pyyaml>=6.0
+cryptography>=42.0.0
 
 # Evaluation
 tqdm>=4.65.0
