@@ -24,6 +24,20 @@ let currentEventData = {
     resultId: null
 };
 
+// Network status monitoring
+const networkBanner = document.createElement('div');
+networkBanner.id = 'network-banner';
+networkBanner.className = 'fixed top-0 left-0 right-0 bg-red-500/90 text-white text-center text-sm py-2 z-50 hidden';
+networkBanner.textContent = '网络连接已断开，请检查网络';
+document.body.appendChild(networkBanner);
+
+window.addEventListener('offline', () => {
+    networkBanner.classList.remove('hidden');
+});
+window.addEventListener('online', () => {
+    networkBanner.classList.add('hidden');
+});
+
 // DOM refs (only exist on the index page)
 const queryForm = document.getElementById('query-form');
 const questionInput = document.getElementById('question-input');
@@ -206,7 +220,8 @@ queryForm.addEventListener('submit', async (e) => {
             ? { question }
             : { question, max_rounds: 5 };
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 120000);
+        const TIMEOUT_MS = parseInt(localStorage.getItem('verarag-timeout') || '120000');
+        const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -253,7 +268,13 @@ queryForm.addEventListener('submit', async (e) => {
     } catch (err) {
         if (errorPanel) {
             errorPanel.classList.remove('hidden');
-            errorText.textContent = err.name === 'AbortError' ? '请求超时，请重试' : '连接失败: ' + err.message;
+            if (err.name === 'AbortError') {
+                errorText.textContent = '请求超时，请重试';
+            } else if (!navigator.onLine) {
+                errorText.textContent = '网络连接已断开，请恢复网络后重试';
+            } else {
+                errorText.textContent = '连接失败: ' + err.message;
+            }
         }
     } finally {
         submitBtn.disabled = false;
@@ -263,6 +284,9 @@ queryForm.addEventListener('submit', async (e) => {
 
 function handleEvent(eventType, data) {
     switch (eventType) {
+        case 'ping':
+            break;
+
         case 'stage':
             if (data.status === 'started') {
                 setStageActive(data.stage);

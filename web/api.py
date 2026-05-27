@@ -200,11 +200,11 @@ def create_router(templates, db, config):
                 while True:
                     try:
                         event_type, data = await asyncio.wait_for(
-                            event_queue.get(), timeout=300.0
+                            event_queue.get(), timeout=15.0
                         )
                     except asyncio.TimeoutError:
-                        yield {"event": "error", "data": json.dumps({"error": "timeout"})}
-                        break
+                        yield {"event": "ping", "data": "{}"}
+                        continue
 
                     if event_type == "_done":
                         break
@@ -214,8 +214,7 @@ def create_router(templates, db, config):
                         "data": json.dumps(data, ensure_ascii=False)
                     }
             finally:
-                # Ensure the background task is done before we exit
-                try:  # noqa: SIM105
+                try:
                     await asyncio.wait_for(future, timeout=5.0)
                 except (asyncio.TimeoutError, Exception):
                     pass
