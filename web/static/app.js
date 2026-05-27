@@ -373,3 +373,53 @@ if (isIndexPage) {
         questionInput.style.height = Math.min(questionInput.scrollHeight, 120) + 'px';
     });
 }
+
+// File upload
+const uploadArea = document.getElementById('upload-area');
+const fileInput = document.getElementById('file-input');
+const uploadProgress = document.getElementById('upload-progress');
+const uploadBar = document.getElementById('upload-bar');
+const uploadStatus = document.getElementById('upload-status');
+
+if (uploadArea) {
+    uploadArea.addEventListener('click', () => fileInput.click());
+    uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.classList.add('border-violet-500/30'); });
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('border-violet-500/30'));
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('border-violet-500/30');
+        if (e.dataTransfer.files.length) handleUpload(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => { if (fileInput.files.length) handleUpload(fileInput.files[0]); });
+}
+
+function handleUpload(file) {
+    const suffix = '.' + file.name.split('.').pop().toLowerCase();
+    if (!['.pdf', '.txt', '.md'].includes(suffix)) {
+        alert('仅支持 PDF、TXT、MD 文件');
+        return;
+    }
+    uploadProgress.classList.remove('hidden');
+    uploadBar.style.width = '0%';
+    uploadStatus.textContent = `上传中: ${file.name}`;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/upload');
+    xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) uploadBar.style.width = (e.loaded / e.total * 100) + '%';
+    };
+    xhr.onload = () => {
+        if (xhr.status === 200) {
+            const data = JSON.parse(xhr.responseText);
+            uploadStatus.textContent = `已导入: ${data.chunks} 个片段，${data.chars} 字符`;
+            uploadBar.style.width = '100%';
+        } else {
+            uploadStatus.textContent = '上传失败: ' + xhr.statusText;
+        }
+    };
+    xhr.onerror = () => { uploadStatus.textContent = '上传失败'; };
+    xhr.send(formData);
+}

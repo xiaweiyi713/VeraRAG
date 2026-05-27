@@ -4,11 +4,13 @@ import asyncio
 import json
 import os
 import sys
+import tempfile
 import threading
+import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
@@ -330,5 +332,85 @@ def create_router(templates, db, config):
             yield {"event": "saved", "data": json.dumps({"result_id": result_id})}
 
         return EventSourceResponse(demo_generator())
+
+    # --- File upload endpoint ---
+
+    @router.post("/upload")
+    async def upload_file(file: UploadFile = File(...)):
+        """Upload PDF/TXT/MD, extract text, chunk and merge into BM25 index."""
+        filename = file.filename or "unknown"
+        suffix = Path(filename).suffix.lower()
+
+        if suffix not in (".pdf", ".txt", ".md"):
+            raise HTTPException(status_code=400, detail="仅支持 PDF、TXT、MD 文件")
+
+        raw_bytes = await file.read()
+
+        # Extract text
+        try:
+            if suffix == ".pdf":
+                import fitz
+                doc = fitz.open(stream=raw_bytes, filetype="pdf")
+                text = "\n".join(page.get_text() for page in doc)
+                doc.close()
+            else:
+                text = raw_bytes.decode("utf-8", errors="replace")
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"文件解析失败: {e}")
+
+        if not text.strip():
+            raise HTTPException(status_code=422, detail="文件内容为空")
+
+        # Chunk text (~500 chars per chunk, overlap 50)
+        chunk_size = 500
+        overlap = 50
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = start + chunk_size
+            chunk_text = text[start:end].strip()
+            if chunk_text:
+                chunks.append(chunk_text)
+            start += chunk_size - overlap
+
+        # Build new documents
+        new_docs = []
+        for i, chunk in enumerate(chunks):
+            new_docs.append({
+                "id": f"upload-{uuid.uuid4().hex[:8]}-{i}",
+                "text": chunk,
+                "title": filename,
+                "source": "upload",
+            })
+
+        # Merge into global BM25 index with thread safety
+        with _bm25_lock:
+            # Load existing if not yet loaded
+            existing_retriever, existing_chunks = _get_bm25()
+
+            from src.retriever.bm25 import BM25Retriever
+
+            if existing_retriever is not None:
+                # Rebuild with combined documents
+                combined_docs = list(existing_chunks.values()) + new_docs
+                new_retriever = BM25Retriever()
+                new_retriever.index_documents(combined_docs)
+
+                global _bm25_retriever, _bm25_chunks
+                _bm25_retriever = new_retriever
+                _bm25_chunks = {doc.get("id", str(i)): doc for i, doc in enumerate(combined_docs)}
+            else:
+                # No existing index — build from uploaded docs only
+                new_retriever = BM25Retriever()
+                new_retriever.index_documents(new_docs)
+
+                _bm25_retriever = new_retriever
+                _bm25_chunks = {doc.get("id", str(i)): doc for i, doc in enumerate(new_docs)}
+
+        return JSONResponse({
+            "filename": filename,
+            "chunks": len(new_docs),
+            "chars": len(text),
+        })
 
     return router
