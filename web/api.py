@@ -10,8 +10,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Request, UploadFile, File, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter, Request, UploadFile, File, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -412,5 +412,118 @@ def create_router(templates, db, config):
             "chunks": len(new_docs),
             "chars": len(text),
         })
+
+    # --- Export endpoint ---
+
+    @router.get("/history/{query_id}/export")
+    async def export_result(request: Request, query_id: str, format: str = "md"):
+        query = db.get_query(query_id)
+        if query is None:
+            return JSONResponse({"error": "查询不存在"}, status_code=404)
+
+        if format == "pdf":
+            return JSONResponse({"error": "PDF 导出暂不支持"}, status_code=501)
+
+        if format == "md":
+            result = query.get("result_json", {}) if isinstance(query.get("result_json"), dict) else {}
+            claims = result.get("answer_claims", [])
+            evidence = result.get("evidence", [])
+
+            md = f"# {query['question']}\n\n"
+            md += f"**置信度**: {query['confidence']:.0%}\n\n"
+            md += f"## 答案\n\n{query['answer']}\n\n"
+
+            if claims:
+                md += "## 声明验证\n\n"
+                for c in claims:
+                    status = c.get("verification_status", "?")
+                    icon = {"supported": "✅", "refuted": "❌", "not_enough_info": "⚠️"}.get(status, "○")
+                    md += f"- {icon} {c.get('claim', '')} (置信度: {c.get('confidence', 0):.2f})\n"
+                md += "\n"
+
+            if evidence:
+                md += "## 证据\n\n"
+                for e in evidence:
+                    md += f"- **{e.get('title', '')}** ({e.get('source', '')}) — 分数: {e.get('combined_score', 0):.2f}\n"
+                    if e.get('text_span'):
+                        md += f"  > {e['text_span'][:200]}\n"
+                md += "\n"
+
+            return Response(
+                content=md,
+                media_type="text/markdown; charset=utf-8",
+                headers={"Content-Disposition": f"attachment; filename=query_{query_id}.md"}
+            )
+
+        return JSONResponse({"error": "不支持的格式"}, status_code=400)
+
+    # --- WebSocket query endpoint ---
+
+    @router.websocket("/ws/query")
+    async def ws_query(websocket: WebSocket):
+        await websocket.accept()
+        try:
+            while True:
+                data = await websocket.receive_json()
+                question = data.get("question", "").strip()
+                if not question:
+                    await websocket.send_json({"event": "error", "data": {"error": "问题不能为空"}})
+                    continue
+
+                VeraRAG = _import_verarag()
+                pipeline_config = json.loads(json.dumps(config or {}))
+                llm_cfg = db.get_llm_config()
+                if llm_cfg.get("provider"):
+                    pipeline_config.setdefault("llm", {})
+                    pipeline_config["llm"]["provider"] = llm_cfg["provider"]
+                    if llm_cfg.get("model"):
+                        pipeline_config["llm"]["model"] = llm_cfg["model"]
+                    if llm_cfg.get("api_key"):
+                        pipeline_config["llm"]["api_key"] = llm_cfg["api_key"]
+
+                event_queue = asyncio.Queue()
+                loop_ref = asyncio.get_event_loop()
+
+                def callback(event_type: str, d: dict):
+                    loop_ref.call_soon_threadsafe(event_queue.put_nowait, (event_type, d))
+
+                def run_pipeline():
+                    try:
+                        pipeline = VeraRAG(pipeline_config)
+                        output = pipeline.query_stream(
+                            question=question, max_rounds=5, callback=callback
+                        )
+                        query_id = db.save_query(
+                            question=output.question, answer=output.answer,
+                            confidence=output.confidence, result_json=output.to_dict()
+                        )
+                        event_queue.put_nowait(("saved", {"result_id": query_id}))
+                    except Exception as e:
+                        event_queue.put_nowait(("error", {"error": str(e)}))
+                    finally:
+                        event_queue.put_nowait(("_done", {}))
+
+                future = loop_ref.run_in_executor(None, run_pipeline)
+
+                try:
+                    while True:
+                        try:
+                            event_type, edata = await asyncio.wait_for(
+                                event_queue.get(), timeout=300.0
+                            )
+                        except asyncio.TimeoutError:
+                            await websocket.send_json({"event": "error", "data": {"error": "timeout"}})
+                            break
+                        if event_type == "_done":
+                            break
+                        await websocket.send_json({"event": event_type, "data": edata})
+                finally:
+                    try:
+                        await asyncio.wait_for(future, timeout=5.0)
+                    except (asyncio.TimeoutError, Exception):
+                        pass
+
+        except WebSocketDisconnect:
+            pass
 
     return router

@@ -13,7 +13,12 @@
 
 <!-- Back + Question -->
 <div class="mb-6">
-    <a href="/history" class="text-sm text-gray-500 hover:text-gray-300 transition">&larr; 返回列表</a>
+    <div class="flex flex-wrap items-center gap-3">
+        <a href="/history" class="text-sm text-gray-500 hover:text-gray-300 transition">&larr; 返回列表</a>
+        <a href="/history/{{ query.id }}/export?format=md" class="text-xs px-3 py-1.5 rounded-lg border transition" style="border-color: var(--border-color); color: var(--text-secondary);">
+            导出 Markdown
+        </a>
+    </div>
     <h2 class="text-lg font-medium text-gray-200 mt-3">{{ query.question }}</h2>
     <div class="flex flex-wrap items-center gap-3 sm:gap-4 mt-2">
         <div class="flex items-center gap-2">
