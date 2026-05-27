@@ -1,13 +1,15 @@
 """Unit tests for VeraRAG evaluation metrics."""
 
 import sys
+
 sys.path.insert(0, 'src')
 
 import unittest
+
 from src.evaluation.answer_metrics import AnswerMetrics
-from src.evaluation.evidence_metrics import EvidenceMetrics
-from src.evaluation.conflict_metrics import ConflictMetrics
 from src.evaluation.calibration_metrics import CalibrationMetrics
+from src.evaluation.conflict_metrics import ConflictMetrics
+from src.evaluation.evidence_metrics import EvidenceMetrics
 from src.evaluation.hallucination_metrics import HallucinationMetrics
 
 

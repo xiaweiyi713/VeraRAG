@@ -1,7 +1,7 @@
 """Base Agent class for VeraRAG."""
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List
+from typing import Any
 
 
 class BaseAgent(ABC):
@@ -9,8 +9,8 @@ class BaseAgent(ABC):
 
     def __init__(
         self,
-        config: Optional[Dict[str, Any]] = None,
-        llm_client: Optional[Any] = None
+        config: dict[str, Any] | None = None,
+        llm_client: Any | None = None
     ):
         self.config = config or {}
         self.llm_client = llm_client
@@ -23,7 +23,7 @@ class BaseAgent(ABC):
     def _call_llm(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
+        system_prompt: str | None = None,
         **kwargs
     ) -> str:
         """Call the LLM with a prompt."""
@@ -44,8 +44,8 @@ class LLMClient:
         self,
         provider: str = "openai",
         model: str = "gpt-4o",
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 2000
     ):
@@ -85,10 +85,10 @@ class LLMClient:
     def generate(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        response_format: Optional[str] = None
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        response_format: str | None = None
     ) -> str:
         """Generate text from the LLM."""
         max_tokens = max_tokens or self.max_tokens

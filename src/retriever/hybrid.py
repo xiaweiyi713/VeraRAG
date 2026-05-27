@@ -1,7 +1,6 @@
 """Hybrid Retriever combining sparse and dense retrieval for VeraRAG."""
 
-from typing import List, Dict, Any, Optional
-import numpy as np
+from typing import Any
 
 from .base import BaseRetriever, RetrievalResult
 from .bm25 import BM25Retriever
@@ -17,7 +16,7 @@ class HybridRetriever(BaseRetriever):
 
     def __init__(
         self,
-        config: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
         sparse_weight: float = 0.3,
         dense_weight: float = 0.7,
         **kwargs
@@ -39,7 +38,7 @@ class HybridRetriever(BaseRetriever):
             **{k: v for k, v in kwargs.items() if k in ['model_name', 'device', 'batch_size']}
         )
 
-    def index_documents(self, documents: List[Dict[str, Any]]) -> None:
+    def index_documents(self, documents: list[dict[str, Any]]) -> None:
         """
         Build indexes for both sparse and dense retrievers.
 
@@ -55,7 +54,7 @@ class HybridRetriever(BaseRetriever):
         top_k: int = 10,
         fetch_k: int = 100,
         **kwargs
-    ) -> List[RetrievalResult]:
+    ) -> list[RetrievalResult]:
         """
         Retrieve using hybrid approach.
 
@@ -101,10 +100,10 @@ class HybridRetriever(BaseRetriever):
 
     def _reciprocal_rank_fusion(
         self,
-        result_lists: List[List[RetrievalResult]],
-        weights: List[float],
+        result_lists: list[list[RetrievalResult]],
+        weights: list[float],
         k: int = 60
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Combine results using Reciprocal Rank Fusion (RRF).
 
@@ -118,7 +117,7 @@ class HybridRetriever(BaseRetriever):
         """
         scores = {}
 
-        for results, weight in zip(result_lists, weights):
+        for results, weight in zip(result_lists, weights):  # noqa: B905
             for rank, result in enumerate(results):
                 doc_id = result.doc_id
                 # RRF score: weight / (k + rank)

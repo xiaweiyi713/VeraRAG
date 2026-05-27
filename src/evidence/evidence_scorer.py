@@ -1,7 +1,6 @@
 """Evidence Scorer for VeraRAG."""
 
-from typing import Dict, Any, Optional, List
-import numpy as np
+from typing import Any
 
 from ..utils.data_structures import Evidence, EvidenceConflictGraph
 
@@ -18,7 +17,7 @@ class EvidenceScorer:
     5. Conflict: How much conflict with other evidence
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.weights = self.config.get("weights", {
             "credibility": 0.3,
@@ -31,7 +30,7 @@ class EvidenceScorer:
     def score_evidence(
         self,
         evidence: Evidence,
-        conflict_graph: Optional[EvidenceConflictGraph] = None
+        conflict_graph: EvidenceConflictGraph | None = None
     ) -> float:
         """
         Calculate a composite score for an evidence item.
@@ -110,9 +109,9 @@ class EvidenceScorer:
 
     def score_evidence_list(
         self,
-        evidence_list: List[Evidence],
-        conflict_graph: Optional[EvidenceConflictGraph] = None
-    ) -> List[float]:
+        evidence_list: list[Evidence],
+        conflict_graph: EvidenceConflictGraph | None = None
+    ) -> list[float]:
         """
         Score a list of evidence items.
 
@@ -130,9 +129,9 @@ class EvidenceScorer:
 
     def rank_evidence(
         self,
-        evidence_list: List[Evidence],
-        conflict_graph: Optional[EvidenceConflictGraph] = None
-    ) -> List[tuple[Evidence, float]]:
+        evidence_list: list[Evidence],
+        conflict_graph: EvidenceConflictGraph | None = None
+    ) -> list[tuple[Evidence, float]]:
         """
         Rank evidence by composite score.
 
@@ -151,10 +150,10 @@ class EvidenceScorer:
 
     def filter_by_threshold(
         self,
-        evidence_list: List[Evidence],
+        evidence_list: list[Evidence],
         threshold: float,
-        conflict_graph: Optional[EvidenceConflictGraph] = None
-    ) -> List[Evidence]:
+        conflict_graph: EvidenceConflictGraph | None = None
+    ) -> list[Evidence]:
         """
         Filter evidence by score threshold.
 

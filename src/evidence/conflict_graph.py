@@ -1,17 +1,17 @@
 """Conflict Graph Builder for VeraRAG."""
 
 import json
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Any
 
-from ..utils.data_structures import (
-    Evidence,
-    Claim,
-    EvidenceConflictGraph,
-    ConflictGraphNode,
-    ConflictEdge,
-    ConflictType
-)
 from ..agents.base import BaseAgent
+from ..utils.data_structures import (
+    Claim,
+    ConflictEdge,
+    ConflictGraphNode,
+    ConflictType,
+    Evidence,
+    EvidenceConflictGraph,
+)
 
 
 class ConflictGraphBuilder(BaseAgent):
@@ -27,7 +27,7 @@ class ConflictGraphBuilder(BaseAgent):
     6. Source disagreements
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, llm_client: Optional[Any] = None):
+    def __init__(self, config: dict[str, Any] | None = None, llm_client: Any | None = None):
         super().__init__(config, llm_client)
         self.system_prompt = """You are an expert at detecting conflicts and relationships between claims.
 Identify whether claims support, refute, or partially support each other.
@@ -35,7 +35,7 @@ Output ONLY valid JSON, no other text."""
 
     def build_graph(
         self,
-        evidence_list: List[Evidence],
+        evidence_list: list[Evidence],
         use_llm: bool = True
     ) -> EvidenceConflictGraph:
         """
@@ -87,7 +87,7 @@ Output ONLY valid JSON, no other text."""
         claim_j: Claim,
         ev_j: Evidence,
         use_llm: bool
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         """Detect the relationship between two claims."""
         # First, check for specific conflict types with rules
         edge = self._rule_based_conflict_detection(claim_i, ev_i, claim_j, ev_j)
@@ -107,7 +107,7 @@ Output ONLY valid JSON, no other text."""
         ev_i: Evidence,
         claim_j: Claim,
         ev_j: Evidence
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         """Detect conflicts using rule-based methods."""
 
         # Check for numerical conflicts
@@ -134,7 +134,7 @@ Output ONLY valid JSON, no other text."""
         self,
         claim_i: Claim,
         claim_j: Claim
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         """Check for numerical conflicts between claims."""
         # Extract numbers
         nums_i = self._parse_numbers(claim_i.numbers)
@@ -161,7 +161,7 @@ Output ONLY valid JSON, no other text."""
 
         return None
 
-    def _parse_numbers(self, num_strings: List[str]) -> List[float]:
+    def _parse_numbers(self, num_strings: list[str]) -> list[float]:
         """Parse numeric strings to floats."""
         numbers = []
         for ns in num_strings:
@@ -169,7 +169,7 @@ Output ONLY valid JSON, no other text."""
                 # Remove % and commas
                 clean = ns.replace('%', '').replace(',', '')
                 numbers.append(float(clean))
-            except:
+            except ValueError:
                 pass
         return numbers
 
@@ -177,7 +177,7 @@ Output ONLY valid JSON, no other text."""
         self,
         claim_i: Claim,
         claim_j: Claim
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         """Check for temporal conflicts between claims."""
         # Check if claims use different time frames for the same entity
         # This is simplified - real implementation would be more sophisticated
@@ -215,7 +215,7 @@ Output ONLY valid JSON, no other text."""
         self,
         claim_i: Claim,
         claim_j: Claim
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         """Check for entity conflicts between claims."""
         entities_i = set(claim_i.entities)
         entities_j = set(claim_j.entities)
@@ -271,7 +271,7 @@ Output ONLY valid JSON, no other text."""
         self,
         claim_i: Claim,
         claim_j: Claim
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         """Use LLM to detect claim relationships."""
         prompt = f"""Determine the relationship between these two claims.
 
@@ -320,13 +320,13 @@ Relationship types:
                 rationale=data.get("rationale", "")
             )
 
-        except:
+        except Exception:
             return None
 
     def update_graph(
         self,
         graph: EvidenceConflictGraph,
-        new_evidence: List[Evidence],
+        new_evidence: list[Evidence],
         use_llm: bool = True
     ) -> EvidenceConflictGraph:
         """

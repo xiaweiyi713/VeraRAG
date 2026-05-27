@@ -1,8 +1,6 @@
 """LLM Client supporting multiple backends including local models."""
 
 import os
-import json
-from typing import Optional, Dict, Any
 
 
 class LLMClient:
@@ -20,8 +18,8 @@ class LLMClient:
         self,
         provider: str = "ollama",  # 默认使用 Ollama
         model: str = "qwen2.5:7b",
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 2000
     ):
@@ -82,10 +80,10 @@ class LLMClient:
     def generate(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        response_format: Optional[str] = None
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        response_format: str | None = None
     ) -> str:
         """Generate text from the LLM."""
         max_tokens = max_tokens or self.max_tokens
@@ -173,8 +171,8 @@ class LLMClient:
 
 
 def create_llm_client(
-    provider: Optional[str] = None,
-    model: Optional[str] = None
+    provider: str | None = None,
+    model: str | None = None
 ) -> LLMClient:
     """
     Create an LLM client with automatic provider selection.
@@ -196,7 +194,7 @@ def create_llm_client(
         client.list()
         print("✓ 检测到 Ollama，使用本地模型")
         return LLMClient(provider="ollama", model=model or "qwen2.5:7b")
-    except:
+    except Exception:
         pass
 
     # 2. Check OpenAI

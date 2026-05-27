@@ -3,8 +3,7 @@
 import json
 import sqlite3
 import uuid
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class Database:
@@ -58,7 +57,7 @@ class Database:
             conn.commit()
         return query_id
 
-    def get_query(self, query_id: str) -> Optional[Dict[str, Any]]:
+    def get_query(self, query_id: str) -> dict[str, Any] | None:
         """Get a single query by ID."""
         conn = self._get_conn()
         try:
@@ -78,7 +77,7 @@ class Database:
         finally:
             conn.close()
 
-    def list_queries(self, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+    def list_queries(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
         """List queries ordered by most recent first."""
         conn = self._get_conn()
         try:
@@ -132,7 +131,7 @@ class Database:
             )
             conn.commit()
 
-    def get_llm_config(self) -> Dict[str, Any]:
+    def get_llm_config(self) -> dict[str, Any]:
         """Get the full LLM configuration."""
         return self.get_config("llm_config", {
             "provider": "",

@@ -1,11 +1,13 @@
 """Tests for entity conflict detection."""
 
 import sys
+
 sys.path.insert(0, 'src')
 
 import unittest
-from src.utils.data_structures import Claim, ClaimType, ConflictType
+
 from src.evidence.conflict_graph import ConflictGraphBuilder
+from src.utils.data_structures import Claim, ClaimType, ConflictType
 
 
 class TestEntityConflict(unittest.TestCase):

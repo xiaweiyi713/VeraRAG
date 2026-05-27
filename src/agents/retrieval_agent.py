@@ -1,11 +1,11 @@
 """Dynamic Retrieval Agent for VeraRAG."""
 
 import uuid
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Any, ClassVar
 
-from .base import BaseAgent
-from ..utils.data_structures import SubQuestion, Evidence
 from ..retriever.base import BaseRetriever, RetrievalResult
+from ..utils.data_structures import Evidence, SubQuestion
+from .base import BaseAgent
 
 
 class DynamicRetrievalAgent(BaseAgent):
@@ -20,7 +20,7 @@ class DynamicRetrievalAgent(BaseAgent):
     """
 
     # Common English stopwords
-    STOPWORDS = {
+    STOPWORDS: ClassVar[set[str]] = {
         "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
         "have", "has", "had", "do", "does", "did", "will", "would", "could",
         "should", "may", "might", "shall", "can", "need", "dare", "ought",
@@ -35,7 +35,7 @@ class DynamicRetrievalAgent(BaseAgent):
     }
 
     # Common synonym mappings for query expansion
-    SYNONYM_MAP = {
+    SYNONYM_MAP: ClassVar[dict[str, list[str]]] = {
         "impact": ["effect", "influence", "consequence"],
         "cause": ["reason", "factor", "driver"],
         "improve": ["enhance", "boost", "increase"],
@@ -51,8 +51,8 @@ class DynamicRetrievalAgent(BaseAgent):
     def __init__(
         self,
         retriever: BaseRetriever,
-        config: Optional[Dict[str, Any]] = None,
-        llm_client: Optional[Any] = None
+        config: dict[str, Any] | None = None,
+        llm_client: Any | None = None
     ):
         super().__init__(config, llm_client)
         self.retriever = retriever
@@ -65,7 +65,7 @@ Output ONLY valid JSON, no other text."""
         subquestion: SubQuestion,
         top_k: int = 10,
         seek_counter_evidence: bool = False
-    ) -> List[RetrievalResult]:
+    ) -> list[RetrievalResult]:
         """
         Retrieve evidence for a specific sub-question.
 
@@ -108,11 +108,11 @@ Output ONLY valid JSON, no other text."""
 
     def dynamic_retrieve(
         self,
-        subquestions: List[SubQuestion],
-        evidence_pool: List[Evidence],
+        subquestions: list[SubQuestion],
+        evidence_pool: list[Evidence],
         max_rounds: int = 5,
         budget_per_round: int = 50
-    ) -> List[Evidence]:
+    ) -> list[Evidence]:
         """
         Dynamically retrieve evidence until coverage is satisfactory.
 
@@ -131,7 +131,7 @@ Output ONLY valid JSON, no other text."""
         if not unresolved:
             return evidence_pool
 
-        for round_id in range(max_rounds):
+        for _round_id in range(max_rounds):
             if not unresolved:
                 break
 
@@ -165,7 +165,7 @@ Output ONLY valid JSON, no other text."""
 
         return evidence_pool
 
-    def _generate_query_variants(self, question: str) -> List[str]:
+    def _generate_query_variants(self, question: str) -> list[str]:
         """Generate multiple query variants for better retrieval."""
         import re
         variants = [question]
@@ -208,7 +208,7 @@ Output ONLY valid JSON, no other text."""
 
         return variants[:5]
 
-    def _generate_counter_evidence_queries(self, question: str) -> List[str]:
+    def _generate_counter_evidence_queries(self, question: str) -> list[str]:
         """Generate queries to find counter-evidence."""
         # Add negation terms
         counter_terms = ["not", "false", "incorrect", "debunked", "myth", "contradiction", "disputed"]
@@ -221,8 +221,8 @@ Output ONLY valid JSON, no other text."""
 
     def _select_highest_uncertainty_subquestion(
         self,
-        subquestions: List[SubQuestion],
-        evidence_pool: List[Evidence]
+        subquestions: list[SubQuestion],
+        evidence_pool: list[Evidence]
     ) -> SubQuestion:
         """Select the sub-question with least evidence coverage."""
         return min(subquestions, key=lambda sq: sq.coverage_score)
@@ -230,7 +230,7 @@ Output ONLY valid JSON, no other text."""
     def _assess_subquestion_coverage(
         self,
         subquestion: SubQuestion,
-        evidence_pool: List[Evidence]
+        evidence_pool: list[Evidence]
     ) -> float:
         """Assess how well a sub-question is covered by evidence."""
         # Simple assessment based on relevant evidence count
@@ -250,7 +250,7 @@ Output ONLY valid JSON, no other text."""
     def _refine_subquestion(
         self,
         subquestion: SubQuestion,
-        evidence_pool: List[Evidence]
+        evidence_pool: list[Evidence]
     ) -> SubQuestion:
         """Refine a sub-question based on current evidence."""
         q_words = set(subquestion.question.lower().replace("?", "").split())

@@ -6,9 +6,8 @@ including Evidence, Claim, Conflict Graph, and Task Analysis results.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Literal
 from enum import Enum
-from datetime import datetime
+from typing import Any, Literal
 
 
 class ClaimType(Enum):
@@ -65,13 +64,13 @@ class Claim:
     claim_id: str
     claim: str
     claim_type: ClaimType
-    entities: List[str] = field(default_factory=list)
-    numbers: List[str] = field(default_factory=list)
-    time_expressions: List[str] = field(default_factory=list)
-    source_span: Optional[str] = None
+    entities: list[str] = field(default_factory=list)
+    numbers: list[str] = field(default_factory=list)
+    time_expressions: list[str] = field(default_factory=list)
+    source_span: str | None = None
     confidence: float = 1.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "claim_id": self.claim_id,
             "claim": self.claim,
@@ -91,11 +90,11 @@ class Evidence:
     source: str  # paper, web, report, wiki, legal_case, etc.
     title: str
     text_span: str
-    date: Optional[str] = None
-    author: Optional[str] = None
-    url: Optional[str] = None
-    entities: List[str] = field(default_factory=list)
-    claims: List[Claim] = field(default_factory=list)
+    date: str | None = None
+    author: str | None = None
+    url: str | None = None
+    entities: list[str] = field(default_factory=list)
+    claims: list[Claim] = field(default_factory=list)
     credibility_score: float = 0.8
     recency_score: float = 0.8
     relevance_score: float = 0.8
@@ -109,7 +108,7 @@ class Evidence:
             self.relevance_score * 0.3
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "evidence_id": self.evidence_id,
             "source": self.source,
@@ -136,7 +135,7 @@ class ConflictEdge:
     confidence: float
     rationale: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "source_id": self.source_id,
             "target_id": self.target_id,
@@ -152,9 +151,9 @@ class ConflictGraphNode:
     node_id: str
     content: str
     node_type: Literal["claim", "evidence"]
-    evidence_ids: List[str] = field(default_factory=list)
+    evidence_ids: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "node_id": self.node_id,
             "content": self.content,
@@ -177,8 +176,8 @@ class EvidenceConflictGraph:
     """
 
     def __init__(self):
-        self.nodes: Dict[str, ConflictGraphNode] = {}
-        self.edges: List[ConflictEdge] = []
+        self.nodes: dict[str, ConflictGraphNode] = {}
+        self.edges: list[ConflictEdge] = []
 
     def add_node(self, node: ConflictGraphNode) -> None:
         """Add a node to the graph."""
@@ -188,7 +187,7 @@ class EvidenceConflictGraph:
         """Add an edge to the graph."""
         self.edges.append(edge)
 
-    def get_conflicts(self) -> List[ConflictEdge]:
+    def get_conflicts(self) -> list[ConflictEdge]:
         """Get all conflict-type edges (non-support edges)."""
         return [
             e for e in self.edges
@@ -202,7 +201,7 @@ class EvidenceConflictGraph:
             }
         ]
 
-    def get_supports(self) -> List[ConflictEdge]:
+    def get_supports(self) -> list[ConflictEdge]:
         """Get all support-type edges."""
         return [
             e for e in self.edges
@@ -221,7 +220,7 @@ class EvidenceConflictGraph:
         total_count = len(self.edges)
         return conflict_count / total_count if total_count > 0 else 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "nodes": [n.to_dict() for n in self.nodes.values()],
             "edges": [e.to_dict() for e in self.edges],
@@ -237,12 +236,12 @@ class SubQuestion:
     id: str
     question: str
     required_evidence_type: str = "general"
-    dependency_ids: List[str] = field(default_factory=list)
+    dependency_ids: list[str] = field(default_factory=list)
     requires_counter_evidence: bool = False
     status: Literal["pending", "in_progress", "resolved", "unresolvable"] = "pending"
     coverage_score: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "question": self.question,
@@ -264,9 +263,9 @@ class TaskAnalysis:
     requires_numerical_reasoning: bool = False
     requires_temporal_reasoning: bool = False
     estimated_hops: int = 1
-    keywords: List[str] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "task_type": self.task_type.value,
             "complexity": self.complexity.value,
@@ -284,10 +283,10 @@ class ReasoningStep:
     """A single step in the reasoning chain."""
     step: int
     description: str
-    evidence_ids: List[str] = field(default_factory=list)
+    evidence_ids: list[str] = field(default_factory=list)
     confidence: float = 1.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "step": self.step,
             "description": self.description,
@@ -300,12 +299,12 @@ class ReasoningStep:
 class AnswerClaim:
     """A claim in the final answer with verification info."""
     claim: str
-    supporting_evidence: List[str] = field(default_factory=list)
-    conflicting_evidence: List[str] = field(default_factory=list)
+    supporting_evidence: list[str] = field(default_factory=list)
+    conflicting_evidence: list[str] = field(default_factory=list)
     confidence: float = 0.8
     verification_status: VerificationStatus = VerificationStatus.NOT_ENOUGH_INFO
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "claim": self.claim,
             "supporting_evidence": self.supporting_evidence,
@@ -339,7 +338,7 @@ class UncertaintyBreakdown:
         """Check if uncertainty is acceptable for answering."""
         return self.overall < threshold
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "retrieval_uncertainty": self.retrieval_uncertainty,
             "evidence_conflict": self.evidence_conflict,
@@ -353,12 +352,12 @@ class UncertaintyBreakdown:
 @dataclass
 class VerificationReport:
     """Report from the verifier agent."""
-    claim_verifications: List[Dict[str, Any]] = field(default_factory=list)
+    claim_verifications: list[dict[str, Any]] = field(default_factory=list)
     overall_status: VerificationStatus = VerificationStatus.NOT_ENOUGH_INFO
-    issues: List[Dict[str, Any]] = field(default_factory=list)
-    missing_evidence_for: List[str] = field(default_factory=list)
-    overconfident_claims: List[str] = field(default_factory=list)
-    ignored_conflicts: List[Dict[str, Any]] = field(default_factory=list)
+    issues: list[dict[str, Any]] = field(default_factory=list)
+    missing_evidence_for: list[str] = field(default_factory=list)
+    overconfident_claims: list[str] = field(default_factory=list)
+    ignored_conflicts: list[dict[str, Any]] = field(default_factory=list)
 
     def has_critical_issues(self) -> bool:
         """Check if there are critical issues that require repair."""
@@ -368,7 +367,7 @@ class VerificationReport:
             len(self.ignored_conflicts) > 0
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "claim_verifications": self.claim_verifications,
             "overall_status": self.overall_status.value,
@@ -389,16 +388,16 @@ class VeraRAGOutput:
     """
     question: str
     answer: str
-    answer_claims: List[AnswerClaim]
-    evidence: List[Evidence]
-    reasoning_chain: List[ReasoningStep]
-    conflict_report: Dict[str, Any]
+    answer_claims: list[AnswerClaim]
+    evidence: list[Evidence]
+    reasoning_chain: list[ReasoningStep]
+    conflict_report: dict[str, Any]
     verification_report: VerificationReport
     confidence: float
     uncertainty: UncertaintyBreakdown
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "question": self.question,
             "answer": self.answer,

@@ -1,8 +1,9 @@
 """Dense Retriever using sentence embeddings for VeraRAG."""
 
 import pickle
-from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
+from typing import Any
+
 import numpy as np
 
 from .base import BaseRetriever, RetrievalResult
@@ -18,7 +19,7 @@ class DenseRetriever(BaseRetriever):
 
     def __init__(
         self,
-        config: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
         model_name: str = "BAAI/bge-base-en-v1.5",
         device: str = "cpu",
         batch_size: int = 32
@@ -28,10 +29,10 @@ class DenseRetriever(BaseRetriever):
         self.device = device
         self.batch_size = batch_size
         self.model = None
-        self.embeddings: Optional[np.ndarray] = None
-        self.doc_ids: List[str] = []
-        self.doc_texts: List[str] = []
-        self.doc_metadata: List[Dict[str, Any]] = []
+        self.embeddings: np.ndarray | None = None
+        self.doc_ids: list[str] = []
+        self.doc_texts: list[str] = []
+        self.doc_metadata: list[dict[str, Any]] = []
 
     def _load_model(self):
         """Lazy load the model."""
@@ -42,7 +43,7 @@ class DenseRetriever(BaseRetriever):
                 device=self.device
             )
 
-    def _encode_texts(self, texts: List[str]) -> np.ndarray:
+    def _encode_texts(self, texts: list[str]) -> np.ndarray:
         """Encode texts to embeddings."""
         self._load_model()
         embeddings = self.model.encode(
@@ -53,7 +54,7 @@ class DenseRetriever(BaseRetriever):
         )
         return embeddings
 
-    def index_documents(self, documents: List[Dict[str, Any]]) -> None:
+    def index_documents(self, documents: list[dict[str, Any]]) -> None:
         """
         Build dense index from documents.
 
@@ -87,7 +88,7 @@ class DenseRetriever(BaseRetriever):
         query: str,
         top_k: int = 10,
         **kwargs
-    ) -> List[RetrievalResult]:
+    ) -> list[RetrievalResult]:
         """
         Retrieve documents using dense similarity.
 
@@ -167,7 +168,7 @@ class FAISSRetriever(DenseRetriever):
     Dense retriever with FAISS indexing for efficient large-scale retrieval.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs):
+    def __init__(self, config: dict[str, Any] | None = None, **kwargs):
         super().__init__(config, **kwargs)
         self.faiss_index = None
 
@@ -183,7 +184,7 @@ class FAISSRetriever(DenseRetriever):
         faiss.normalize_L2(self.embeddings)
         self.faiss_index.add(self.embeddings.astype('float32'))
 
-    def index_documents(self, documents: List[Dict[str, Any]]) -> None:
+    def index_documents(self, documents: list[dict[str, Any]]) -> None:
         """Build FAISS index from documents."""
         super().index_documents(documents)
         self._build_faiss_index()
@@ -193,7 +194,7 @@ class FAISSRetriever(DenseRetriever):
         query: str,
         top_k: int = 10,
         **kwargs
-    ) -> List[RetrievalResult]:
+    ) -> list[RetrievalResult]:
         """Retrieve using FAISS index."""
         if self.faiss_index is None:
             return []
@@ -209,7 +210,7 @@ class FAISSRetriever(DenseRetriever):
 
         # Build results
         results = []
-        for score, idx in zip(scores[0], indices[0]):
+        for score, idx in zip(scores[0], indices[0]):  # noqa: B905
             if idx >= 0 and idx < len(self.doc_ids):
                 results.append(RetrievalResult(
                     doc_id=self.doc_ids[idx],

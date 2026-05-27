@@ -1,12 +1,14 @@
 """Tests for query variant generation and subquestion refinement."""
 
 import sys
+
 sys.path.insert(0, 'src')
 
 import unittest
 from unittest.mock import MagicMock
+
 from src.agents.retrieval_agent import DynamicRetrievalAgent
-from src.utils.data_structures import SubQuestion, Evidence
+from src.utils.data_structures import Evidence, SubQuestion
 
 
 class TestQueryVariants(unittest.TestCase):

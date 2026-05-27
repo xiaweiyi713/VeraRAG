@@ -1,9 +1,11 @@
 """Tests for semantic deduplication."""
 
 import sys
+
 sys.path.insert(0, 'src')
 
 import unittest
+
 from src.evidence.normalizer import EvidenceNormalizer
 from src.utils.data_structures import Evidence
 
@@ -53,6 +55,7 @@ class TestSemanticDedup(unittest.TestCase):
     def test_hardcoded_year_fixed(self):
         """验证 current_year 不再硬编码为 2025"""
         import inspect
+
         from src.evidence.normalizer import EvidenceNormalizer
         source = inspect.getsource(EvidenceNormalizer._estimate_recency)
         self.assertNotIn("current_year = 2025", source)

@@ -1,6 +1,5 @@
 """Answer Metrics for VeraRAG Evaluation."""
 
-from typing import Dict, Any, List, Optional
 import re
 
 
@@ -64,21 +63,21 @@ class AnswerMetrics:
         return f1
 
     @staticmethod
-    def batch_exact_match(predictions: List[str], references: List[str]) -> float:
+    def batch_exact_match(predictions: list[str], references: list[str]) -> float:
         """Calculate average exact match across a batch."""
         if len(predictions) != len(references):
             raise ValueError("Predictions and references must have same length")
 
-        scores = [AnswerMetrics.exact_match(p, r) for p, r in zip(predictions, references)]
+        scores = [AnswerMetrics.exact_match(p, r) for p, r in zip(predictions, references)]  # noqa: B905
         return sum(scores) / len(scores) if scores else 0.0
 
     @staticmethod
-    def batch_f1_score(predictions: List[str], references: List[str]) -> float:
+    def batch_f1_score(predictions: list[str], references: list[str]) -> float:
         """Calculate average F1 score across a batch."""
         if len(predictions) != len(references):
             raise ValueError("Predictions and references must have same length")
 
-        scores = [AnswerMetrics.f1_score(p, r) for p, r in zip(predictions, references)]
+        scores = [AnswerMetrics.f1_score(p, r) for p, r in zip(predictions, references)]  # noqa: B905
         return sum(scores) / len(scores) if scores else 0.0
 
     @staticmethod
@@ -95,7 +94,7 @@ class AnswerMetrics:
         return answer
 
     @staticmethod
-    def _tokenize(answer: str) -> List[str]:
+    def _tokenize(answer: str) -> list[str]:
         """Tokenize answer into words."""
         return AnswerMetrics._normalize_answer(answer).split()
 
@@ -103,7 +102,7 @@ class AnswerMetrics:
     def compute_all(
         predicted: str,
         reference: str
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Compute all answer metrics.
 

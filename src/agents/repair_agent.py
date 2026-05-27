@@ -1,14 +1,9 @@
 """Repair Agent for VeraRAG."""
 
-import json
-from typing import Dict, Any, Optional, List
+from typing import Any
 
+from ..utils.data_structures import AnswerClaim, Evidence, VerificationReport
 from .base import BaseAgent
-from ..utils.data_structures import (
-    AnswerClaim,
-    VerificationReport,
-    Evidence
-)
 
 
 class RepairAgent(BaseAgent):
@@ -23,7 +18,7 @@ class RepairAgent(BaseAgent):
     5. Flagging claims needing more research
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, llm_client: Optional[Any] = None):
+    def __init__(self, config: dict[str, Any] | None = None, llm_client: Any | None = None):
         super().__init__(config, llm_client)
         self.system_prompt = """You are an expert editor for fact-checked content.
 Your job is to repair answers to ensure they are well-supported by evidence.
@@ -33,10 +28,10 @@ Output ONLY valid JSON, no other text."""
     def repair_answer(
         self,
         answer: str,
-        claims: List[AnswerClaim],
+        claims: list[AnswerClaim],
         verification_report: VerificationReport,
-        evidence: List[Evidence]
-    ) -> tuple[str, List[AnswerClaim]]:
+        evidence: list[Evidence]
+    ) -> tuple[str, list[AnswerClaim]]:
         """
         Repair the answer based on verification issues.
 
@@ -82,8 +77,8 @@ Output ONLY valid JSON, no other text."""
     def _repair_claim(
         self,
         claim: AnswerClaim,
-        verification: Dict[str, Any],
-        evidence: List[Evidence]
+        verification: dict[str, Any],
+        evidence: list[Evidence]
     ) -> AnswerClaim:
         """Repair a single claim based on verification."""
         status = verification["status"]
@@ -157,7 +152,7 @@ Output ONLY valid JSON, no other text."""
     def _generate_repaired_answer(
         self,
         original_answer: str,
-        repaired_claims: List[AnswerClaim],
+        repaired_claims: list[AnswerClaim],
         verification_report: VerificationReport
     ) -> str:
         """Generate repaired answer text."""

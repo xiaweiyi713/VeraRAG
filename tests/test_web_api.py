@@ -2,12 +2,13 @@
 
 import os
 import sys
-import unittest
 import tempfile
+import unittest
 
 sys.path.insert(0, 'src')
 
 from fastapi.testclient import TestClient
+
 from web.app import create_app
 
 
@@ -15,7 +16,7 @@ class TestAPIEndpoints(unittest.TestCase):
     """Test API endpoints."""
 
     def setUp(self):
-        self.tmpfile = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmpfile = tempfile.NamedTemporaryFile(suffix='.db', delete=False)  # noqa: SIM115
         self.tmpfile.close()
         self.app = create_app(db_path=self.tmpfile.name)
         self.client = TestClient(self.app)

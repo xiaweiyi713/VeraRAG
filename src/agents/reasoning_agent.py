@@ -1,17 +1,16 @@
 """Reasoning Agent for VeraRAG."""
 
 import json
-from typing import Dict, Any, Optional, List
+from typing import Any
 
-from .base import BaseAgent
 from ..utils.data_structures import (
     AnswerClaim,
-    ReasoningStep,
-    VeraRAGOutput,
-    SubQuestion,
     Evidence,
-    EvidenceConflictGraph
+    EvidenceConflictGraph,
+    ReasoningStep,
+    SubQuestion,
 )
+from .base import BaseAgent
 
 
 class ReasoningAgent(BaseAgent):
@@ -25,7 +24,7 @@ class ReasoningAgent(BaseAgent):
     - Uncertainty information
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, llm_client: Optional[Any] = None):
+    def __init__(self, config: dict[str, Any] | None = None, llm_client: Any | None = None):
         super().__init__(config, llm_client)
         self.system_prompt = """You are an expert reasoning agent for complex knowledge tasks.
 Your goal is to generate accurate, well-supported answers based on evidence.
@@ -35,11 +34,11 @@ Output ONLY valid JSON, no other text."""
     def reason(
         self,
         question: str,
-        subquestions: List[SubQuestion],
-        evidence: List[Evidence],
+        subquestions: list[SubQuestion],
+        evidence: list[Evidence],
         conflict_graph: EvidenceConflictGraph,
-        reasoning_plan: List[str]
-    ) -> tuple[str, List[AnswerClaim], List[ReasoningStep]]:
+        reasoning_plan: list[str]
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep]]:
         """
         Generate a reasoned answer with claims and reasoning chain.
 
@@ -138,11 +137,11 @@ Guidelines:
 
             return answer, claims, reasoning
 
-        except (json.JSONDecodeError, KeyError) as e:
+        except (json.JSONDecodeError, KeyError):
             # Fallback: generate simple answer
             return self._fallback_answer(question, evidence)
 
-    def _prepare_evidence_context(self, evidence: List[Evidence]) -> str:
+    def _prepare_evidence_context(self, evidence: list[Evidence]) -> str:
         """Prepare evidence context for the prompt."""
         if not evidence:
             return "No evidence available."
@@ -172,8 +171,8 @@ Guidelines:
     def _fallback_answer(
         self,
         question: str,
-        evidence: List[Evidence]
-    ) -> tuple[str, List[AnswerClaim], List[ReasoningStep]]:
+        evidence: list[Evidence]
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep]]:
         """Generate a fallback answer if LLM fails."""
         if not evidence:
             return (
@@ -184,7 +183,7 @@ Guidelines:
 
         # Simple synthesis from top evidence
         top_ev = evidence[:3]
-        answer = f"Based on the available evidence: " + \
+        answer = "Based on the available evidence: " + \
                  " ".join([ev.text_span[:200] for ev in top_ev])
 
         claim = AnswerClaim(

@@ -1,6 +1,5 @@
 """Hallucination Metrics for VeraRAG Evaluation."""
 
-from typing import Dict, Any, List, Set
 import re
 
 
@@ -17,8 +16,8 @@ class HallucinationMetrics:
 
     @staticmethod
     def unsupported_claim_rate(
-        answer_claims: List[str],
-        supported_claims: Set[str]
+        answer_claims: list[str],
+        supported_claims: set[str]
     ) -> float:
         """
         Calculate rate of unsupported claims.
@@ -38,8 +37,8 @@ class HallucinationMetrics:
 
     @staticmethod
     def entity_hallucination_rate(
-        answer_entities: Set[str],
-        evidence_entities: Set[str]
+        answer_entities: set[str],
+        evidence_entities: set[str]
     ) -> float:
         """
         Calculate rate of hallucinated entities.
@@ -59,8 +58,8 @@ class HallucinationMetrics:
 
     @staticmethod
     def numerical_hallucination_rate(
-        answer_numbers: List[float],
-        evidence_numbers: Set[float],
+        answer_numbers: list[float],
+        evidence_numbers: set[float],
         tolerance: float = 0.01
     ) -> float:
         """
@@ -91,8 +90,8 @@ class HallucinationMetrics:
 
     @staticmethod
     def overclaiming_rate(
-        confidences: List[float],
-        correct: List[bool],
+        confidences: list[float],
+        correct: list[bool],
         confidence_threshold: float = 0.8
     ) -> float:
         """
@@ -109,7 +108,7 @@ class HallucinationMetrics:
         high_confidence_count = 0
         overconfident_wrong = 0
 
-        for conf, corr in zip(confidences, correct):
+        for conf, corr in zip(confidences, correct):  # noqa: B905
             if conf >= confidence_threshold:
                 high_confidence_count += 1
                 if not corr:
@@ -121,7 +120,7 @@ class HallucinationMetrics:
         return overconfident_wrong / high_confidence_count
 
     @staticmethod
-    def extract_entities_from_text(text: str) -> Set[str]:
+    def extract_entities_from_text(text: str) -> set[str]:
         """
         Extract named entities from text (simple heuristic).
 
@@ -141,7 +140,7 @@ class HallucinationMetrics:
         return entities
 
     @staticmethod
-    def extract_numbers_from_text(text: str) -> List[float]:
+    def extract_numbers_from_text(text: str) -> list[float]:
         """
         Extract numerical values from text.
 
@@ -180,7 +179,7 @@ class HallucinationMetrics:
         return numbers
 
     @staticmethod
-    def extract_claims_from_text(text: str) -> List[str]:
+    def extract_claims_from_text(text: str) -> list[str]:
         """
         Extract claims from text (sentence-level).
 
@@ -205,10 +204,10 @@ class HallucinationMetrics:
     @staticmethod
     def compute_all(
         answer: str,
-        evidence_texts: List[str],
-        confidences: List[float],
-        correct: List[bool]
-    ) -> Dict[str, float]:
+        evidence_texts: list[str],
+        confidences: list[float],
+        correct: list[bool]
+    ) -> dict[str, float]:
         """
         Compute all hallucination metrics.
 
@@ -224,7 +223,6 @@ class HallucinationMetrics:
         # Extract entities and numbers from answer
         answer_entities = HallucinationMetrics.extract_entities_from_text(answer)
         answer_numbers = HallucinationMetrics.extract_numbers_from_text(answer)
-        answer_claims = HallucinationMetrics.extract_claims_from_text(answer)
 
         # Extract from evidence
         evidence_entities = set()

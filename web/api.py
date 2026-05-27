@@ -2,10 +2,9 @@
 
 import asyncio
 import json
-import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -22,7 +21,7 @@ class QueryRequest(BaseModel):
     """Request body for query endpoint."""
     question: str
     max_rounds: int = 5
-    config_overrides: Dict[str, Any] = {}
+    config_overrides: dict[str, Any] = {}
 
 
 class ConfigRequest(BaseModel):
@@ -176,7 +175,7 @@ def create_router(templates, db, config):
                     }
             finally:
                 # Ensure the background task is done before we exit
-                try:
+                try:  # noqa: SIM105
                     await asyncio.wait_for(future, timeout=5.0)
                 except (asyncio.TimeoutError, Exception):
                     pass

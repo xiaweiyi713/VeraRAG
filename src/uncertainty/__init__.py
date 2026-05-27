@@ -1,11 +1,11 @@
 """VeraRAG Uncertainty estimation modules."""
 
-from .estimator import UncertaintyEstimator
 from .calibrator import ConfidenceCalibrator
 from .controller import UncertaintyController
+from .estimator import UncertaintyEstimator
 
 __all__ = [
-    "UncertaintyEstimator",
     "ConfidenceCalibrator",
-    "UncertaintyController"
+    "UncertaintyController",
+    "UncertaintyEstimator"
 ]

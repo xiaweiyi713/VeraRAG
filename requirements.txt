@@ -29,8 +29,7 @@ seaborn>=0.12.0
 
 # Development
 pytest>=7.0.0
-black>=22.0.0
-flake8>=5.0.0
+ruff>=0.4.0
 mypy>=1.0.0
 
 # Optional: for local LLM support

@@ -1,13 +1,13 @@
 """VeraRAG Evidence processing modules."""
 
-from .extractor import EvidenceExtractor
-from .normalizer import EvidenceNormalizer
 from .conflict_graph import ConflictGraphBuilder
 from .evidence_scorer import EvidenceScorer
+from .extractor import EvidenceExtractor
+from .normalizer import EvidenceNormalizer
 
 __all__ = [
+    "ConflictGraphBuilder",
     "EvidenceExtractor",
     "EvidenceNormalizer",
-    "ConflictGraphBuilder",
     "EvidenceScorer"
 ]

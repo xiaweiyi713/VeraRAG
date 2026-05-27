@@ -1,7 +1,8 @@
 """Confidence Calibrator for VeraRAG."""
 
+from typing import Any
+
 import numpy as np
-from typing import Dict, Any, Optional, List, Tuple
 
 from ..utils.data_structures import UncertaintyBreakdown
 
@@ -15,9 +16,9 @@ class ConfidenceCalibrator:
     should be correct 80% of the time).
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
-        self.calibration_data: List[Tuple[float, bool]] = []
+        self.calibration_data: list[tuple[float, bool]] = []
         self.is_calibrated = False
 
     def add_sample(self, confidence: float, is_correct: bool) -> None:
@@ -111,9 +112,9 @@ class ConfidenceCalibrator:
 
     def compute_calibration_metrics(
         self,
-        confidences: List[float],
-        correct: List[bool]
-    ) -> Dict[str, float]:
+        confidences: list[float],
+        correct: list[bool]
+    ) -> dict[str, float]:
         """
         Compute calibration metrics.
 
@@ -140,8 +141,8 @@ class ConfidenceCalibrator:
 
     def _compute_ece(
         self,
-        confidences: List[float],
-        correct: List[bool],
+        confidences: list[float],
+        correct: list[bool],
         n_bins: int = 10
     ) -> float:
         """Compute Expected Calibration Error."""
@@ -150,9 +151,9 @@ class ConfidenceCalibrator:
         bin_uppers = bin_boundaries[1:]
 
         ece = 0.0
-        for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
+        for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):  # noqa: B905
             in_bin = [
-                (c, r) for c, r in zip(confidences, correct)
+                (c, r) for c, r in zip(confidences, correct)  # noqa: B905
                 if bin_lower <= c < bin_upper
             ]
 
@@ -169,12 +170,12 @@ class ConfidenceCalibrator:
 
     def _compute_brier_score(
         self,
-        confidences: List[float],
-        correct: List[bool]
+        confidences: list[float],
+        correct: list[bool]
     ) -> float:
         """Compute Brier Score."""
         labels = [1.0 if c else 0.0 for c in correct]
 
-        brier = sum((c - l) ** 2 for c, l in zip(confidences, labels)) / len(confidences)
+        brier = sum((c - l) ** 2 for c, l in zip(confidences, labels)) / len(confidences)  # noqa: E741, B905
 
         return brier

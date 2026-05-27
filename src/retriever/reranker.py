@@ -1,6 +1,5 @@
 """Reranker for improving retrieval results in VeraRAG."""
 
-from typing import List, Dict, Any, Optional
 import numpy as np
 
 from .base import RetrievalResult
@@ -39,9 +38,9 @@ class Reranker:
     def rerank(
         self,
         query: str,
-        results: List[RetrievalResult],
-        top_k: Optional[int] = None
-    ) -> List[RetrievalResult]:
+        results: list[RetrievalResult],
+        top_k: int | None = None
+    ) -> list[RetrievalResult]:
         """
         Rerank retrieval results.
 
@@ -76,7 +75,7 @@ class Reranker:
         )
 
         # Sort by new scores
-        scored_results = list(zip(results, scores))
+        scored_results = list(zip(results, scores))  # noqa: B905
         scored_results.sort(key=lambda x: x[1], reverse=True)
 
         # Return top_k with updated scores
@@ -94,10 +93,10 @@ class Reranker:
 
     def rerank_batch(
         self,
-        queries: List[str],
-        results_list: List[List[RetrievalResult]],
-        top_k: Optional[int] = None
-    ) -> List[List[RetrievalResult]]:
+        queries: list[str],
+        results_list: list[list[RetrievalResult]],
+        top_k: int | None = None
+    ) -> list[list[RetrievalResult]]:
         """
         Rerank multiple query-result pairs.
 
@@ -111,7 +110,7 @@ class Reranker:
         """
         return [
             self.rerank(q, r, top_k)
-            for q, r in zip(queries, results_list)
+            for q, r in zip(queries, results_list)  # noqa: B905
         ]
 
 
@@ -142,9 +141,9 @@ class EvidenceAwareReranker(Reranker):
     def rerank(
         self,
         query: str,
-        results: List[RetrievalResult],
-        top_k: Optional[int] = None
-    ) -> List[RetrievalResult]:
+        results: list[RetrievalResult],
+        top_k: int | None = None
+    ) -> list[RetrievalResult]:
         """
         Rerank with evidence quality considerations.
         """
@@ -161,7 +160,7 @@ class EvidenceAwareReranker(Reranker):
 
         # Calculate combined scores
         scored_results = []
-        for result, relevance in zip(results, relevance_scores):
+        for result, relevance in zip(results, relevance_scores):  # noqa: B905
             # Normalize relevance to 0-1
             norm_relevance = float(1 / (1 + np.exp(-relevance)))
 

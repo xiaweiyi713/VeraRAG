@@ -2,8 +2,8 @@
 
 import os
 import sys
-import unittest
 import tempfile
+import unittest
 
 sys.path.insert(0, 'src')
 
@@ -14,7 +14,7 @@ class TestDatabase(unittest.TestCase):
     """Test SQLite database operations."""
 
     def setUp(self):
-        self.tmpfile = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmpfile = tempfile.NamedTemporaryFile(suffix='.db', delete=False)  # noqa: SIM115
         self.tmpfile.close()
         self.db = Database(self.tmpfile.name)
 

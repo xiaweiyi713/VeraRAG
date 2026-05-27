@@ -1,41 +1,41 @@
 """VeraRAG utility modules."""
 
 from .data_structures import (
+    AnswerClaim,
     Claim,
     ClaimType,
-    Evidence,
+    Complexity,
     ConflictEdge,
     ConflictGraphNode,
     ConflictType,
+    Evidence,
     EvidenceConflictGraph,
+    ReasoningStep,
     SubQuestion,
     TaskAnalysis,
     TaskType,
-    Complexity,
-    ReasoningStep,
-    AnswerClaim,
     UncertaintyBreakdown,
+    VeraRAGOutput,
     VerificationReport,
     VerificationStatus,
-    VeraRAGOutput
 )
 
 __all__ = [
+    "AnswerClaim",
     "Claim",
     "ClaimType",
-    "Evidence",
+    "Complexity",
     "ConflictEdge",
     "ConflictGraphNode",
     "ConflictType",
+    "Evidence",
     "EvidenceConflictGraph",
+    "ReasoningStep",
     "SubQuestion",
     "TaskAnalysis",
     "TaskType",
-    "Complexity",
-    "ReasoningStep",
-    "AnswerClaim",
     "UncertaintyBreakdown",
+    "VeraRAGOutput",
     "VerificationReport",
-    "VerificationStatus",
-    "VeraRAGOutput"
+    "VerificationStatus"
 ]

@@ -1,17 +1,16 @@
 """Verifier Agent for VeraRAG."""
 
 import json
-from typing import Dict, Any, Optional, List
+from typing import Any
 
-from .base import BaseAgent
 from ..utils.data_structures import (
     AnswerClaim,
     Evidence,
     EvidenceConflictGraph,
     VerificationReport,
     VerificationStatus,
-    Claim
 )
+from .base import BaseAgent
 
 
 class VerifierAgent(BaseAgent):
@@ -28,8 +27,8 @@ class VerifierAgent(BaseAgent):
 
     def __init__(
         self,
-        config: Optional[Dict[str, Any]] = None,
-        llm_client: Optional[Any] = None,
+        config: dict[str, Any] | None = None,
+        llm_client: Any | None = None,
         use_nli: bool = True
     ):
         super().__init__(config, llm_client)
@@ -42,8 +41,8 @@ Output ONLY valid JSON, no other text."""
     def verify_answer(
         self,
         answer: str,
-        claims: List[AnswerClaim],
-        evidence: List[Evidence],
+        claims: list[AnswerClaim],
+        evidence: list[Evidence],
         conflict_graph: EvidenceConflictGraph
     ) -> VerificationReport:
         """
@@ -115,9 +114,9 @@ Output ONLY valid JSON, no other text."""
     def _verify_claim(
         self,
         claim: AnswerClaim,
-        evidence_map: Dict[str, Evidence],
+        evidence_map: dict[str, Evidence],
         conflict_graph: EvidenceConflictGraph
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Verify a single claim."""
         # Get supporting evidence
         supporting_texts = []
@@ -145,8 +144,8 @@ Output ONLY valid JSON, no other text."""
     def _nli_verify(
         self,
         claim: str,
-        evidence_texts: List[str]
-    ) -> Optional[Dict[str, Any]]:
+        evidence_texts: list[str]
+    ) -> dict[str, Any] | None:
         """Use NLI model for verification."""
         try:
             if self.nli_model is None:
@@ -186,15 +185,15 @@ Output ONLY valid JSON, no other text."""
                     "method": "nli"
                 }
 
-        except Exception as e:
+        except Exception:
             return None
 
     def _llm_verify_claim(
         self,
         claim: str,
-        supporting_texts: List[str],
-        conflicting_texts: List[str]
-    ) -> Dict[str, Any]:
+        supporting_texts: list[str],
+        conflicting_texts: list[str]
+    ) -> dict[str, Any]:
         """Use LLM for claim verification."""
         prompt = f"""Verify the following claim against the evidence.
 
@@ -236,7 +235,7 @@ Output JSON:
                 "method": "llm"
             }
 
-        except:
+        except Exception:
             return {
                 "claim": claim,
                 "status": "NOT_ENOUGH_INFO",
@@ -246,9 +245,9 @@ Output JSON:
 
     def _check_ignored_conflicts(
         self,
-        claims: List[AnswerClaim],
+        claims: list[AnswerClaim],
         conflict_graph: EvidenceConflictGraph
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Check if any conflicts were ignored in the answer."""
         ignored = []
 
