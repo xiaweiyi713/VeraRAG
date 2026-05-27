@@ -59,9 +59,9 @@ function initStages() {
         el.id = `stage-${s.id}`;
         el.className = 'flex items-center gap-3 text-sm stage-pending';
         el.innerHTML = `
-            <span class="w-6 h-6 rounded-full border border-gray-700 flex items-center justify-center text-xs" id="icon-${s.id}">○</span>
+            <span class="w-6 h-6 rounded-full border [border-color:var(--border-color)] flex items-center justify-center text-xs" id="icon-${s.id}">○</span>
             <span>${s.label}</span>
-            <span id="detail-${s.id}" class="text-xs text-gray-600 ml-2"></span>
+            <span id="detail-${s.id}" class="text-xs ml-2" style="color: var(--text-muted)"></span>
         `;
         stagesContainer.appendChild(el);
     });
@@ -97,7 +97,7 @@ function renderEvidence(evidence) {
     const list = document.getElementById('evidence-list');
     if (!list) return;
     list.innerHTML = evidence.map(e => `
-        <div class="bg-white/[0.02] rounded-xl p-4 border border-white/5">
+        <div class="[background:var(--bg-card)] rounded-xl p-4 border [border-color:var(--border-color)]">
             <div class="flex items-center justify-between mb-2">
                 <span class="text-xs text-violet-400/80 font-medium">${esc(e.source) || 'source'}</span>
                 <span class="text-xs text-gray-600">${(e.combined_score || 0).toFixed(2)}</span>
@@ -123,7 +123,7 @@ function renderClaims(claims) {
         const statusClass = statusColors[c.verification_status] || statusColors['not_enough_info'];
         const statusLabel = { 'supported': '已验证', 'refuted': '已反驳', 'not_enough_info': '证据不足' };
         return `
-            <div class="bg-white/[0.02] rounded-xl p-4 border border-white/5">
+            <div class="[background:var(--bg-card)] rounded-xl p-4 border [border-color:var(--border-color)]">
                 <p class="text-sm text-gray-300 mb-2">${esc(c.claim)}</p>
                 <div class="flex items-center gap-2">
                     <span class="text-xs px-2 py-0.5 rounded-full ${statusClass}">${statusLabel[c.verification_status] || c.verification_status}</span>
@@ -160,7 +160,7 @@ function renderUncertainty(uncertainty) {
                     </div>
                 </div>
             `).join('')}
-            <div class="pt-3 border-t border-white/5">
+            <div class="pt-3 border-t [border-color:var(--border-color)]">
                 <div class="flex justify-between text-sm">
                     <span class="text-gray-300">总体不确定性</span>
                     <span class="font-medium ${(uncertainty.overall_uncertainty || 0) > 0.5 ? 'text-amber-400' : 'text-emerald-400'}">${(uncertainty.overall_uncertainty || 0).toFixed(2)}</span>

@@ -38,7 +38,7 @@
     <h3 class="text-xs font-medium text-gray-500 mb-3">声明验证 ({{ result.answer_claims|length }})</h3>
     <div class="space-y-3">
         {% for c in result.answer_claims %}
-        <div class="bg-white/[0.02] rounded-xl p-4 border border-white/5">
+        <div class="[background:var(--bg-card)] rounded-xl p-4 border [border-color:var(--border-color)]">
             <p class="text-sm text-gray-300 mb-2">{{ c.get('claim', '') }}</p>
             <div class="flex items-center gap-3 text-xs">
                 {% set st = c.get('verification_status', 'not_enough_info') %}
@@ -61,7 +61,7 @@
     <h3 class="text-xs font-medium text-gray-500 mb-3">证据 ({{ result.evidence|length }})</h3>
     <div class="space-y-3">
         {% for e in result.evidence %}
-        <div class="bg-white/[0.02] rounded-xl p-4 border border-white/5">
+        <div class="[background:var(--bg-card)] rounded-xl p-4 border [border-color:var(--border-color)]">
             <div class="flex items-center justify-between mb-2">
                 <span class="text-xs text-violet-400/80">{{ e.get('source', '') }}</span>
                 <span class="text-xs text-gray-600">{{ "%.2f"|format(e.get('combined_score', 0)) }}</span>
@@ -95,7 +95,7 @@
             </div>
         </div>
         {% endfor %}
-        <div class="pt-3 border-t border-white/5 flex justify-between text-sm">
+        <div class="pt-3 border-t [border-color:var(--border-color)] flex justify-between text-sm">
             <span class="text-gray-300">总体不确定性</span>
             <span class="font-medium {{ 'text-amber-400' if u.get('overall_uncertainty', 0) > 0.5 else 'text-emerald-400' }}">{{ "%.2f"|format(u.get('overall_uncertainty', 0)) }}</span>
         </div>
