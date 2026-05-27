@@ -215,65 +215,99 @@ queryForm.addEventListener('submit', async (e) => {
     // Guard against double-submit
     if (submitBtn.disabled) return;
 
-    try {
-        const body = endpoint === '/query/demo'
-            ? { question }
-            : { question, max_rounds: 5 };
-        const ctrl = new AbortController();
-        const TIMEOUT_MS = parseInt(localStorage.getItem('verarag-timeout') || '120000');
-        const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            signal: ctrl.signal
-        });
-        clearTimeout(timer);
+    // Try WebSocket first, fallback to SSE
+    async function tryWebSocket(question, endpoint) {
+        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${location.host}/ws/query`;
+        const ws = new WebSocket(wsUrl);
 
-        if (!response.ok) {
-            throw new Error(`服务端错误: ${response.status}`);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let currentEvent = '';
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-                if (line === '') {
-                    currentEvent = '';
-                    continue;
+        return new Promise((resolve, reject) => {
+            ws.onopen = () => {
+                ws.send(JSON.stringify({ question }));
+            };
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                handleEvent(msg.event, msg.data);
+                if (msg.event === 'complete' || msg.event === 'error') {
+                    ws.close();
                 }
-                if (line.startsWith('event: ')) {
-                    currentEvent = line.slice(7).trim();
-                } else if (line.startsWith('data: ') && currentEvent) {
-                    try {
-                        const data = JSON.parse(line.slice(6));
-                        handleEvent(currentEvent, data);
-                    } catch (err) {
-                        // skip malformed JSON
+            };
+            ws.onerror = () => {
+                ws.close();
+                reject(new Error('WebSocket failed'));
+            };
+            ws.onclose = () => resolve();
+        });
+    }
+
+    try {
+        if (endpoint !== '/query/demo') {
+            await tryWebSocket(question, endpoint);
+        } else {
+            throw new Error('Demo mode uses SSE');
+        }
+    } catch (_wsErr) {
+        // Fallback to SSE (existing fetch logic)
+        try {
+            const body = endpoint === '/query/demo'
+                ? { question }
+                : { question, max_rounds: 5 };
+            const ctrl = new AbortController();
+            const TIMEOUT_MS = parseInt(localStorage.getItem('verarag-timeout') || '120000');
+            const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+                signal: ctrl.signal
+            });
+            clearTimeout(timer);
+
+            if (!response.ok) {
+                throw new Error(`服务端错误: ${response.status}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let currentEvent = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (line === '') {
+                        currentEvent = '';
+                        continue;
                     }
-                    currentEvent = '';
+                    if (line.startsWith('event: ')) {
+                        currentEvent = line.slice(7).trim();
+                    } else if (line.startsWith('data: ') && currentEvent) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            handleEvent(currentEvent, data);
+                        } catch (err) {
+                            // skip malformed JSON
+                        }
+                        currentEvent = '';
+                    }
                 }
             }
-        }
-    } catch (err) {
-        if (errorPanel) {
-            errorPanel.classList.remove('hidden');
-            if (err.name === 'AbortError') {
-                errorText.textContent = '请求超时，请重试';
-            } else if (!navigator.onLine) {
-                errorText.textContent = '网络连接已断开，请恢复网络后重试';
-            } else {
-                errorText.textContent = '连接失败: ' + err.message;
+        } catch (err) {
+            if (errorPanel) {
+                errorPanel.classList.remove('hidden');
+                if (err.name === 'AbortError') {
+                    errorText.textContent = '请求超时，请重试';
+                } else if (!navigator.onLine) {
+                    errorText.textContent = '网络连接已断开，请恢复网络后重试';
+                } else {
+                    errorText.textContent = '连接失败: ' + err.message;
+                }
             }
         }
     } finally {
