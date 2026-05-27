@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import os
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +17,44 @@ from sse_starlette.sse import EventSourceResponse
 _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
+
+# --- Thread-safe BM25 cache ---
+_bm25_retriever = None
+_bm25_chunks: dict = {}
+_bm25_lock = threading.Lock()
+
+
+def _get_bm25():
+    """Lazy-load BM25 index with thread safety (double-checked locking)."""
+    global _bm25_retriever, _bm25_chunks
+
+    if _bm25_retriever is not None:
+        return _bm25_retriever, _bm25_chunks
+
+    with _bm25_lock:
+        if _bm25_retriever is not None:
+            return _bm25_retriever, _bm25_chunks
+
+        corpus_path = os.path.join(_project_root, "data", "verabench", "corpus.jsonl")
+        if not os.path.exists(corpus_path):
+            return None, []
+
+        from src.retriever.bm25 import BM25Retriever
+
+        import json as _json
+
+        documents = []
+        with open(corpus_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    documents.append(_json.loads(line))
+
+        retriever = BM25Retriever()
+        retriever.index_documents(documents)
+        _bm25_retriever = retriever
+        _bm25_chunks = {doc.get("id", str(i)): doc for i, doc in enumerate(documents)}
+        return _bm25_retriever, _bm25_chunks
 
 
 class QueryRequest(BaseModel):
