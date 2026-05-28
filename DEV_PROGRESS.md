@@ -1,6 +1,6 @@
 # VeraRAG 开发进度
 
-> 最后更新：2026-05-27
+> 最后更新：2026-05-28
 
 ## 项目概况
 
@@ -91,6 +91,8 @@
 - [x] 文件上传 — PDF/TXT/MD 拖拽上传
 - [x] 结果导出 — Markdown 格式
 - [x] SSE 重试(3次) + 断网 banner + BM25 线程锁
+- [x] WebSocket 模式 — 优先 WS 降级 SSE
+- [x] 移动端响应式适配
 
 ### 10. 实验脚本
 - [x] `run_verabench.py` — VeraBench 评测（demo/full 模式），自动索引语料，输出 ECE/Brier
@@ -127,6 +129,13 @@
 - [x] Dockerfile
 - [x] Makefile（test/lint/format/run/coverage/docker）
 - [x] API Key Fernet 加密存储
+- [x] ruff 替代 flake8/black
+- [x] mypy 配置并通过
+- [x] conda 环境配置（environment.yml）
+- [x] 覆盖率徽章（CI coverage upload）
+- [x] 校准曲线生成脚本
+- [x] difficulty 分级验证脚本
+- [x] 外部数据集下载脚本修复（HotpotQA/FEVER fallback URL + MD5 校验）
 - [x] 已推送到 GitHub: https://github.com/xiaweiyi713/VeraRAG
 
 ---
@@ -228,15 +237,24 @@
 
 ### P5 — 工程完善
 
-- [ ] **覆盖率徽章** — README 添加 coverage badge
-- [ ] **Type checking** — mypy 通过
-- [ ] **Lint** — ruff 替代 flake8/black
-- [ ] **conda 环境配置** — 添加 environment.yml
-- [ ] **WebSocket 模式** — 替代 SSE，支持双向通信
+- [x] **覆盖率徽章** — README 添加 coverage badge
+- [x] **Type checking** — mypy 通过
+- [x] **Lint** — ruff 替代 flake8/black
+- [x] **conda 环境配置** — 添加 environment.yml
+- [x] **WebSocket 模式** — 替代 SSE，支持双向通信
 
 ---
 
-## 本次开发改动摘要（2026-05-27）
+## 本次开发改动摘要（2026-05-28）
+
+合并 `worktree-verarag-enhancement` 分支到 main，整合 Phase 1-4 增强功能。
+
+| 合并方向 | 内容 |
+|---------|------|
+| main → 合并后 | 三层冲突检测、Claim Schema 强化、152 题 VeraBench、不确定性驱动检索 |
+| 增强 → 合并后 | ruff/mypy/conda、WebSocket、亮暗主题、移动端、PDF 上传、API Key 加密、校准曲线、difficulty 验证 |
+
+## 历史改动摘要（2026-05-27）
 
 | 文件 | 改动说明 |
 |------|---------|
