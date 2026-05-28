@@ -12,22 +12,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.benchmark.evaluator import QuestionResult, VeraBenchEvaluator
 from src.benchmark.loader import (
-    VeraBenchLoader,
-    VeraBench,
+    QUESTION_TYPES,
     BenchmarkQuestion,
     CorpusDocument,
-    EvidenceRef,
-    GroundTruthClaim,
-    ExpectedConflict,
+    VeraBenchLoader,
     load_verabench,
-    QUESTION_TYPES,
-    EVIDENCE_CATEGORIES,
-    CONFLICT_TYPES,
-    EXPECTED_BEHAVIORS,
 )
-from src.benchmark.evaluator import VeraBenchEvaluator, QuestionResult, BenchmarkReport
-
 
 # --- Fixtures ---
 

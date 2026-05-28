@@ -4,13 +4,20 @@ import asyncio
 import json
 import os
 import sys
-import tempfile
 import threading
 import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Request, UploadFile, File, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
@@ -41,9 +48,9 @@ def _get_bm25():
         if not os.path.exists(corpus_path):
             return None, []
 
-        from src.retriever.bm25 import BM25Retriever
-
         import json as _json
+
+        from src.retriever.bm25 import BM25Retriever
 
         documents = []
         with open(corpus_path, encoding="utf-8") as f:
