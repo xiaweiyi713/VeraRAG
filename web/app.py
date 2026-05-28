@@ -3,20 +3,19 @@
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .db import Database
 from .api import create_router
+from .db import Database
 
 logger = logging.getLogger("verarag")
 
 
-def create_app(config_path: Optional[str] = None, db_path: Optional[str] = None) -> FastAPI:
+def create_app(config_path: str | None = None, db_path: str | None = None) -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
         title="VeraRAG",
@@ -45,7 +44,7 @@ def create_app(config_path: Optional[str] = None, db_path: Optional[str] = None)
     config = None
     if config_path and os.path.exists(config_path):
         import yaml
-        with open(config_path, 'r') as f:
+        with open(config_path) as f:
             config = yaml.safe_load(f)
 
     # Store shared state

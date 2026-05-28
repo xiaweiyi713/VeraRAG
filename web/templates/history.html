@@ -13,8 +13,8 @@
 {% if queries %}
 <div class="space-y-3">
     {% for q in queries %}
-    <a href="/history/{{ q.id }}" class="block glass rounded-xl p-5 hover:border-violet-500/20 transition group">
-        <div class="flex items-start justify-between gap-4">
+    <a href="/history/{{ q.id }}" class="block glass rounded-xl p-4 sm:p-5 hover:border-violet-500/20 transition group">
+        <div class="flex items-start justify-between gap-3 sm:gap-4">
             <div class="flex-1 min-w-0">
                 <p class="text-sm text-gray-200 mb-1 group-hover:text-violet-300 transition truncate">{{ q.question }}</p>
                 <p class="text-xs text-gray-500 truncate">{{ q.answer }}</p>

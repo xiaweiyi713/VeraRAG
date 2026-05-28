@@ -1,7 +1,6 @@
 """Hybrid Retriever combining sparse and dense retrieval for VeraRAG."""
 
-from typing import List, Dict, Any, Optional
-import numpy as np
+from typing import Any
 
 from .base import BaseRetriever, RetrievalResult
 from .bm25 import BM25Retriever
@@ -17,7 +16,7 @@ class HybridRetriever(BaseRetriever):
 
     def __init__(
         self,
-        config: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
         sparse_weight: float = 0.3,
         dense_weight: float = 0.7,
         **kwargs
@@ -48,7 +47,7 @@ class HybridRetriever(BaseRetriever):
             import logging
             logging.getLogger("verarag").warning("DenseRetriever unavailable (sentence-transformers not installed), using BM25 only")
 
-    def index_documents(self, documents: List[Dict[str, Any]]) -> None:
+    def index_documents(self, documents: list[dict[str, Any]]) -> None:
         self.sparse_retriever.index_documents(documents)
         if self._dense_available and self.dense_retriever:
             try:
@@ -62,7 +61,7 @@ class HybridRetriever(BaseRetriever):
         top_k: int = 10,
         fetch_k: int = 100,
         **kwargs
-    ) -> List[RetrievalResult]:
+    ) -> list[RetrievalResult]:
         sparse_results = self.sparse_retriever.retrieve(query, top_k=fetch_k)
 
         if not self._dense_available or not self.dense_retriever:
@@ -104,10 +103,10 @@ class HybridRetriever(BaseRetriever):
 
     def _reciprocal_rank_fusion(
         self,
-        result_lists: List[List[RetrievalResult]],
-        weights: List[float],
+        result_lists: list[list[RetrievalResult]],
+        weights: list[float],
         k: int = 60
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Combine results using Reciprocal Rank Fusion (RRF).
 
@@ -119,9 +118,9 @@ class HybridRetriever(BaseRetriever):
         Returns:
             Dictionary mapping doc_id to combined score
         """
-        scores = {}
+        scores: dict[str, float] = {}
 
-        for results, weight in zip(result_lists, weights):
+        for results, weight in zip(result_lists, weights):  # noqa: B905
             for rank, result in enumerate(results):
                 doc_id = result.doc_id
                 # RRF score: weight / (k + rank)
@@ -133,15 +132,15 @@ class HybridRetriever(BaseRetriever):
     def save_index(self, path: str) -> None:
         """Save both indexes to disk."""
         from pathlib import Path
-        path = Path(path)
+        save_dir = Path(path)
 
-        self.sparse_retriever.save_index(str(path / "sparse_index.pkl"))
-        self.dense_retriever.save_index(str(path / "dense_index.pkl"))
+        self.sparse_retriever.save_index(str(save_dir / "sparse_index.pkl"))
+        self.dense_retriever.save_index(str(save_dir / "dense_index.pkl"))
 
     def load_index(self, path: str) -> None:
         """Load both indexes from disk."""
         from pathlib import Path
-        path = Path(path)
+        load_dir = Path(path)
 
-        self.sparse_retriever.load_index(str(path / "sparse_index.pkl"))
-        self.dense_retriever.load_index(str(path / "dense_index.pkl"))
+        self.sparse_retriever.load_index(str(load_dir / "sparse_index.pkl"))
+        self.dense_retriever.load_index(str(load_dir / "dense_index.pkl"))

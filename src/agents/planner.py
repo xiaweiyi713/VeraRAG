@@ -1,11 +1,10 @@
 """Decomposition and Planning Agent for VeraRAG."""
 
 import json
-import uuid
-from typing import Dict, Any, Optional, List
+from typing import Any
 
-from .base import BaseAgent
 from ..utils.data_structures import SubQuestion, TaskAnalysis, UncertaintyBreakdown
+from .base import BaseAgent
 
 
 class DecompositionPlanner(BaseAgent):
@@ -19,7 +18,7 @@ class DecompositionPlanner(BaseAgent):
     4. Whether counter-evidence should be sought
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, llm_client: Optional[Any] = None):
+    def __init__(self, config: dict[str, Any] | None = None, llm_client: Any | None = None):
         super().__init__(config, llm_client)
         self.system_prompt = """You are an expert at breaking down complex questions into clear, answerable sub-questions.
 Your goal is to create a structured plan for answering complex questions.
@@ -30,7 +29,7 @@ Output ONLY valid JSON, no other text."""
         question: str,
         task_analysis: TaskAnalysis,
         max_subquestions: int = 10
-    ) -> List[SubQuestion]:
+    ) -> list[SubQuestion]:
         """
         Decompose a complex question into sub-questions.
 
@@ -62,7 +61,7 @@ Output ONLY valid JSON, no other text."""
         question: str,
         task_analysis: TaskAnalysis,
         max_subquestions: int
-    ) -> List[SubQuestion]:
+    ) -> list[SubQuestion]:
         """Use LLM to decompose the question."""
         prompt = f"""Break down the following complex question into sub-questions.
 
@@ -119,7 +118,7 @@ Limit to {max_subquestions} sub-questions.
 
             return subquestions
 
-        except (json.JSONDecodeError, KeyError) as e:
+        except (json.JSONDecodeError, KeyError):
             # Fallback: create simple decomposition
             return self._fallback_decompose(question, task_analysis)
 
@@ -127,7 +126,7 @@ Limit to {max_subquestions} sub-questions.
         self,
         question: str,
         task_analysis: TaskAnalysis
-    ) -> List[SubQuestion]:
+    ) -> list[SubQuestion]:
         """Fallback decomposition strategy."""
         # Simple approach: create sub-questions for each keyword pair
         keywords = task_analysis.keywords[:5]
@@ -157,8 +156,8 @@ Limit to {max_subquestions} sub-questions.
     def get_reasoning_plan(
         self,
         question: str,
-        subquestions: List[SubQuestion]
-    ) -> List[str]:
+        subquestions: list[SubQuestion]
+    ) -> list[str]:
         """
         Generate a reasoning plan for answering the question.
 
@@ -193,8 +192,8 @@ Output a JSON array of reasoning steps:
                 response_format="json"
             )
             data = json.loads(response)
-            return data.get("reasoning_plan", [])
-        except:
+            return list(data.get("reasoning_plan", []))
+        except Exception:
             # Fallback reasoning plan
             return [
                 "Gather evidence for each sub-question",
@@ -206,9 +205,9 @@ Output a JSON array of reasoning steps:
 
     def refine_plan(
         self,
-        subquestions: List[SubQuestion],
-        uncertainty_report: Dict[str, Any]
-    ) -> List[SubQuestion]:
+        subquestions: list[SubQuestion],
+        uncertainty_report: dict[str, Any]
+    ) -> list[SubQuestion]:
         """
         Refine the plan based on uncertainty feedback.
 
@@ -280,6 +279,6 @@ Output a JSON array of reasoning steps:
         question: str,
         task_analysis: TaskAnalysis,
         max_subquestions: int = 10
-    ) -> List[SubQuestion]:
+    ) -> list[SubQuestion]:
         """Run the decomposition planner."""
         return self.decompose(question, task_analysis, max_subquestions)

@@ -1,6 +1,7 @@
 """Reranker for improving retrieval results in VeraRAG."""
 
-from typing import List, Dict, Any, Optional
+from typing import Any
+
 import numpy as np
 
 from .base import RetrievalResult
@@ -25,7 +26,7 @@ class Reranker:
         self.device = device
         self.batch_size = batch_size
         self.top_k = top_k
-        self.model = None
+        self.model: Any = None
 
     def _load_model(self):
         """Lazy load the model."""
@@ -39,9 +40,9 @@ class Reranker:
     def rerank(
         self,
         query: str,
-        results: List[RetrievalResult],
-        top_k: Optional[int] = None
-    ) -> List[RetrievalResult]:
+        results: list[RetrievalResult],
+        top_k: int | None = None
+    ) -> list[RetrievalResult]:
         """
         Rerank retrieval results.
 
@@ -76,7 +77,7 @@ class Reranker:
         )
 
         # Sort by new scores
-        scored_results = list(zip(results, scores))
+        scored_results = list(zip(results, scores))  # noqa: B905
         scored_results.sort(key=lambda x: x[1], reverse=True)
 
         # Return top_k with updated scores
@@ -94,10 +95,10 @@ class Reranker:
 
     def rerank_batch(
         self,
-        queries: List[str],
-        results_list: List[List[RetrievalResult]],
-        top_k: Optional[int] = None
-    ) -> List[List[RetrievalResult]]:
+        queries: list[str],
+        results_list: list[list[RetrievalResult]],
+        top_k: int | None = None
+    ) -> list[list[RetrievalResult]]:
         """
         Rerank multiple query-result pairs.
 
@@ -111,7 +112,7 @@ class Reranker:
         """
         return [
             self.rerank(q, r, top_k)
-            for q, r in zip(queries, results_list)
+            for q, r in zip(queries, results_list)  # noqa: B905
         ]
 
 
@@ -142,9 +143,9 @@ class EvidenceAwareReranker(Reranker):
     def rerank(
         self,
         query: str,
-        results: List[RetrievalResult],
-        top_k: Optional[int] = None
-    ) -> List[RetrievalResult]:
+        results: list[RetrievalResult],
+        top_k: int | None = None
+    ) -> list[RetrievalResult]:
         """
         Rerank with evidence quality considerations.
         """
@@ -161,15 +162,15 @@ class EvidenceAwareReranker(Reranker):
 
         # Calculate combined scores
         scored_results = []
-        for result, relevance in zip(results, relevance_scores):
+        for result, relevance in zip(results, relevance_scores):  # noqa: B905
             # Normalize relevance to 0-1
             norm_relevance = float(1 / (1 + np.exp(-relevance)))
 
             # Get credibility score from metadata
-            credibility = result.metadata.get('credibility_score', 0.5)
+            credibility = (result.metadata or {}).get('credibility_score', 0.5)
 
             # Get recency score (could be based on date)
-            recency = result.metadata.get('recency_score', 0.5)
+            recency = (result.metadata or {}).get('recency_score', 0.5)
 
             # Combine scores
             combined = (

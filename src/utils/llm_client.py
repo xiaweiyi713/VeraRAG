@@ -2,8 +2,6 @@
 
 import logging
 import os
-import json
-from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +21,8 @@ class LLMClient:
         self,
         provider: str = "ollama",  # 默认使用 Ollama
         model: str = "qwen2.5:7b",
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 2000
     ):
@@ -85,10 +83,10 @@ class LLMClient:
     def generate(
         self,
         prompt: str,
-        system_prompt: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        response_format: Optional[str] = None
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        response_format: str | None = None
     ) -> str:
         """Generate text from the LLM."""
         max_tokens = max_tokens or self.max_tokens
@@ -106,7 +104,7 @@ class LLMClient:
                 kwargs["response_format"] = {"type": "json_object"}
 
             response = client.chat.completions.create(model=self.model, **kwargs)
-            return response.choices[0].message.content
+            return response.choices[0].message.content  # type: ignore[no-any-return]
 
         elif self.provider == "anthropic":
             messages = [{"role": "user", "content": prompt}]
@@ -120,7 +118,7 @@ class LLMClient:
                 kwargs["system"] = system_prompt
 
             response = client.messages.create(**kwargs)
-            return response.content[0].text
+            return response.content[0].text  # type: ignore[no-any-return]
 
         elif self.provider == "ollama":
             # Ollama API
@@ -137,7 +135,7 @@ class LLMClient:
 
             # Ollama returns a generator for chat
             response = client.chat(**kwargs)
-            return response["message"]["content"]
+            return response["message"]["content"]  # type: ignore[no-any-return]
 
         elif self.provider in ["dashscope", "zhipuai", "deepseek"]:
             # These use OpenAI-compatible API
@@ -153,7 +151,7 @@ class LLMClient:
                 kwargs["response_format"] = {"type": "json_object"}
 
             response = client.chat.completions.create(model=self.model, **kwargs)
-            return response.choices[0].message.content
+            return response.choices[0].message.content  # type: ignore[no-any-return]
 
         else:
             raise ValueError(f"Unknown provider: {self.provider}")
@@ -176,8 +174,8 @@ class LLMClient:
 
 
 def create_llm_client(
-    provider: Optional[str] = None,
-    model: Optional[str] = None
+    provider: str | None = None,
+    model: str | None = None
 ) -> LLMClient:
     """
     Create an LLM client with automatic provider selection.
@@ -199,7 +197,7 @@ def create_llm_client(
         client.list()
         logger.info("Detected Ollama, using local model")
         return LLMClient(provider="ollama", model=model or "qwen2.5:7b")
-    except:
+    except Exception:
         pass
 
     # 2. Check OpenAI

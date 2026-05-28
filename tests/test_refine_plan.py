@@ -1,9 +1,11 @@
 """Tests for plan refinement."""
 
 import sys
+
 sys.path.insert(0, 'src')
 
 import unittest
+
 from src.agents.planner import DecompositionPlanner
 from src.utils.data_structures import SubQuestion, UncertaintyBreakdown
 

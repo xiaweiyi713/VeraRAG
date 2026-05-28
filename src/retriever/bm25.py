@@ -1,11 +1,9 @@
 """BM25 Sparse Retriever for VeraRAG."""
 
 import pickle
-import math
-from collections import defaultdict
-from typing import List, Dict, Any, Optional
-from pathlib import Path
 import re
+from pathlib import Path
+from typing import Any
 
 from .base import BaseRetriever, RetrievalResult
 
@@ -20,7 +18,7 @@ class BM25Retriever(BaseRetriever):
 
     def __init__(
         self,
-        config: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
         k1: float = 1.5,
         b: float = 0.75,
         epsilon: float = 0.25
@@ -29,12 +27,12 @@ class BM25Retriever(BaseRetriever):
         self.k1 = k1
         self.b = b
         self.epsilon = epsilon
-        self.corpus: List[str] = []
-        self.doc_ids: List[str] = []
-        self.doc_metadata: List[Dict[str, Any]] = []
+        self.corpus: list[str] = []
+        self.doc_ids: list[str] = []
+        self.doc_metadata: list[dict[str, Any]] = []
         self.index = None
 
-    def _tokenize(self, text: str) -> List[str]:
+    def _tokenize(self, text: str) -> list[str]:
         """Tokenize with Chinese + English support."""
         text = text.lower()
         # Try jieba for Chinese word segmentation
@@ -65,7 +63,7 @@ class BM25Retriever(BaseRetriever):
             epsilon=self.epsilon
         )
 
-    def index_documents(self, documents: List[Dict[str, Any]]) -> None:
+    def index_documents(self, documents: list[dict[str, Any]]) -> None:
         """
         Build BM25 index from documents.
 
@@ -98,7 +96,7 @@ class BM25Retriever(BaseRetriever):
         query: str,
         top_k: int = 10,
         **kwargs
-    ) -> List[RetrievalResult]:
+    ) -> list[RetrievalResult]:
         """
         Retrieve documents using BM25.
 
@@ -138,8 +136,8 @@ class BM25Retriever(BaseRetriever):
 
     def save_index(self, path: str) -> None:
         """Save BM25 index to disk."""
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        save_path = Path(path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
 
         data = {
             'corpus': self.corpus,
@@ -150,7 +148,7 @@ class BM25Retriever(BaseRetriever):
             'epsilon': self.epsilon
         }
 
-        with open(path, 'wb') as f:
+        with open(save_path, 'wb') as f:
             pickle.dump(data, f)
 
     def load_index(self, path: str) -> None:

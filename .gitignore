@@ -72,3 +72,4 @@ Thumbs.db
 
 # Claude Code plugin docs (internal tooling)
 docs/superpowers/
+.verarag_key

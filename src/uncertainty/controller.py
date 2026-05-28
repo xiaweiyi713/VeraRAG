@@ -1,17 +1,17 @@
 """Uncertainty Controller for VeraRAG."""
 
-from enum import Enum
-from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
+from enum import Enum
+from typing import Any
 
 from ..utils.data_structures import (
-    UncertaintyBreakdown,
-    SubQuestion,
     Evidence,
-    EvidenceConflictGraph
+    EvidenceConflictGraph,
+    SubQuestion,
+    UncertaintyBreakdown,
 )
-from .estimator import UncertaintyEstimator
 from .calibrator import ConfidenceCalibrator
+from .estimator import UncertaintyEstimator
 
 
 class Action(Enum):
@@ -45,7 +45,7 @@ class UncertaintyController:
     5. Proceed with current answer
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.estimator = UncertaintyEstimator(config)
         self.calibrator = ConfidenceCalibrator(config)
@@ -57,8 +57,8 @@ class UncertaintyController:
 
     def assess(
         self,
-        subquestions: List[SubQuestion],
-        evidence_pool: List[Evidence],
+        subquestions: list[SubQuestion],
+        evidence_pool: list[Evidence],
         conflict_graph: EvidenceConflictGraph,
         reasoning_completeness: float = 0.8,
         max_rounds: int = 5,
@@ -202,8 +202,8 @@ class UncertaintyController:
 
     def get_uncertainty_breakdown(
         self,
-        subquestions: List[SubQuestion],
-        evidence_pool: List[Evidence],
+        subquestions: list[SubQuestion],
+        evidence_pool: list[Evidence],
         conflict_graph: EvidenceConflictGraph
     ) -> UncertaintyBreakdown:
         """Get detailed uncertainty breakdown."""

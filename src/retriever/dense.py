@@ -1,8 +1,9 @@
 """Dense Retriever using sentence embeddings for VeraRAG."""
 
 import pickle
-from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
+from typing import Any
+
 import numpy as np
 
 from .base import BaseRetriever, RetrievalResult
@@ -18,7 +19,7 @@ class DenseRetriever(BaseRetriever):
 
     def __init__(
         self,
-        config: Optional[Dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
         model_name: str = "BAAI/bge-base-en-v1.5",
         device: str = "cpu",
         batch_size: int = 32
@@ -27,11 +28,11 @@ class DenseRetriever(BaseRetriever):
         self.model_name = model_name
         self.device = device
         self.batch_size = batch_size
-        self.model = None
-        self.embeddings: Optional[np.ndarray] = None
-        self.doc_ids: List[str] = []
-        self.doc_texts: List[str] = []
-        self.doc_metadata: List[Dict[str, Any]] = []
+        self.model: Any = None
+        self.embeddings: np.ndarray | None = None
+        self.doc_ids: list[str] = []
+        self.doc_texts: list[str] = []
+        self.doc_metadata: list[dict[str, Any]] = []
 
     def _load_model(self):
         """Lazy load the model."""
@@ -42,7 +43,7 @@ class DenseRetriever(BaseRetriever):
                 device=self.device
             )
 
-    def _encode_texts(self, texts: List[str]) -> np.ndarray:
+    def _encode_texts(self, texts: list[str]) -> np.ndarray:
         """Encode texts to embeddings."""
         self._load_model()
         embeddings = self.model.encode(
@@ -51,9 +52,9 @@ class DenseRetriever(BaseRetriever):
             show_progress_bar=False,
             convert_to_numpy=True
         )
-        return embeddings
+        return embeddings  # type: ignore[no-any-return]
 
-    def index_documents(self, documents: List[Dict[str, Any]]) -> None:
+    def index_documents(self, documents: list[dict[str, Any]]) -> None:
         """
         Build dense index from documents.
 
@@ -87,7 +88,7 @@ class DenseRetriever(BaseRetriever):
         query: str,
         top_k: int = 10,
         **kwargs
-    ) -> List[RetrievalResult]:
+    ) -> list[RetrievalResult]:
         """
         Retrieve documents using dense similarity.
 
@@ -109,11 +110,11 @@ class DenseRetriever(BaseRetriever):
 
         # Get L2 norms for normalization
         doc_norms = np.linalg.norm(self.embeddings, axis=1)
-        query_norm = np.linalg.norm(query_embedding)
+        query_norm_raw = np.linalg.norm(query_embedding)
 
         # Handle zero norms
         doc_norms = np.where(doc_norms == 0, 1, doc_norms)
-        query_norm = query_norm if query_norm > 0 else 1
+        query_norm = float(query_norm_raw) if query_norm_raw > 0 else 1.0
 
         # Cosine similarity
         scores = scores / (doc_norms * query_norm)
@@ -136,8 +137,8 @@ class DenseRetriever(BaseRetriever):
 
     def save_index(self, path: str) -> None:
         """Save dense index to disk."""
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        save_path = Path(path)
+        save_path.parent.mkdir(parents=True, exist_ok=True)
 
         data = {
             'embeddings': self.embeddings,
@@ -147,7 +148,7 @@ class DenseRetriever(BaseRetriever):
             'model_name': self.model_name
         }
 
-        with open(path, 'wb') as f:
+        with open(save_path, 'wb') as f:
             pickle.dump(data, f)
 
     def load_index(self, path: str) -> None:
@@ -167,14 +168,15 @@ class FAISSRetriever(DenseRetriever):
     Dense retriever with FAISS indexing for efficient large-scale retrieval.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, **kwargs):
+    def __init__(self, config: dict[str, Any] | None = None, **kwargs):
         super().__init__(config, **kwargs)
-        self.faiss_index = None
+        self.faiss_index: Any = None
 
     def _build_faiss_index(self) -> None:
         """Build FAISS index from embeddings."""
         import faiss
 
+        assert self.embeddings is not None
         dimension = self.embeddings.shape[1]
         # Use Inner Product (IP) for cosine similarity with normalized vectors
         self.faiss_index = faiss.IndexFlatIP(dimension)
@@ -183,7 +185,7 @@ class FAISSRetriever(DenseRetriever):
         faiss.normalize_L2(self.embeddings)
         self.faiss_index.add(self.embeddings.astype('float32'))
 
-    def index_documents(self, documents: List[Dict[str, Any]]) -> None:
+    def index_documents(self, documents: list[dict[str, Any]]) -> None:
         """Build FAISS index from documents."""
         super().index_documents(documents)
         self._build_faiss_index()
@@ -193,7 +195,7 @@ class FAISSRetriever(DenseRetriever):
         query: str,
         top_k: int = 10,
         **kwargs
-    ) -> List[RetrievalResult]:
+    ) -> list[RetrievalResult]:
         """Retrieve using FAISS index."""
         if self.faiss_index is None:
             return []
@@ -209,7 +211,7 @@ class FAISSRetriever(DenseRetriever):
 
         # Build results
         results = []
-        for score, idx in zip(scores[0], indices[0]):
+        for score, idx in zip(scores[0], indices[0]):  # noqa: B905
             if idx >= 0 and idx < len(self.doc_ids):
                 results.append(RetrievalResult(
                     doc_id=self.doc_ids[idx],

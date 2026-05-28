@@ -1,4 +1,4 @@
-.PHONY: test lint format run clean coverage
+.PHONY: test lint format run clean coverage docker-build docker-run demo ablation baselines benchmark
 
 test:
 	python -m pytest tests/ -v --tb=short
@@ -7,11 +7,12 @@ coverage:
 	python -m pytest tests/ -v --tb=short --cov=src --cov-report=term-missing --cov-report=html
 
 lint:
-	python -m flake8 src/ web/ experiments/ --max-line-length=100 --exclude=__pycache__,.git
-	python -m mypy src/ --ignore-missing-imports
+	ruff check src/ web/ experiments/ tests/
+	mypy src/ --config-file mypy.ini
 
 format:
-	python -m black src/ web/ experiments/ tests/ --line-length=100
+	ruff format src/ web/ experiments/ tests/
+	ruff check --fix src/ web/ experiments/ tests/
 
 run:
 	python -m uvicorn web.app:create_app --factory --host 0.0.0.0 --port 8000 --reload

@@ -1,6 +1,5 @@
 """Evidence Metrics for VeraRAG Evaluation."""
 
-from typing import Dict, Any, List, Set
 
 from ..utils.data_structures import Evidence
 
@@ -18,8 +17,8 @@ class EvidenceMetrics:
 
     @staticmethod
     def evidence_precision(
-        retrieved_evidence: List[str],
-        relevant_evidence: List[str]
+        retrieved_evidence: list[str],
+        relevant_evidence: list[str]
     ) -> float:
         """
         Calculate evidence precision.
@@ -42,8 +41,8 @@ class EvidenceMetrics:
 
     @staticmethod
     def evidence_recall(
-        retrieved_evidence: List[str],
-        relevant_evidence: List[str]
+        retrieved_evidence: list[str],
+        relevant_evidence: list[str]
     ) -> float:
         """
         Calculate evidence recall.
@@ -66,8 +65,8 @@ class EvidenceMetrics:
 
     @staticmethod
     def evidence_f1(
-        retrieved_evidence: List[str],
-        relevant_evidence: List[str]
+        retrieved_evidence: list[str],
+        relevant_evidence: list[str]
     ) -> float:
         """
         Calculate evidence F1 score.
@@ -89,8 +88,8 @@ class EvidenceMetrics:
 
     @staticmethod
     def supporting_fact_precision(
-        predicted_facts: List[str],
-        gold_facts: List[str]
+        predicted_facts: list[str],
+        gold_facts: list[str]
     ) -> float:
         """
         Calculate supporting fact precision (HotpotQA style).
@@ -113,8 +112,8 @@ class EvidenceMetrics:
 
     @staticmethod
     def supporting_fact_recall(
-        predicted_facts: List[str],
-        gold_facts: List[str]
+        predicted_facts: list[str],
+        gold_facts: list[str]
     ) -> float:
         """
         Calculate supporting fact recall (HotpotQA style).
@@ -137,8 +136,8 @@ class EvidenceMetrics:
 
     @staticmethod
     def supporting_fact_f1(
-        predicted_facts: List[str],
-        gold_facts: List[str]
+        predicted_facts: list[str],
+        gold_facts: list[str]
     ) -> float:
         """
         Calculate supporting fact F1 score (HotpotQA style).
@@ -178,8 +177,8 @@ class EvidenceMetrics:
     @staticmethod
     def citation_precision(
         answer: str,
-        evidence_map: Dict[str, Evidence],
-        valid_citations: Set[str]
+        evidence_map: dict[str, Evidence],
+        valid_citations: set[str]
     ) -> float:
         """
         Calculate citation precision.
@@ -205,7 +204,7 @@ class EvidenceMetrics:
     @staticmethod
     def citation_recall(
         answer: str,
-        required_citations: Set[str]
+        required_citations: set[str]
     ) -> float:
         """
         Calculate citation recall.

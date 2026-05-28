@@ -2,10 +2,10 @@
 
 import json
 import re
-from typing import Dict, Any, Optional, List
+from typing import Any
 
+from ..utils.data_structures import Complexity, TaskAnalysis, TaskType
 from .base import BaseAgent
-from ..utils.data_structures import TaskAnalysis, TaskType, Complexity
 
 
 class TaskAnalyzer(BaseAgent):
@@ -20,7 +20,7 @@ class TaskAnalyzer(BaseAgent):
     - Key keywords for retrieval
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, llm_client: Optional[Any] = None):
+    def __init__(self, config: dict[str, Any] | None = None, llm_client: Any | None = None):
         super().__init__(config, llm_client)
         self.system_prompt = """You are a task analysis expert for complex knowledge QA systems.
 Your job is to analyze questions and determine their characteristics.
@@ -201,11 +201,11 @@ Consider:
                 estimated_hops=data.get("estimated_hops", 2),
                 keywords=data.get("keywords", [])
             )
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
+        except (json.JSONDecodeError, KeyError, ValueError):
             # Fallback to rule-based
             return self._rule_based_analyze(question)
 
-    def _extract_keywords(self, question: str) -> List[str]:
+    def _extract_keywords(self, question: str) -> list[str]:
         """Extract key entities and concepts from the question."""
         import re
 

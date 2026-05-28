@@ -1,12 +1,12 @@
 """Uncertainty Estimator for VeraRAG."""
 
-from typing import Dict, Any, Optional, List
+from typing import Any
 
 from ..utils.data_structures import (
-    UncertaintyBreakdown,
-    SubQuestion,
     Evidence,
-    EvidenceConflictGraph
+    EvidenceConflictGraph,
+    SubQuestion,
+    UncertaintyBreakdown,
 )
 
 
@@ -22,7 +22,7 @@ class UncertaintyEstimator:
     5. Verification uncertainty: How uncertain verification is
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.weights = self.config.get("weights", {
             "retrieval": 0.25,
@@ -34,8 +34,8 @@ class UncertaintyEstimator:
 
     def estimate(
         self,
-        subquestions: List[SubQuestion],
-        evidence_pool: List[Evidence],
+        subquestions: list[SubQuestion],
+        evidence_pool: list[Evidence],
         conflict_graph: EvidenceConflictGraph,
         reasoning_completeness: float = 0.8
     ) -> UncertaintyBreakdown:
@@ -78,8 +78,8 @@ class UncertaintyEstimator:
 
     def _estimate_retrieval_uncertainty(
         self,
-        subquestions: List[SubQuestion],
-        evidence_pool: List[Evidence]
+        subquestions: list[SubQuestion],
+        evidence_pool: list[Evidence]
     ) -> float:
         """
         Estimate how well retrieval covered the information needs.
@@ -126,7 +126,7 @@ class UncertaintyEstimator:
 
     def _estimate_source_uncertainty(
         self,
-        evidence_pool: List[Evidence]
+        evidence_pool: list[Evidence]
     ) -> float:
         """
         Estimate uncertainty due to source reliability issues.

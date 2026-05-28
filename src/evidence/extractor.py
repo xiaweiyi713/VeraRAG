@@ -3,10 +3,10 @@
 import json
 import re
 import uuid
-from typing import Dict, Any, Optional, List
+from typing import Any
 
-from ..utils.data_structures import Evidence, Claim, ClaimType
 from ..agents.base import BaseAgent
+from ..utils.data_structures import Claim, ClaimType, Evidence
 
 
 class EvidenceExtractor(BaseAgent):
@@ -21,7 +21,7 @@ class EvidenceExtractor(BaseAgent):
     5. Claim types
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, llm_client: Optional[Any] = None):
+    def __init__(self, config: dict[str, Any] | None = None, llm_client: Any | None = None):
         super().__init__(config, llm_client)
         self.system_prompt = """You are an expert at extracting structured claims from text.
 Extract atomic factual claims that can be independently verified.
@@ -32,7 +32,7 @@ Output ONLY valid JSON, no other text."""
         text: str,
         source: str,
         title: str = "",
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: dict[str, Any] | None = None
     ) -> Evidence:
         """
         Extract structured evidence from raw text.
@@ -65,7 +65,7 @@ Output ONLY valid JSON, no other text."""
 
         return evidence
 
-    def _extract_entities(self, text: str) -> List[str]:
+    def _extract_entities(self, text: str) -> list[str]:
         """Extract named entities from text."""
         entities = []
 
@@ -76,13 +76,13 @@ Output ONLY valid JSON, no other text."""
         # Deduplicate
         return list(set(entities))
 
-    def _extract_claims(self, text: str) -> List[Claim]:
+    def _extract_claims(self, text: str) -> list[Claim]:
         """Extract atomic claims from text."""
         # For efficiency, use rule-based extraction for simple cases
         sentences = re.split(r'[.!?]+', text)
         claims = []
 
-        for i, sent in enumerate(sentences):
+        for _i, sent in enumerate(sentences):
             sent = sent.strip()
             if len(sent) < 10:  # Skip very short sentences
                 continue
@@ -146,14 +146,16 @@ Output ONLY valid JSON, no other text."""
         text_lower = claim_text.lower()
 
         # Check for numerical claims
-        if re.search(r'\d+(?:,\d{3})*(?:\.\d+)?%?', claim_text):
-            if any(word in text_lower for word in ['increase', 'decrease', 'percent', 'rate', 'ratio']):
-                return ClaimType.NUMERICAL
+        if re.search(r'\d+(?:,\d{3})*(?:\.\d+)?%?', claim_text) and any(
+            word in text_lower for word in ['increase', 'decrease', 'percent', 'rate', 'ratio']
+        ):
+            return ClaimType.NUMERICAL
 
         # Check for temporal claims
-        if self._extract_temporal_expressions(claim_text):
-            if any(word in text_lower for word in ['before', 'after', 'during', 'since', 'until', 'when']):
-                return ClaimType.TEMPORAL
+        if self._extract_temporal_expressions(claim_text) and any(
+            word in text_lower for word in ['before', 'after', 'during', 'since', 'until', 'when']
+        ):
+            return ClaimType.TEMPORAL
 
         # Check for causal claims
         if any(word in text_lower for word in ['because', 'due to', 'caused', 'led to', 'resulted in', 'reason']):
@@ -166,7 +168,7 @@ Output ONLY valid JSON, no other text."""
         # Default to factual
         return ClaimType.FACTUAL
 
-    def _extract_temporal_expressions(self, text: str) -> List[str]:
+    def _extract_temporal_expressions(self, text: str) -> list[str]:
         """Extract temporal expressions from text."""
         temporal = []
 
@@ -195,7 +197,7 @@ Output ONLY valid JSON, no other text."""
         self,
         text: str,
         max_claims: int = 10
-    ) -> List[Claim]:
+    ) -> list[Claim]:
         """
         Use LLM to extract claims from text (more accurate but slower).
 
@@ -247,7 +249,7 @@ support_type rules:
             data = json.loads(response)
 
             claims = []
-            for i, c_data in enumerate(data.get("claims", [])):
+            for _i, c_data in enumerate(data.get("claims", [])):
                 claim = Claim(
                     claim_id=f"C{uuid.uuid4().hex[:8]}",
                     claim=c_data.get("claim", ""),
@@ -262,7 +264,7 @@ support_type rules:
 
             return claims
 
-        except:
+        except Exception:
             # Fallback to rule-based
             return self._extract_claims(text)
 

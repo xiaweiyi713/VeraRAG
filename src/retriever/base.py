@@ -1,8 +1,8 @@
 """Base Retriever class for VeraRAG."""
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -12,7 +12,7 @@ class RetrievalResult:
     content: str
     title: str = ""
     score: float = 0.0
-    metadata: Dict[str, Any] = None
+    metadata: dict[str, Any] | None = None
 
     def __post_init__(self):
         if self.metadata is None:
@@ -22,7 +22,7 @@ class RetrievalResult:
 class BaseRetriever(ABC):
     """Base class for all retrievers."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
 
     @abstractmethod
@@ -31,7 +31,7 @@ class BaseRetriever(ABC):
         query: str,
         top_k: int = 10,
         **kwargs
-    ) -> List[RetrievalResult]:
+    ) -> list[RetrievalResult]:
         """
         Retrieve documents for a query.
 
@@ -48,7 +48,7 @@ class BaseRetriever(ABC):
     @abstractmethod
     def index_documents(
         self,
-        documents: List[Dict[str, Any]]
+        documents: list[dict[str, Any]]
     ) -> None:
         """
         Build index from documents.
@@ -60,10 +60,10 @@ class BaseRetriever(ABC):
 
     def batch_retrieve(
         self,
-        queries: List[str],
+        queries: list[str],
         top_k: int = 10,
         **kwargs
-    ) -> List[List[RetrievalResult]]:
+    ) -> list[list[RetrievalResult]]:
         """
         Retrieve documents for multiple queries.
 

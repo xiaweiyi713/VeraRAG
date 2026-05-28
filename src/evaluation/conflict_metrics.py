@@ -1,8 +1,8 @@
 """Conflict Metrics for VeraRAG Evaluation."""
 
-from typing import Dict, Any, List, Set, Tuple, Optional
+from typing import Any
 
-from ..utils.data_structures import EvidenceConflictGraph, ConflictType
+from ..utils.data_structures import ConflictType
 
 
 class ConflictMetrics:
@@ -18,8 +18,8 @@ class ConflictMetrics:
 
     @staticmethod
     def conflict_detection_f1(
-        predicted_conflicts: List[Tuple[str, str]],
-        gold_conflicts: List[Tuple[str, str]]
+        predicted_conflicts: list[tuple[str, str]],
+        gold_conflicts: list[tuple[str, str]]
     ) -> float:
         """
         Calculate F1 score for conflict detection.
@@ -57,8 +57,8 @@ class ConflictMetrics:
 
     @staticmethod
     def conflict_type_accuracy(
-        predicted_types: List[Tuple[Tuple[str, str], ConflictType]],
-        gold_types: List[Tuple[Tuple[str, str], ConflictType]]
+        predicted_types: list[tuple[tuple[str, str], ConflictType]],
+        gold_types: list[tuple[tuple[str, str], ConflictType]]
     ) -> float:
         """
         Calculate accuracy of conflict type classification.
@@ -90,8 +90,8 @@ class ConflictMetrics:
 
     @staticmethod
     def conflict_resolution_accuracy(
-        resolution_decisions: List[Dict[str, Any]],
-        gold_resolutions: List[Dict[str, Any]]
+        resolution_decisions: list[dict[str, Any]],
+        gold_resolutions: list[dict[str, Any]]
     ) -> float:
         """
         Calculate accuracy of conflict resolution decisions.
@@ -124,8 +124,8 @@ class ConflictMetrics:
 
     @staticmethod
     def false_conflict_rate(
-        predicted_conflicts: List[Tuple[str, str]],
-        gold_conflicts: List[Tuple[str, str]]
+        predicted_conflicts: list[tuple[str, str]],
+        gold_conflicts: list[tuple[str, str]]
     ) -> float:
         """
         Calculate rate of false conflict detections.
@@ -148,11 +148,11 @@ class ConflictMetrics:
 
     @staticmethod
     def compute_all(
-        predicted_conflicts: List[Tuple[str, str]],
-        gold_conflicts: List[Tuple[str, str]],
-        predicted_types: Optional[List[Tuple[Tuple[str, str], ConflictType]]] = None,
-        gold_types: Optional[List[Tuple[Tuple[str, str], ConflictType]]] = None
-    ) -> Dict[str, float]:
+        predicted_conflicts: list[tuple[str, str]],
+        gold_conflicts: list[tuple[str, str]],
+        predicted_types: list[tuple[tuple[str, str], ConflictType]] | None = None,
+        gold_types: list[tuple[tuple[str, str], ConflictType]] | None = None
+    ) -> dict[str, float]:
         """
         Compute all conflict metrics.
 

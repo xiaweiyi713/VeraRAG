@@ -3,16 +3,21 @@
 import asyncio
 import json
 import os
-import re
 import sys
-import tempfile
 import threading
-import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import (
+    APIRouter,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
@@ -22,16 +27,16 @@ _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-
-# --- Shared BM25 retriever (lazy loaded, thread-safe) ---
+# --- Thread-safe BM25 cache ---
 _bm25_retriever = None
-_bm25_chunks = None
+_bm25_chunks: dict = {}
 _bm25_lock = threading.Lock()
 
 
 def _get_bm25():
-    """Lazy-load BM25 index from VeraBench corpus with thread safety."""
+    """Lazy-load BM25 index with thread safety (double-checked locking)."""
     global _bm25_retriever, _bm25_chunks
+
     if _bm25_retriever is not None:
         return _bm25_retriever, _bm25_chunks
 
@@ -43,11 +48,21 @@ def _get_bm25():
         if not os.path.exists(corpus_path):
             return None, []
 
-        from src.ingestion.pipeline import IngestionPipeline
-        pipeline = IngestionPipeline(chunk_size=512, chunk_overlap=64, chunk_strategy="fixed")
-        chunks, retriever = pipeline.ingest_and_index(corpus_path, retriever_type="bm25")
+        import json as _json
+
+        from src.retriever.bm25 import BM25Retriever
+
+        documents = []
+        with open(corpus_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    documents.append(_json.loads(line))
+
+        retriever = BM25Retriever()
+        retriever.index_documents(documents)
         _bm25_retriever = retriever
-        _bm25_chunks = {c.chunk_id: c for c in chunks}
+        _bm25_chunks = {doc.get("id", str(i)): doc for i, doc in enumerate(documents)}
         return _bm25_retriever, _bm25_chunks
 
 
@@ -55,7 +70,7 @@ class QueryRequest(BaseModel):
     """Request body for query endpoint."""
     question: str
     max_rounds: int = 5
-    config_overrides: Dict[str, Any] = {}
+    config_overrides: dict[str, Any] = {}
 
 
 class ConfigRequest(BaseModel):
@@ -111,18 +126,13 @@ def create_router(templates, db, config):
     async def status():
         llm_cfg = db.get_llm_config()
         has_provider = bool(llm_cfg.get("provider"))
-
-        # Build effective config (priority: Web DB > config yaml > defaults)
-        effective = {
-            "llm_provider": llm_cfg.get("provider") or (config or {}).get("llm", {}).get("provider", ""),
-            "llm_model": llm_cfg.get("model") or (config or {}).get("llm", {}).get("model", ""),
-            "llm_configured": has_provider or bool((config or {}).get("llm", {}).get("provider")),
-            "llm_base_url_set": bool(llm_cfg.get("base_url")),
-        }
-
-        effective["status"] = "running"
-        effective["config_loaded"] = config is not None
-        return JSONResponse(effective)
+        return JSONResponse({
+            "status": "running",
+            "config_loaded": config is not None,
+            "llm_provider": llm_cfg.get("provider", ""),
+            "llm_model": llm_cfg.get("model", ""),
+            "llm_configured": has_provider
+        })
 
     @router.get("/api/config")
     async def get_config():
@@ -199,11 +209,11 @@ def create_router(templates, db, config):
                 while True:
                     try:
                         event_type, data = await asyncio.wait_for(
-                            event_queue.get(), timeout=300.0
+                            event_queue.get(), timeout=15.0
                         )
                     except asyncio.TimeoutError:
-                        yield {"event": "error", "data": json.dumps({"error": "timeout"})}
-                        break
+                        yield {"event": "ping", "data": "{}"}
+                        continue
 
                     if event_type == "_done":
                         break
@@ -213,7 +223,6 @@ def create_router(templates, db, config):
                         "data": json.dumps(data, ensure_ascii=False)
                     }
             finally:
-                # Ensure the background task is done before we exit
                 try:
                     await asyncio.wait_for(future, timeout=5.0)
                 except (asyncio.TimeoutError, Exception):
@@ -331,241 +340,96 @@ def create_router(templates, db, config):
 
         return EventSourceResponse(demo_generator())
 
-    @router.post("/query/retrieval-demo")
-    async def retrieval_demo(request: DemoQueryRequest):
-        """Retrieval demo: real BM25 search + simulated pipeline stages."""
-        question = request.question
-        retriever, chunks_map = _get_bm25()
-
-        if retriever is None:
-            # Fallback to full demo if no corpus
-            return await demo_query(request)
-
-        # Real BM25 retrieval
-        raw_results = retriever.retrieve(question, top_k=5)
-        evidence_list = []
-        for i, r in enumerate(raw_results):
-            evidence_list.append({
-                "evidence_id": f"E{i+1}",
-                "source": r.metadata.get("source", "unknown"),
-                "title": r.title,
-                "text_span": r.content[:300],
-                "doc_id": r.doc_id,
-                "combined_score": round(r.score / max(r2.score for r2 in raw_results) * 0.9, 2) if raw_results else 0.5,
-                "credibility_score": 0.8,
-                "relevance_score": 0.8,
-            })
-
-        # Generate simulated claims from evidence
-        claims = []
-        for i, ev in enumerate(evidence_list[:3]):
-            text = ev["text_span"]
-            # Extract a sentence-like claim
-            sentences = re.split(r'[。.！!？?]', text)
-            claim_text = sentences[0].strip()[:60] if sentences else text[:60]
-            if claim_text:
-                claims.append({
-                    "claim": claim_text,
-                    "verification_status": "supported" if i < 2 else "not_enough_info",
-                    "confidence": round(0.7 + i * 0.05, 2),
-                    "supporting_evidence": [ev["evidence_id"]],
-                    "conflicting_evidence": [],
-                })
-
-        # Simulated answer
-        top_titles = [e["title"] for e in evidence_list[:3]]
-        answer_parts = [f"根据{len(evidence_list)}条证据的检索分析："]
-        for cl in claims:
-            answer_parts.append(cl["claim"] + "。")
-        demo_answer = "".join(answer_parts)
-
-        confidence = round(0.65 + len(evidence_list) * 0.03, 2)
-
-        # Detect potential conflicts
-        conflict_edges = []
-        sources = set()
-        for ev in evidence_list:
-            sources.add(ev["source"])
-        if len(sources) > 1 and len(evidence_list) >= 3:
-            conflict_edges.append({
-                "source_id": evidence_list[0]["evidence_id"],
-                "target_id": evidence_list[2]["evidence_id"],
-                "conflict_type": "source_disagreement",
-                "confidence": 0.5,
-                "rationale": "不同来源的信息可能存在差异",
-                "severity": "low",
-            })
-
-        # Build events
-        retrieval_events = [
-            ("stage", {"stage": "task_analysis", "status": "started"}),
-            ("task_analysis", {
-                "task_type": "fact_verification",
-                "complexity": "medium",
-                "keywords": re.findall(r'[一-鿿A-Za-z0-9]+', question)[:5],
-                "requires_retrieval": True,
-                "requires_conflict_check": len(evidence_list) > 2,
-                "estimated_hops": 1,
-            }),
-            ("stage", {"stage": "decomposition", "status": "started"}),
-            ("decomposition", {
-                "subquestions": [{"id": f"sq{i}", "question": f"关于「{question}」的{'核心事实' if i == 0 else '证据支持'}", "status": "pending", "coverage_score": 0.0} for i in range(2)]
-            }),
-            ("stage", {"stage": "retrieval", "round": 1, "total_rounds": 1, "status": "started"}),
-            ("evidence", {
-                "round": 1, "new_count": len(evidence_list), "total": len(evidence_list),
-                "evidence": evidence_list,
-            }),
-        ]
-
-        if conflict_edges:
-            retrieval_events.append(("conflict", {
-                "conflicts": len(conflict_edges), "conflict_score": 0.25,
-                "edges": conflict_edges,
-            }))
-
-        retrieval_events.extend([
-            ("uncertainty", {"action": "proceed", "confidence": confidence, "reason": "证据充足，可进行推理"}),
-            ("stage", {"stage": "reasoning", "status": "started"}),
-            ("reasoning", {
-                "answer": demo_answer,
-                "claims": claims,
-                "steps": [
-                    {"step": 1, "description": f"检索到{len(evidence_list)}条相关证据", "confidence": 0.85},
-                    {"step": 2, "description": "交叉验证证据一致性", "confidence": 0.78},
-                    {"step": 3, "description": "综合推理生成答案", "confidence": confidence},
-                ],
-            }),
-            ("stage", {"stage": "verification", "status": "started"}),
-            ("verification", {
-                "claim_verifications": [{"claim": c["claim"], "status": c["verification_status"]} for c in claims],
-                "overall_status": "supported",
-                "issues": [],
-                "missing_evidence_for": [],
-                "has_critical_issues": False,
-            }),
-            ("complete", {
-                "elapsed_time": 1.2,
-                "confidence": confidence,
-                "num_evidence": len(evidence_list),
-                "num_conflicts": len(conflict_edges),
-            }),
-        ])
-
-        # Save
-        result_id = db.save_query(
-            question=question,
-            answer=demo_answer,
-            confidence=confidence,
-            result_json={
-                "retrieval_demo": True,
-                "question": question,
-                "answer": demo_answer,
-                "answer_claims": claims,
-                "evidence": evidence_list,
-                "confidence": confidence,
-                "uncertainty": {
-                    "retrieval_uncertainty": 0.15,
-                    "evidence_conflict": 0.10 if conflict_edges else 0.05,
-                    "reasoning_gap": 0.20,
-                    "source_reliability": 0.10,
-                    "verification_uncertainty": 0.08,
-                    "overall_uncertainty": round(1 - confidence, 2),
-                },
-            },
-        )
-
-        async def retrieval_generator():
-            for event_type, data in retrieval_events:
-                await asyncio.sleep(0.3)
-                yield {"event": event_type, "data": json.dumps(data, ensure_ascii=False)}
-            yield {"event": "saved", "data": json.dumps({"result_id": result_id})}
-
-        return EventSourceResponse(retrieval_generator())
-
-    # --- File Upload ---
+    # --- File upload endpoint ---
 
     @router.post("/upload")
-    async def upload_file(request: Request):
-        """Upload a document (PDF/TXT/MD) and add to index."""
-        from fastapi import HTTPException
-
-        content_type = request.headers.get("content-type", "")
-        if "multipart/form-data" not in content_type:
-            raise HTTPException(400, "Expected multipart/form-data")
-
-        form = await request.form()
-        upload = form.get("file")
-        if not upload:
-            raise HTTPException(400, "No file provided")
-
-        filename = upload.filename or "unknown"
+    async def upload_file(file: UploadFile = File(...)):
+        """Upload PDF/TXT/MD, extract text, chunk and merge into BM25 index."""
+        filename = file.filename or "unknown"
         suffix = Path(filename).suffix.lower()
 
-        raw_bytes = await upload.read()
-        text = ""
+        if suffix not in (".pdf", ".txt", ".md"):
+            raise HTTPException(status_code=400, detail="仅支持 PDF、TXT、MD 文件")
 
-        if suffix == ".pdf":
-            try:
+        raw_bytes = await file.read()
+
+        # Extract text
+        try:
+            if suffix == ".pdf":
                 import fitz
                 doc = fitz.open(stream=raw_bytes, filetype="pdf")
                 text = "\n".join(page.get_text() for page in doc)
                 doc.close()
-            except ImportError:
-                raise HTTPException(500, "PyMuPDF not installed")
-            except Exception as e:
-                raise HTTPException(400, f"PDF parse error: {e}")
-        elif suffix in (".txt", ".md"):
-            text = raw_bytes.decode("utf-8", errors="replace")
-        else:
-            raise HTTPException(400, f"Unsupported file type: {suffix}")
+            else:
+                text = raw_bytes.decode("utf-8", errors="replace")
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"文件解析失败: {e}")
 
         if not text.strip():
-            raise HTTPException(400, "No text extracted from file")
+            raise HTTPException(status_code=422, detail="文件内容为空")
 
-        # Ingest into BM25 index
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tmp:
-            tmp.write(text)
-            tmp_path = tmp.name
+        # Chunk text (~500 chars per chunk, overlap 50)
+        chunk_size = 500
+        overlap = 50
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = start + chunk_size
+            chunk_text = text[start:end].strip()
+            if chunk_text:
+                chunks.append(chunk_text)
+            start += chunk_size - overlap
 
-        try:
-            from src.ingestion.pipeline import IngestionPipeline
-            ip = IngestionPipeline(chunk_size=512, chunk_overlap=64, chunk_strategy="fixed")
-            chunks, retriever = ip.ingest_and_index(tmp_path, retriever_type="bm25")
+        # Build new documents
+        new_docs = []
+        for i, chunk in enumerate(chunks):
+            new_docs.append({
+                "id": f"upload-{uuid.uuid4().hex[:8]}-{i}",
+                "text": chunk,
+                "title": filename,
+                "source": "upload",
+            })
 
-            with _bm25_lock:
-                if _bm25_retriever is not None:
-                    # Merge: rebuild combined index
-                    existing_docs = [
-                        {"id": did, "text": _bm25_retriever.corpus.get(i, ""), "title": _bm25_retriever.doc_metadata.get(i, {}).get("title", "")}
-                        for i, did in enumerate(_bm25_retriever.doc_ids)
-                    ]
-                    new_docs = [{"id": c.chunk_id, "text": c.text, "title": filename} for c in chunks]
-                    all_docs = existing_docs + new_docs
-                    combined = IngestionPipeline(chunk_size=512, chunk_overlap=64, chunk_strategy="fixed")
-                    combined_chunks, combined_retriever = combined.ingest_and_index_from_docs(all_docs, retriever_type="bm25")
-                    _bm25_retriever = combined_retriever
-                    _bm25_chunks.update({c.chunk_id: c for c in combined_chunks})
-                else:
-                    _bm25_retriever = retriever
-                    _bm25_chunks = {c.chunk_id: c for c in chunks}
-        finally:
-            os.unlink(tmp_path)
+        # Merge into global BM25 index with thread safety
+        with _bm25_lock:
+            # Load existing if not yet loaded
+            existing_retriever, existing_chunks = _get_bm25()
+
+            from src.retriever.bm25 import BM25Retriever
+
+            if existing_retriever is not None:
+                # Rebuild with combined documents
+                combined_docs = list(existing_chunks.values()) + new_docs
+                new_retriever = BM25Retriever()
+                new_retriever.index_documents(combined_docs)
+
+                global _bm25_retriever, _bm25_chunks
+                _bm25_retriever = new_retriever
+                _bm25_chunks = {doc.get("id", str(i)): doc for i, doc in enumerate(combined_docs)}
+            else:
+                # No existing index — build from uploaded docs only
+                new_retriever = BM25Retriever()
+                new_retriever.index_documents(new_docs)
+
+                _bm25_retriever = new_retriever
+                _bm25_chunks = {doc.get("id", str(i)): doc for i, doc in enumerate(new_docs)}
 
         return JSONResponse({
-            "status": "ok",
             "filename": filename,
-            "chunks": len(chunks),
+            "chunks": len(new_docs),
             "chars": len(text),
         })
 
-    # --- Export ---
+    # --- Export endpoint ---
 
     @router.get("/history/{query_id}/export")
     async def export_result(request: Request, query_id: str, format: str = "md"):
         query = db.get_query(query_id)
         if query is None:
             return JSONResponse({"error": "查询不存在"}, status_code=404)
+
+        if format == "pdf":
+            return JSONResponse({"error": "PDF 导出暂不支持"}, status_code=501)
 
         if format == "md":
             result = query.get("result_json", {}) if isinstance(query.get("result_json"), dict) else {}
@@ -594,10 +458,79 @@ def create_router(templates, db, config):
 
             return Response(
                 content=md,
-                media_type="text/markdown",
+                media_type="text/markdown; charset=utf-8",
                 headers={"Content-Disposition": f"attachment; filename=query_{query_id}.md"}
             )
 
         return JSONResponse({"error": "不支持的格式"}, status_code=400)
+
+    # --- WebSocket query endpoint ---
+
+    @router.websocket("/ws/query")
+    async def ws_query(websocket: WebSocket):
+        await websocket.accept()
+        try:
+            while True:
+                data = await websocket.receive_json()
+                question = data.get("question", "").strip()
+                if not question:
+                    await websocket.send_json({"event": "error", "data": {"error": "问题不能为空"}})
+                    continue
+
+                VeraRAG = _import_verarag()
+                pipeline_config = json.loads(json.dumps(config or {}))
+                llm_cfg = db.get_llm_config()
+                if llm_cfg.get("provider"):
+                    pipeline_config.setdefault("llm", {})
+                    pipeline_config["llm"]["provider"] = llm_cfg["provider"]
+                    if llm_cfg.get("model"):
+                        pipeline_config["llm"]["model"] = llm_cfg["model"]
+                    if llm_cfg.get("api_key"):
+                        pipeline_config["llm"]["api_key"] = llm_cfg["api_key"]
+
+                event_queue = asyncio.Queue()
+                loop_ref = asyncio.get_event_loop()
+
+                def callback(event_type: str, d: dict):
+                    loop_ref.call_soon_threadsafe(event_queue.put_nowait, (event_type, d))
+
+                def run_pipeline():
+                    try:
+                        pipeline = VeraRAG(pipeline_config)
+                        output = pipeline.query_stream(
+                            question=question, max_rounds=5, callback=callback
+                        )
+                        query_id = db.save_query(
+                            question=output.question, answer=output.answer,
+                            confidence=output.confidence, result_json=output.to_dict()
+                        )
+                        event_queue.put_nowait(("saved", {"result_id": query_id}))
+                    except Exception as e:
+                        event_queue.put_nowait(("error", {"error": str(e)}))
+                    finally:
+                        event_queue.put_nowait(("_done", {}))
+
+                future = loop_ref.run_in_executor(None, run_pipeline)
+
+                try:
+                    while True:
+                        try:
+                            event_type, edata = await asyncio.wait_for(
+                                event_queue.get(), timeout=300.0
+                            )
+                        except asyncio.TimeoutError:
+                            await websocket.send_json({"event": "error", "data": {"error": "timeout"}})
+                            break
+                        if event_type == "_done":
+                            break
+                        await websocket.send_json({"event": event_type, "data": edata})
+                finally:
+                    try:
+                        await asyncio.wait_for(future, timeout=5.0)
+                    except (asyncio.TimeoutError, Exception):
+                        pass
+
+        except WebSocketDisconnect:
+            pass
 
     return router

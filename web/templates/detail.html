@@ -13,15 +13,14 @@
 
 <!-- Back + Question -->
 <div class="mb-6">
-    <div class="flex items-center gap-3 flex-wrap">
-        <a href="/history" class="text-sm transition hover:opacity-70" style="color: var(--text-muted)">&larr; 返回列表</a>
-        <div class="flex-1"></div>
-        <a href="/history/{{ query.id }}/export?format=md" class="text-xs px-3 py-1.5 rounded-lg border transition hover:opacity-70" style="border-color: var(--border-color); color: var(--text-secondary)">
+    <div class="flex flex-wrap items-center gap-3">
+        <a href="/history" class="text-sm text-gray-500 hover:text-gray-300 transition">&larr; 返回列表</a>
+        <a href="/history/{{ query.id }}/export?format=md" class="text-xs px-3 py-1.5 rounded-lg border transition" style="border-color: var(--border-color); color: var(--text-secondary);">
             导出 Markdown
         </a>
     </div>
     <h2 class="text-lg font-medium text-gray-200 mt-3">{{ query.question }}</h2>
-    <div class="flex items-center gap-4 mt-2">
+    <div class="flex flex-wrap items-center gap-3 sm:gap-4 mt-2">
         <div class="flex items-center gap-2">
             <div class="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
                 <div class="h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-500" style="width: {{ (query.confidence * 100)|int }}%"></div>
@@ -33,34 +32,27 @@
 </div>
 
 <!-- Answer -->
-<div class="glass rounded-2xl p-6 mb-4">
+<div class="glass rounded-2xl p-4 sm:p-6 mb-4">
     <h3 class="text-xs font-medium text-gray-500 mb-3">答案</h3>
     <p class="text-gray-200 leading-relaxed text-sm">{{ query.answer }}</p>
 </div>
 
 <!-- Claims -->
 {% if result and result.get('answer_claims') %}
-<div class="glass rounded-2xl p-6 mb-4">
+<div class="glass rounded-2xl p-4 sm:p-6 mb-4">
     <h3 class="text-xs font-medium text-gray-500 mb-3">声明验证 ({{ result.answer_claims|length }})</h3>
     <div class="space-y-3">
         {% for c in result.answer_claims %}
-        <div class="bg-white/[0.02] rounded-xl p-4 border border-white/5">
-            <div class="flex items-start gap-3">
+        <div class="[background:var(--bg-card)] rounded-xl p-4 border [border-color:var(--border-color)]">
+            <p class="text-sm text-gray-300 mb-2">{{ c.get('claim', '') }}</p>
+            <div class="flex items-center gap-3 text-xs">
                 {% set st = c.get('verification_status', 'not_enough_info') %}
-                <span class="text-lg mt-0.5 {{ 'text-emerald-400' if st == 'supported' else 'text-red-400' if st == 'refuted' else 'text-amber-400' }}">{{ '●' if st == 'supported' else '✕' if st == 'refuted' else '◐' }}</span>
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm text-gray-300 mb-2">{{ c.get('claim', '') }}</p>
-                    <div class="flex items-center gap-3 flex-wrap text-xs">
-                        {% set status_colors = {'supported': 'text-emerald-400 bg-emerald-400/10', 'refuted': 'text-red-400 bg-red-400/10', 'not_enough_info': 'text-amber-400 bg-amber-400/10'} %}
-                        {% set status_labels = {'supported': '已验证', 'refuted': '已反驳', 'not_enough_info': '证据不足'} %}
-                        <span class="px-2 py-0.5 rounded-full {{ status_colors.get(st, status_colors['not_enough_info']) }}">{{ status_labels.get(st, st) }}</span>
-                        <span class="text-gray-600">置信度 {{ "%.2f"|format(c.get('confidence', 0)) }}</span>
-                        {% set supp = c.get('supporting_evidence', []) %}
-                        {% if supp %}<span class="text-emerald-500/60">支持: {{ supp|join(', ') }}</span>{% endif %}
-                        {% set conf = c.get('conflicting_evidence', []) %}
-                        {% if conf %}<span class="text-red-500/60">冲突: {{ conf|join(', ') }}</span>{% endif %}
-                    </div>
-                </div>
+                {% set status_colors = {'supported': 'text-emerald-400 bg-emerald-400/10', 'refuted': 'text-red-400 bg-red-400/10', 'not_enough_info': 'text-amber-400 bg-amber-400/10'} %}
+                {% set status_labels = {'supported': '已验证', 'refuted': '已反驳', 'not_enough_info': '证据不足'} %}
+                <span class="px-2 py-0.5 rounded-full {{ status_colors.get(st, status_colors['not_enough_info']) }}">
+                    {{ status_labels.get(st, st) }}
+                </span>
+                <span class="text-gray-600">置信度 {{ "%.2f"|format(c.get('confidence', 0)) }}</span>
             </div>
         </div>
         {% endfor %}
@@ -70,11 +62,11 @@
 
 <!-- Evidence -->
 {% if result and result.get('evidence') %}
-<div class="glass rounded-2xl p-6 mb-4">
+<div class="glass rounded-2xl p-4 sm:p-6 mb-4">
     <h3 class="text-xs font-medium text-gray-500 mb-3">证据 ({{ result.evidence|length }})</h3>
     <div class="space-y-3">
         {% for e in result.evidence %}
-        <div class="bg-white/[0.02] rounded-xl p-4 border border-white/5">
+        <div class="[background:var(--bg-card)] rounded-xl p-4 border [border-color:var(--border-color)]">
             <div class="flex items-center justify-between mb-2">
                 <span class="text-xs text-violet-400/80">{{ e.get('source', '') }}</span>
                 <span class="text-xs text-gray-600">{{ "%.2f"|format(e.get('combined_score', 0)) }}</span>
@@ -93,7 +85,7 @@
 <!-- Uncertainty -->
 {% if result and result.get('uncertainty') %}
 {% set u = result.uncertainty %}
-<div class="glass rounded-2xl p-6">
+<div class="glass rounded-2xl p-4 sm:p-6">
     <h3 class="text-xs font-medium text-gray-500 mb-3">不确定性分解</h3>
     <div class="space-y-3">
         {% set dims = [('检索不确定性', u.get('retrieval_uncertainty', 0)), ('证据冲突', u.get('evidence_conflict', 0)), ('推理差距', u.get('reasoning_gap', 0)), ('来源可靠性', u.get('source_reliability', 0)), ('验证不确定性', u.get('verification_uncertainty', 0))] %}
@@ -108,71 +100,10 @@
             </div>
         </div>
         {% endfor %}
-        <div class="pt-3 border-t border-white/5 flex justify-between text-sm">
+        <div class="pt-3 border-t [border-color:var(--border-color)] flex justify-between text-sm">
             <span class="text-gray-300">总体不确定性</span>
             <span class="font-medium {{ 'text-amber-400' if u.get('overall_uncertainty', 0) > 0.5 else 'text-emerald-400' }}">{{ "%.2f"|format(u.get('overall_uncertainty', 0)) }}</span>
         </div>
-    </div>
-</div>
-{% endif %}
-
-<!-- Conflict Graph -->
-{% if result and result.get('conflict_edges') %}
-<div class="glass rounded-2xl p-6 mb-4">
-    <h3 class="text-xs font-medium text-gray-500 mb-3">冲突检测 ({{ result.conflict_edges|length }} 条)</h3>
-    <div class="space-y-2">
-        {% for edge in result.conflict_edges %}
-        <div class="bg-white/[0.02] rounded-xl p-3 border border-white/5 flex items-start gap-3 text-xs">
-            {% set sev_colors = {'critical': 'text-red-400 bg-red-400/10', 'high': 'text-orange-400 bg-orange-400/10', 'medium': 'text-amber-400 bg-amber-400/10', 'low': 'text-gray-400 bg-gray-400/10'} %}
-            {% set sev = edge.get('severity', 'medium') %}
-            <span class="px-1.5 py-0.5 rounded {{ sev_colors.get(sev, sev_colors['medium']) }}">{{ sev }}</span>
-            <div class="flex-1">
-                <span class="text-gray-300">{{ edge.get('source_id', '') }}</span>
-                <span class="text-gray-600 mx-1">&harr;</span>
-                <span class="text-gray-300">{{ edge.get('target_id', '') }}</span>
-                <span class="text-violet-400/60 ml-2">{{ edge.get('conflict_type', '') }}</span>
-            </div>
-            <span class="text-gray-500">置信度 {{ "%.2f"|format(edge.get('confidence', 0)) }}</span>
-        </div>
-        {% if edge.get('rationale') %}
-        <p class="text-xs text-gray-500 ml-8 -mt-1 mb-1">{{ edge.rationale }}</p>
-        {% endif %}
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-<!-- Repair -->
-{% if result and result.get('repair') and result.repair.get('original_answer') %}
-{% set rep = result.repair %}
-<div class="glass rounded-2xl p-6 mb-4">
-    <h3 class="text-xs font-medium text-gray-500 mb-3">修复记录</h3>
-    <div class="space-y-3">
-        {% if rep.get('issues') %}
-        <div>
-            <span class="text-xs text-gray-500">修复原因</span>
-            {% for iss in rep.issues %}
-            <div class="flex items-start gap-2 text-xs mt-1">
-                <span class="text-amber-400">!</span>
-                <span class="text-gray-400">{{ iss }}</span>
-            </div>
-            {% endfor %}
-        </div>
-        {% endif %}
-        <div>
-            <span class="text-xs text-gray-500">原始回答</span>
-            <div class="mt-1 p-3 rounded-lg bg-red-500/5 border border-red-500/10 text-sm text-gray-400 line-through decoration-red-400/40">{{ rep.original_answer }}</div>
-        </div>
-        <div>
-            <span class="text-xs text-gray-500">修复后回答</span>
-            <div class="mt-1 p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/10 text-sm text-gray-300">{{ rep.repaired_answer }}</div>
-        </div>
-        {% if rep.get('confidence_delta') is not none %}
-        <div class="flex items-center justify-between text-xs pt-2 border-t border-white/5">
-            <span class="text-gray-500">置信度变化</span>
-            <span class="{{ 'text-emerald-400' if rep.confidence_delta >= 0 else 'text-amber-400' }}">{{ '+' if rep.confidence_delta >= 0 }}{{ "%.2f"|format(rep.confidence_delta) }}</span>
-        </div>
-        {% endif %}
     </div>
 </div>
 {% endif %}

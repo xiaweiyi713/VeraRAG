@@ -1,15 +1,24 @@
 """Unit tests for VeraRAG data structures."""
 
 import sys
+
 sys.path.insert(0, 'src')
 
 import unittest
+
 from src.utils.data_structures import (
-    Claim, ClaimType, Evidence, EvidenceConflictGraph,
-    ConflictEdge, ConflictType, ConflictGraphNode,
-    SubQuestion, TaskAnalysis, TaskType, Complexity,
-    UncertaintyBreakdown, AnswerClaim, VerificationStatus,
-    ReasoningStep, VerificationReport
+    Claim,
+    ClaimType,
+    Complexity,
+    ConflictEdge,
+    ConflictGraphNode,
+    ConflictType,
+    Evidence,
+    EvidenceConflictGraph,
+    SubQuestion,
+    TaskAnalysis,
+    TaskType,
+    UncertaintyBreakdown,
 )
 
 

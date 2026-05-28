@@ -1,12 +1,12 @@
 """Evidence Normalizer for VeraRAG."""
 
-import uuid
-from typing import Dict, Any, Optional, List
-from datetime import datetime
 import re
+import uuid
+from datetime import datetime
+from typing import Any
 
-from ..utils.data_structures import Evidence, Claim
 from ..retriever.base import RetrievalResult
+from ..utils.data_structures import Evidence
 
 
 class EvidenceNormalizer:
@@ -20,14 +20,14 @@ class EvidenceNormalizer:
     4. Standardizing formats
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
 
     def normalize_retrieval_results(
         self,
-        results: List[RetrievalResult],
+        results: list[RetrievalResult],
         extract_claims: bool = True
-    ) -> List[Evidence]:
+    ) -> list[Evidence]:
         """
         Normalize retrieval results into Evidence objects.
 
@@ -51,13 +51,14 @@ class EvidenceNormalizer:
         self,
         result: RetrievalResult,
         extract_claims: bool
-    ) -> Optional[Evidence]:
+    ) -> Evidence | None:
         """Normalize a single retrieval result."""
         # Extract metadata
-        source = result.metadata.get("source", "unknown")
-        date = result.metadata.get("date")
-        author = result.metadata.get("author")
-        url = result.metadata.get("url")
+        meta = result.metadata or {}
+        source = meta.get("source", "unknown")
+        date = meta.get("date")
+        author = meta.get("author")
+        url = meta.get("url")
 
         # Create evidence object
         evidence = Evidence(
@@ -77,7 +78,7 @@ class EvidenceNormalizer:
 
     def _estimate_credibility(self, result: RetrievalResult) -> float:
         """Estimate credibility score based on source."""
-        source = result.metadata.get("source", "").lower()
+        source = (result.metadata or {}).get("source", "").lower()
 
         # Known high-credibility sources
         high_sources = {
@@ -97,7 +98,7 @@ class EvidenceNormalizer:
         else:
             return 0.5
 
-    def _estimate_recency(self, date: Optional[str]) -> float:
+    def _estimate_recency(self, date: str | None) -> float:
         """Estimate recency score based on date."""
         if not date:
             return 0.5
@@ -125,14 +126,14 @@ class EvidenceNormalizer:
             # Decay score: 1.0 for current year, 0.5 for 5+ years
             return max(0.5, 1.0 - years_ago * 0.1)
 
-        except:
+        except Exception:
             return 0.5
 
     def filter_low_quality(
         self,
-        evidence_list: List[Evidence],
+        evidence_list: list[Evidence],
         min_score: float = 0.3
-    ) -> List[Evidence]:
+    ) -> list[Evidence]:
         """
         Filter out low-quality evidence.
 
@@ -150,9 +151,9 @@ class EvidenceNormalizer:
 
     def deduplicate(
         self,
-        evidence_list: List[Evidence],
+        evidence_list: list[Evidence],
         similarity_threshold: float = 0.92
-    ) -> List[Evidence]:
+    ) -> list[Evidence]:
         """
         Remove duplicate evidence based on semantic similarity.
 
@@ -178,12 +179,12 @@ class EvidenceNormalizer:
 
     def _semantic_dedup(
         self,
-        evidence_list: List[Evidence],
+        evidence_list: list[Evidence],
         threshold: float
-    ) -> List[Evidence]:
+    ) -> list[Evidence]:
         """Semantic deduplication using sentence-transformers."""
-        from sentence_transformers import SentenceTransformer
         import numpy as np
+        from sentence_transformers import SentenceTransformer
 
         # Sort by combined score descending (keep higher-scored ones)
         sorted_ev = sorted(evidence_list, key=lambda ev: ev.combined_score, reverse=True)
@@ -194,7 +195,7 @@ class EvidenceNormalizer:
 
         # Greedy dedup: keep item if not similar to any already-kept item
         kept = []
-        kept_indices = []
+        kept_indices: list[int] = []
 
         for i, ev in enumerate(sorted_ev):
             is_duplicate = False
@@ -209,7 +210,7 @@ class EvidenceNormalizer:
 
         return kept
 
-    def _exact_dedup(self, evidence_list: List[Evidence]) -> List[Evidence]:
+    def _exact_dedup(self, evidence_list: list[Evidence]) -> list[Evidence]:
         """Exact text matching deduplication (fallback)."""
         # Sort by combined score descending so higher-scored evidence is kept
         sorted_ev = sorted(evidence_list, key=lambda ev: ev.combined_score, reverse=True)
@@ -227,8 +228,8 @@ class EvidenceNormalizer:
 
     def rank_by_quality(
         self,
-        evidence_list: List[Evidence]
-    ) -> List[Evidence]:
+        evidence_list: list[Evidence]
+    ) -> list[Evidence]:
         """
         Rank evidence by combined quality score.
 

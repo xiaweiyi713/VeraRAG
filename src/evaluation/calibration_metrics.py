@@ -1,6 +1,5 @@
 """Calibration Metrics for VeraRAG Evaluation."""
 
-from typing import Dict, Any, List
 import numpy as np
 
 
@@ -17,8 +16,8 @@ class CalibrationMetrics:
 
     @staticmethod
     def expected_calibration_error(
-        confidences: List[float],
-        correct: List[bool],
+        confidences: list[float],
+        correct: list[bool],
         n_bins: int = 10
     ) -> float:
         """
@@ -45,9 +44,9 @@ class CalibrationMetrics:
         ece = 0.0
         total_weight = 0.0
 
-        for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):
+        for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):  # noqa: B905
             in_bin = [
-                (c, r) for c, r in zip(confidences, correct)
+                (c, r) for c, r in zip(confidences, correct)  # noqa: B905
                 if bin_lower <= c < bin_upper
             ]
 
@@ -65,8 +64,8 @@ class CalibrationMetrics:
 
     @staticmethod
     def brier_score(
-        confidences: List[float],
-        correct: List[bool]
+        confidences: list[float],
+        correct: list[bool]
     ) -> float:
         """
         Calculate Brier Score.
@@ -86,14 +85,14 @@ class CalibrationMetrics:
 
         labels = [1.0 if c else 0.0 for c in correct]
 
-        brier = sum((c - l) ** 2 for c, l in zip(confidences, labels)) / len(confidences)
+        brier = sum((c - l) ** 2 for c, l in zip(confidences, labels)) / len(confidences)  # noqa: E741, B905
 
         return brier
 
     @staticmethod
     def compute_auroc_abstention(
-        confidences: List[float],
-        correct: List[bool],
+        confidences: list[float],
+        correct: list[bool],
         abstention_thresholds: int = 100
     ) -> float:
         """
@@ -113,7 +112,7 @@ class CalibrationMetrics:
             return 0.0
 
         # Sort by confidence
-        sorted_data = sorted(zip(confidences, correct), key=lambda x: x[0])
+        sorted_data = sorted(zip(confidences, correct), key=lambda x: x[0])  # noqa: B905
 
         # Calculate abstention benefit at each threshold
         thresholds = np.linspace(0, 1, abstention_thresholds)
@@ -142,10 +141,10 @@ class CalibrationMetrics:
 
     @staticmethod
     def risk_coverage_curve(
-        confidences: List[float],
-        correct: List[bool],
+        confidences: list[float],
+        correct: list[bool],
         n_points: int = 20
-    ) -> Dict[str, List[float]]:
+    ) -> dict[str, list[float]]:
         """
         Calculate risk-coverage curve data.
 
@@ -164,7 +163,7 @@ class CalibrationMetrics:
             return {"coverage": [], "error_rate": []}
 
         # Sort by confidence (descending)
-        sorted_data = sorted(zip(confidences, correct), key=lambda x: -x[0])
+        sorted_data = sorted(zip(confidences, correct), key=lambda x: -x[0])  # noqa: B905
 
         coverage = []
         error_rates = []
@@ -191,10 +190,10 @@ class CalibrationMetrics:
 
     @staticmethod
     def compute_all(
-        confidences: List[float],
-        correct: List[bool],
+        confidences: list[float],
+        correct: list[bool],
         n_bins: int = 10
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Compute all calibration metrics.
 

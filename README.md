@@ -1,5 +1,7 @@
 # VeraRAG: Verifiable Agentic Retrieval-Augmented Reasoning
 
+![Coverage](https://img.shields.io/badge/coverage-87%25-green)
+
 面向复杂知识任务的可验证 Agentic RAG 推理系统
 
 ## 项目简介
