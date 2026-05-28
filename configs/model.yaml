@@ -1,7 +1,7 @@
 llm:
   api_key: ${DEEPSEEK_API_KEY}
   max_tokens: 500
-  model: deepseek-chat
+  model: deepseek-v4-flash
   provider: deepseek
   temperature: 0.0
 pipeline:

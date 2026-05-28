@@ -55,10 +55,15 @@ class VeraRAG:
         """Setup all pipeline components."""
         # LLM Client
         llm_config = self.config.get("llm", {})
+        raw_api_key = llm_config.get("api_key", "")
+        if raw_api_key and raw_api_key.startswith("${") and raw_api_key.endswith("}"):
+            env_var = raw_api_key[2:-1]
+            raw_api_key = os.getenv(env_var, "")
+        api_key = raw_api_key or os.getenv(llm_config.get("api_key_env", "OPENAI_API_KEY"))
         self.llm_client = LLMClient(
             provider=llm_config.get("provider", "openai"),
             model=llm_config.get("model", "gpt-4o"),
-            api_key=llm_config.get("api_key") or os.getenv(llm_config.get("api_key_env", "OPENAI_API_KEY")),
+            api_key=api_key,
             base_url=llm_config.get("base_url"),
             temperature=llm_config.get("temperature", 0.7),
             max_tokens=llm_config.get("max_tokens", 2000)
