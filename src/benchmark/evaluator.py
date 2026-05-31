@@ -65,7 +65,7 @@ class BenchmarkReport:
     results: List[QuestionResult] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "total_questions": self.total_questions,
             "completed": self.completed,
             "errors": self.errors,
@@ -81,7 +81,30 @@ class BenchmarkReport:
             "brier_score": round(self.brier_score, 4),
             "by_type": {k: {kk: round(vv, 4) for kk, vv in v.items()} for k, v in self.by_type.items()},
             "by_difficulty": {k: {kk: round(vv, 4) for kk, vv in v.items()} for k, v in self.by_difficulty.items()},
+            "question_results": [
+                {
+                    "question_id": r.question_id,
+                    "question_type": r.question_type,
+                    "question": r.question,
+                    "ground_truth": r.ground_truth,
+                    "predicted": r.predicted,
+                    "expected_behavior": r.expected_behavior,
+                    "actual_behavior": r.actual_behavior,
+                    "correct": r.correct,
+                    "answer_em": r.answer_em,
+                    "answer_f1": r.answer_f1,
+                    "evidence_recall": round(r.evidence_recall, 4),
+                    "evidence_precision": round(r.evidence_precision, 4),
+                    "conflict_detection_f1": round(r.conflict_detection_f1, 4),
+                    "confidence": round(r.confidence, 4),
+                    "latency_seconds": round(r.latency_seconds, 2),
+                    "difficulty": r.difficulty,
+                    "error": r.error,
+                }
+                for r in self.results
+            ],
         }
+        return d
 
 
 class VeraBenchEvaluator:
@@ -196,20 +219,49 @@ class VeraBenchEvaluator:
         em = AnswerMetrics.exact_match(answer, q.ground_truth_answer)
         f1 = AnswerMetrics.soft_f1_score(answer, q.ground_truth_answer)
 
-        # Evidence matching
+        # Evidence matching — map pipeline evidence_id (D006_c0) → original doc_id (D006) → gold evidence_id (E1)
+        gold_evidence_ids = [e.evidence_id for e in q.evidence]
+        doc_to_gold_eid = {ref.doc_id: ref.evidence_id for ref in q.evidence}
+
+        def _chunk_id_to_doc_id(chunk_id: str) -> str:
+            """Strip chunk suffix: D006_c0 → D006"""
+            if "_c" in chunk_id:
+                return chunk_id.rsplit("_c", 1)[0]
+            return chunk_id
+
         pred_evidence_ids = []
         if hasattr(output, "evidence"):
-            pred_evidence_ids = [e.evidence_id for e in output.evidence]
-        gold_evidence_ids = [e.evidence_id for e in q.evidence]
+            pred_evidence_ids = [
+                doc_to_gold_eid.get(_chunk_id_to_doc_id(e.evidence_id), e.evidence_id)
+                for e in output.evidence
+            ]
         ep = EvidenceMetrics.evidence_precision(pred_evidence_ids, gold_evidence_ids)
         er = EvidenceMetrics.evidence_recall(pred_evidence_ids, gold_evidence_ids)
 
-        # Conflict detection
+        # Conflict detection — map claim IDs → evidence IDs → gold evidence IDs
+        # Build claim_id → pipeline evidence_id mapping from conflict report nodes
+        claim_to_ev_id: dict[str, str] = {}
+        if hasattr(output, "conflict_report") and output.conflict_report:
+            for node in output.conflict_report.get("nodes", []):
+                nid = node.get("node_id", "")
+                ev_ids = node.get("evidence_ids", [])
+                if nid and ev_ids:
+                    claim_to_ev_id[nid] = ev_ids[0]
+
         pred_conflicts = []
         if hasattr(output, "conflict_report") and output.conflict_report:
             edges = output.conflict_report.get("edges", [])
             for edge in edges:
-                pair = tuple(sorted([edge.get("source_id", ""), edge.get("target_id", "")]))
+                src_claim = edge.get("source_id", "")
+                tgt_claim = edge.get("target_id", "")
+                src_ev = claim_to_ev_id.get(src_claim, src_claim)
+                tgt_ev = claim_to_ev_id.get(tgt_claim, tgt_claim)
+                # Map pipeline evidence_id (D006_c0) → doc_id (D006) → gold evidence_id (E1)
+                src_doc = _chunk_id_to_doc_id(src_ev)
+                tgt_doc = _chunk_id_to_doc_id(tgt_ev)
+                src_gold = doc_to_gold_eid.get(src_doc, src_ev)
+                tgt_gold = doc_to_gold_eid.get(tgt_doc, tgt_ev)
+                pair = tuple(sorted([src_gold, tgt_gold]))
                 pred_conflicts.append(pair)
 
         gold_conflicts = []

@@ -154,8 +154,10 @@ class VeraRAG:
 
         from ..utils.data_structures import Evidence
 
-        # Use stable ID from retriever result (doc_id based) instead of UUID
-        stable_id = result.doc_id if hasattr(result, 'doc_id') and result.doc_id else result.metadata.get("doc_id", "")
+        # Use chunked doc_id (e.g. D006_c0) as evidence_id for uniqueness
+        # The evaluator maps D006_c0 → D006 → gold evidence_id via metadata
+        chunk_id = result.doc_id if hasattr(result, 'doc_id') and result.doc_id else ""
+        stable_id = chunk_id or result.metadata.get("doc_id", "")
 
         return Evidence(
             evidence_id=stable_id,
@@ -255,6 +257,10 @@ class VeraRAG:
             })
 
             if self.enable_conflict_graph:
+                # Extract claims from evidence if not already populated
+                for ev in evidence_pool:
+                    if not ev.claims:
+                        ev.claims = self.evidence_extractor._extract_claims(ev.text_span)
                 conflict_graph = self.conflict_graph_builder.build_graph(
                     evidence_pool,
                     use_llm=True
