@@ -1,6 +1,22 @@
 # VeraRAG 开发进度
 
-> 最后更新：2026-05-28
+> 最后更新：2026-06-01
+
+## 🆕 本次更新（2026-06-01）：首次完整真实评测 + 关键 bug 修复
+
+**首次跑通全部 152 题 VeraBench 真实评测**（DeepSeek `deepseek-v4-flash`，全流水线，零错误，~79s/题）。结果见 [README#实测结果](README.md)。核心数字：Evidence Recall **0.811**、Behavior Acc 0.526、Answer-F1 0.157；单证据/时序/多跳类行为准确率 0.92–1.0，但不可答/冲突/误导类仅 ~0.08（"倾向作答"偏差，待修）。
+
+评测过程中发现并修复 4 个真实 bug + 新增断点续跑：
+
+1. **evidence_id 用随机 UUID** (`agents/retrieval_agent.py`) → 改用稳定 chunk id（`D001_c0`）。修复后 Evidence Recall 从 **0 → 0.81**，证据真正可溯源。
+2. **NLI 模型每对 claim 重载** (`evidence/conflict_graph.py`)：原模型 `nli-deberta-v3-small` 无权重文件必失败，且失败后不缓存，6 题加载 648 次。改用 `nli-distilroberta-base` + `_nli_tried` 只尝试一次 → 单题 **77s → ~19s**，三层冲突检测真正生效。
+3. **pipeline 每题重建** (`experiments/run_verabench.py`)：改为只构建一次（原每题重载模型 + 重索引语料）。
+4. **缺 python-multipart** (`requirements.txt`)：FastAPI 表单/上传依赖缺失，导致 11 个 web 测试失败 → 补齐后 **182 passed + 3 skipped**。
+5. **断点续跑**（`benchmark/evaluator.py` + `run_verabench.py`）：每题完成即写 JSONL 检查点，重跑自动跳过已完成题；新增 `--checkpoint/--restart/--no-checkpoint`。
+
+---
+
+> 历史更新：2026-05-28
 
 ## 项目概况
 
@@ -144,10 +160,10 @@
 
 ### P0 — 需要立即完成
 
-- [ ] **跑完整 152 题 VeraBench 真实评测**
-  - 代码已就绪，需要有效的 API key
-  - 命令: `DEEPSEEK_API_KEY=<key> python experiments/run_verabench.py --config configs/model.yaml --output results/verabench_full.json`
-  - 上次用 DeepSeek key 跑时 key 过期（401），需要新 key
+- [x] **跑完整 152 题 VeraBench 真实评测** ✅ 2026-06-01 完成（DeepSeek，零错误）
+  - 命令: `DEEPSEEK_API_KEY=<key> python experiments/run_verabench.py --config configs/deepseek_run.yaml --output results/verabench_full.json`
+  - 支持断点续跑：中断后重跑同命令自动从检查点接续
+- [ ] **修复"倾向作答"偏差**（新发现的最高优先）：不可答/误导/冲突类行为准确率仅 ~0.08，需把不确定性控制器的拒答决策与最终输出文本打通
 
 ### P1 — 核心功能增强
 

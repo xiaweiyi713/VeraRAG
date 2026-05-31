@@ -1,0 +1,12 @@
+llm:
+  api_key: ${DEEPSEEK_API_KEY}
+  max_tokens: 4000          # deepseek-v4-flash 为推理模型，需为 reasoning + answer 预留足够 token
+  model: deepseek-v4-flash
+  provider: deepseek
+  temperature: 0.0
+pipeline:
+  enable_conflict_graph: true
+  enable_repair: true
+  enable_uncertainty: true
+  enable_verification: true
+  max_retrieval_rounds: 1
