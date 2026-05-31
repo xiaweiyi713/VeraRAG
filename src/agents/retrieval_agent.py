@@ -163,9 +163,14 @@ Output ONLY valid JSON, no other text."""
                 top_k=min(10, budget_per_round // len(unresolved))
             )
 
-            # Convert to Evidence objects
+            # Convert to Evidence objects.
+            # Use the retriever's stable chunk id (e.g. D001_c0) as the evidence_id
+            # so it can be traced back to the source document (and aligned with
+            # VeraBench gold evidence). Fall back to a UUID only if missing.
             new_evidence = [
-                self._result_to_evidence(r, f"E{uuid.uuid4().hex[:8]}")
+                self._result_to_evidence(
+                    r, r.doc_id if getattr(r, "doc_id", "") else f"E{uuid.uuid4().hex[:8]}"
+                )
                 for r in results
             ]
 

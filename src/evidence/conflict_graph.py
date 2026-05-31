@@ -85,6 +85,7 @@ Output ONLY valid JSON, no other text."""
 
         # NLI model (Layer 2) – lazy-loaded
         self._nli_available = False
+        self._nli_tried = False  # only attempt to load once, even on failure
         self._nli_model = None
         self._nli_tokenizer = None
 
@@ -129,18 +130,23 @@ Output ONLY valid JSON, no other text."""
     # ------------------------------------------------------------------
 
     def _init_nli(self):
-        """Try to load a cross-encoder NLI model for Layer 2."""
-        if self._nli_available or not self.enable_nli:
+        """Try to load a cross-encoder NLI model for Layer 2 (once)."""
+        if self._nli_available or self._nli_tried or not self.enable_nli:
             return
+        # Attempt the (potentially expensive / network-bound) load at most once;
+        # on failure the NLI layer is permanently disabled and we fall back to
+        # rule + LLM layers instead of re-trying for every claim pair.
+        self._nli_tried = True
+        model_name = "cross-encoder/nli-distilroberta-base"
         try:
             from sentence_transformers import CrossEncoder
-            self._nli_model = CrossEncoder("cross-encoder/nli-deberta-v3-small")
+            self._nli_model = CrossEncoder(model_name)
             self._nli_available = True
-            logger.info("NLI model loaded (cross-encoder/nli-deberta-v3-small)")
+            logger.info(f"NLI model loaded ({model_name})")
         except ImportError:
             logger.debug("sentence-transformers not installed, NLI layer disabled")
         except Exception as e:
-            logger.debug(f"NLI model unavailable: {e}")
+            logger.debug(f"NLI model unavailable, disabling NLI layer: {e}")
 
     def _nli_detect(
         self, claim_i: Claim, claim_j: Claim,
