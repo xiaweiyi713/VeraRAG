@@ -5,7 +5,7 @@ import logging
 import sys
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable
 
@@ -126,21 +126,72 @@ class VeraBenchEvaluator:
         question_types: Optional[List[str]] = None,
         max_questions: Optional[int] = None,
         callback: Optional[Callable] = None,
+        checkpoint_path: Optional[str] = None,
     ) -> BenchmarkReport:
+        """Evaluate the pipeline over the benchmark.
+
+        If ``checkpoint_path`` is given, each question's result is appended to
+        that JSONL file as soon as it completes, and any questions already
+        present there are reused instead of re-run. This makes an interrupted
+        run resumable: just launch with the same checkpoint to "continue where
+        it left off".
+        """
         questions = self.benchmark.questions
         if question_types:
             questions = [q for q in questions if q.type in question_types]
         if max_questions:
             questions = questions[:max_questions]
 
+        done: Dict[str, QuestionResult] = {}
+        if checkpoint_path:
+            done = self._load_checkpoint(checkpoint_path)
+            if done:
+                logger.info(f"Resuming from checkpoint: {len(done)} question(s) already done")
+
         results: List[QuestionResult] = []
+        total = len(questions)
         for i, q in enumerate(questions):
             if callback:
-                callback(i, len(questions), q)
+                callback(i, total, q)
+            if q.id in done:
+                results.append(done[q.id])  # reuse cached result, skip re-running
+                continue
             result = self._evaluate_one(q)
             results.append(result)
+            if checkpoint_path:
+                self._append_checkpoint(checkpoint_path, result)
 
         return self._build_report(results)
+
+    @staticmethod
+    def _load_checkpoint(path: str) -> Dict[str, "QuestionResult"]:
+        """Load previously-saved per-question results from a JSONL checkpoint."""
+        loaded: Dict[str, QuestionResult] = {}
+        p = Path(path)
+        if not p.exists():
+            return loaded
+        valid = {f.name for f in fields(QuestionResult)}
+        with open(p, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = {k: v for k, v in json.loads(line).items() if k in valid}
+                    r = QuestionResult(**d)
+                    loaded[r.question_id] = r  # last write wins
+                except Exception as e:  # tolerate a partially-written final line
+                    logger.warning(f"Skipping malformed checkpoint line: {e}")
+        return loaded
+
+    @staticmethod
+    def _append_checkpoint(path: str, result: "QuestionResult") -> None:
+        """Append one question result to the JSONL checkpoint (atomic per line)."""
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps(asdict(result), ensure_ascii=False) + "\n")
+            f.flush()
 
     def evaluate_baseline(self, answer_fn: Callable[[str], str], **kwargs) -> BenchmarkReport:
         """Evaluate a baseline function (takes question, returns answer)."""

@@ -92,6 +92,13 @@ def main():
     parser.add_argument("--types", nargs="+", choices=QUESTION_TYPES, help="Run specific question types only")
     parser.add_argument("--max", type=int, help="Max number of questions to evaluate")
     parser.add_argument("--output", type=str, help="Output JSON report path")
+    parser.add_argument("--checkpoint", type=str,
+                        help="Checkpoint JSONL path for incremental save / resume. "
+                             "Defaults to '<output>.ckpt.jsonl' when --output is set.")
+    parser.add_argument("--restart", action="store_true",
+                        help="Ignore and overwrite any existing checkpoint (start fresh).")
+    parser.add_argument("--no-checkpoint", action="store_true",
+                        help="Disable incremental checkpointing entirely.")
     args = parser.parse_args()
 
     print("Loading VeraBench...")
@@ -112,8 +119,15 @@ def main():
             with open(args.config, "r") as f:
                 config = yaml.safe_load(f)
 
-            # Auto-index VeraBench corpus into the pipeline
+            # Auto-index VeraBench corpus into the pipeline.
+            # Build the pipeline ONCE and reuse it across questions: loading the
+            # embedding/reranker/NLI models and re-indexing the corpus per question
+            # is hugely wasteful (and query() does not mutate pipeline state).
+            _pipeline_cache: dict = {}
+
             def make_pipeline():
+                if "p" in _pipeline_cache:
+                    return _pipeline_cache["p"]
                 p = VeraRAG(config)
                 corpus_path = str(PROJECT_ROOT / "data" / "verabench" / "corpus.jsonl")
                 if Path(corpus_path).exists():
@@ -123,6 +137,7 @@ def main():
                     index_docs = [c.to_index_doc() for c in chunks]
                     p.retriever.index_documents(index_docs)
                     logger.info(f"Indexed {len(chunks)} chunks from VeraBench corpus")
+                _pipeline_cache["p"] = p
                 return p
 
             pipeline_factory = make_pipeline
@@ -135,6 +150,21 @@ def main():
     if args.demo:
         print("\nRunning in demo mode (ground truth self-evaluation)...")
 
+    # Resolve checkpoint path: enables incremental save + resume for pipeline runs.
+    # Demo mode is instant, so checkpointing there is pointless and skipped.
+    checkpoint_path = None
+    if not args.demo and not args.no_checkpoint:
+        checkpoint_path = args.checkpoint or (
+            (args.output + ".ckpt.jsonl") if args.output else "results/verabench.ckpt.jsonl"
+        )
+        if args.restart and Path(checkpoint_path).exists():
+            Path(checkpoint_path).unlink()
+            print(f"--restart: removed existing checkpoint {checkpoint_path}")
+        if Path(checkpoint_path).exists():
+            print(f"Resuming from checkpoint {checkpoint_path} (already-done questions will be skipped)")
+        else:
+            print(f"Incremental checkpoint: {checkpoint_path} (interrupted runs can be resumed)")
+
     evaluator = VeraBenchEvaluator(
         benchmark=benchmark,
         pipeline_factory=pipeline_factory if not args.demo else None,
@@ -145,6 +175,7 @@ def main():
         question_types=args.types,
         max_questions=args.max,
         callback=print_progress,
+        checkpoint_path=checkpoint_path,
     )
     elapsed = time.time() - t0
     print(f"\nEvaluation completed in {elapsed:.1f}s")
