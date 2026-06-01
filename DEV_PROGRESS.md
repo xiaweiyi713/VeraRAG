@@ -14,6 +14,14 @@
 4. **缺 python-multipart** (`requirements.txt`)：FastAPI 表单/上传依赖缺失，导致 11 个 web 测试失败 → 补齐后 **182 passed + 3 skipped**。
 5. **断点续跑**（`benchmark/evaluator.py` + `run_verabench.py`）：每题完成即写 JSONL 检查点，重跑自动跳过已完成题；新增 `--checkpoint/--restart/--no-checkpoint`。
 
+### 行为对齐迭代：修复"倾向作答"偏差（baseline → v2 → v3）
+
+针对 baseline 的"倾向作答"偏差（不可答/冲突/误导三类 Behavior Acc 仅 ~0.08），重写推理与修复 Agent：
+- `agents/reasoning_agent.py`：prompt 改中文 + 明确行为决策（证据不足→拒答 / 断言前提不成立→"该说法不准确"纠正 / 多源冲突→标注 / 否则作答），并加"默认应作答、部分证据勿轻易拒答"原则平衡过度拒答。
+- `agents/repair_agent.py`：`_generate_repaired_answer` 改为**保留**推理原始答案（原会用英文模板重写、滥加冲突说明，是 Behavior Acc/Conflict-F1 偏低的根源之一），hedge 改中文。
+
+**结果（全 152 题真实评测，Behavior Acc）：baseline 0.526 → v2 0.743 → v3 0.763**。三个弱项：不可答 0.077→0.962、误导 0.080→0.760、冲突 0.080→0.480。代价：多证据(0.92→0.60)/时序(1.0→0.76) 略降、ECE 校准退化（待重标定）。三版结果存于 `results/verabench_full{,_v2,_v3}.json`。
+
 ---
 
 > 历史更新：2026-05-28
