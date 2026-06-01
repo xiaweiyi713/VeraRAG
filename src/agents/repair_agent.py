@@ -114,40 +114,18 @@ Output ONLY valid JSON, no other text."""
             )
 
     def _downgrade_claim(self, claim_text: str) -> str:
-        """Downgrade a claim to be more tentative."""
-        # Add uncertainty language
-        hedges = [
-            "It is possible that ",
-            "Some evidence suggests ",
-            "There is limited indication that ",
-            "It has been suggested that "
-        ]
-
-        # Select appropriate hedge based on claim
-        claim_lower = claim_text.lower()
-
-        if any(word in claim_lower for word in ["all", "every", "always", "never"]):
-            return claim_text.replace("all", "some").replace("every", "some").replace("always", "may sometimes").replace("never", "rarely")
-
-        # Add hedge if not already present
-        if not any(hedge in claim_text for hedge in hedges):
-            return hedges[0] + claim_text[0].lower() + claim_text[1:]
-
-        return claim_text
+        """Downgrade a refuted claim to be more tentative (Chinese)."""
+        hedge = "（注：该说法证据不足，甚至存在反证）"
+        if hedge in claim_text:
+            return claim_text
+        return f"{claim_text}{hedge}"
 
     def _add_uncertainty_hedge(self, claim_text: str) -> str:
-        """Add uncertainty hedge to a claim."""
-        hedges = [
-            "The available evidence is limited, but ",
-            "Based on the current evidence, it appears that ",
-            "While not conclusively established, "
-        ]
-
-        for hedge in hedges:
-            if hedge not in claim_text:
-                return hedge + claim_text[0].lower() + claim_text[1:]
-
-        return claim_text
+        """Add an uncertainty hedge to an under-supported claim (Chinese)."""
+        hedge = "现有证据有限，"
+        if claim_text.startswith(hedge):
+            return claim_text
+        return hedge + claim_text
 
     def _generate_repaired_answer(
         self,
@@ -155,40 +133,27 @@ Output ONLY valid JSON, no other text."""
         repaired_claims: list[AnswerClaim],
         verification_report: VerificationReport
     ) -> str:
-        """Generate repaired answer text."""
-        # For now, simple concatenation of repaired claims
-        # Can be enhanced to maintain narrative flow
+        """Repair the answer text while PRESERVING the reasoning agent's behavior.
 
-        if not repaired_claims:
-            return "Unable to provide a reliable answer due to insufficient evidence."
+        The reasoning agent already decides the high-level behavior (正常作答 /
+        拒答 / 纠正前提 / 标注冲突) and phrases the Chinese answer accordingly.
+        Rebuilding the answer from claims here would destroy that framing (and
+        risk injecting spurious "conflict" notes), so we keep the original text
+        and only append a conservative caveat when some claims are unsupported.
+        """
+        answer = (original_answer or "").strip()
+        if not answer:
+            # 仅当推理未给出任何答案时，才回退为明确拒答
+            return "根据现有证据，信息不足，无法给出可靠回答。"
 
-        answer_parts = []
-
-        # Group claims by confidence
-        high_conf = [c for c in repaired_claims if c.confidence >= 0.7]
-        med_conf = [c for c in repaired_claims if 0.4 <= c.confidence < 0.7]
-        low_conf = [c for c in repaired_claims if c.confidence < 0.4]
-
-        if high_conf:
-            answer_parts.append("Based on the available evidence:")
-            for c in high_conf:
-                answer_parts.append(f"- {c.claim}")
-
-        if med_conf:
-            answer_parts.append("There is some indication that:")
-            for c in med_conf:
-                answer_parts.append(f"- {c.claim}")
-
-        if low_conf:
-            answer_parts.append("The following claims are uncertain due to limited evidence:")
-            for c in low_conf:
-                answer_parts.append(f"- {c.claim}")
-
-        # Add conflict acknowledgment
-        if verification_report.ignored_conflicts:
-            answer_parts.append("\nNote: There are conflicting perspectives on some aspects of this question.")
-
-        return "\n".join(answer_parts)
+        has_unsupported = any(
+            getattr(c, "verification_status", None) in ("NOT_ENOUGH_INFO", "REFUTED")
+            for c in repaired_claims
+        )
+        caveat = "（注：上述部分论断证据有限，请谨慎对待。）"
+        if has_unsupported and caveat not in answer:
+            answer = f"{answer}\n{caveat}"
+        return answer
 
     def run(self, *args, **kwargs) -> Any:
         """Run the repair agent."""
