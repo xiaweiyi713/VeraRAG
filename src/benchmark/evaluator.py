@@ -5,18 +5,18 @@ import logging
 import sys
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field, asdict, fields
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Callable
+from typing import Any
 
 # Ensure src is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from src.evaluation.answer_metrics import AnswerMetrics
 from src.evaluation.evidence_metrics import EvidenceMetrics
-from src.evidence.conflict_graph import ConflictType
 
-from .loader import VeraBench, BenchmarkQuestion, load_verabench
+from .loader import BenchmarkQuestion, VeraBench, load_verabench
 
 logger = logging.getLogger("verabench")
 
@@ -36,13 +36,18 @@ class QuestionResult:
     evidence_recall: float = 0.0
     evidence_precision: float = 0.0
     conflict_detection_f1: float = 0.0
+    predicted_conflicts: int = 0
+    gold_conflicts: int = 0
+    conflict_true_positives: int = 0
+    conflict_false_positives: int = 0
+    conflict_false_negatives: int = 0
     confidence: float = 0.0
     latency_seconds: float = 0.0
     claims_supported: int = 0
     claims_refuted: int = 0
     claims_nei: int = 0
     difficulty: str = "medium"
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -60,11 +65,15 @@ class BenchmarkReport:
     avg_latency: float = 0.0
     ece: float = 0.0
     brier_score: float = 0.0
-    by_type: Dict[str, Dict[str, float]] = field(default_factory=dict)
-    by_difficulty: Dict[str, Dict[str, float]] = field(default_factory=dict)
-    results: List[QuestionResult] = field(default_factory=list)
+    calibration_bins: list[dict[str, Any]] = field(default_factory=list)
+    conflict_summary: dict[str, Any] = field(default_factory=dict)
+    behavior_confusion: dict[str, dict[str, int]] = field(default_factory=dict)
+    failure_summary: dict[str, Any] = field(default_factory=dict)
+    by_type: dict[str, dict[str, float]] = field(default_factory=dict)
+    by_difficulty: dict[str, dict[str, float]] = field(default_factory=dict)
+    results: list[QuestionResult] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = {
             "total_questions": self.total_questions,
             "completed": self.completed,
@@ -79,6 +88,10 @@ class BenchmarkReport:
             "avg_latency": round(self.avg_latency, 4),
             "ece": round(self.ece, 4),
             "brier_score": round(self.brier_score, 4),
+            "calibration_bins": self.calibration_bins,
+            "conflict_summary": self.conflict_summary,
+            "behavior_confusion": self.behavior_confusion,
+            "failure_summary": self.failure_summary,
             "by_type": {k: {kk: round(vv, 4) for kk, vv in v.items()} for k, v in self.by_type.items()},
             "by_difficulty": {k: {kk: round(vv, 4) for kk, vv in v.items()} for k, v in self.by_difficulty.items()},
             "question_results": [
@@ -96,6 +109,11 @@ class BenchmarkReport:
                     "evidence_recall": round(r.evidence_recall, 4),
                     "evidence_precision": round(r.evidence_precision, 4),
                     "conflict_detection_f1": round(r.conflict_detection_f1, 4),
+                    "predicted_conflicts": r.predicted_conflicts,
+                    "gold_conflicts": r.gold_conflicts,
+                    "conflict_true_positives": r.conflict_true_positives,
+                    "conflict_false_positives": r.conflict_false_positives,
+                    "conflict_false_negatives": r.conflict_false_negatives,
                     "confidence": round(r.confidence, 4),
                     "latency_seconds": round(r.latency_seconds, 2),
                     "difficulty": r.difficulty,
@@ -110,9 +128,9 @@ class BenchmarkReport:
 class VeraBenchEvaluator:
     def __init__(
         self,
-        benchmark: Optional[VeraBench] = None,
-        data_dir: Optional[str] = None,
-        pipeline_factory: Optional[Callable] = None,
+        benchmark: VeraBench | None = None,
+        data_dir: str | None = None,
+        pipeline_factory: Callable | None = None,
     ):
         if benchmark:
             self.benchmark = benchmark
@@ -123,10 +141,10 @@ class VeraBenchEvaluator:
 
     def evaluate(
         self,
-        question_types: Optional[List[str]] = None,
-        max_questions: Optional[int] = None,
-        callback: Optional[Callable] = None,
-        checkpoint_path: Optional[str] = None,
+        question_types: list[str] | None = None,
+        max_questions: int | None = None,
+        callback: Callable | None = None,
+        checkpoint_path: str | None = None,
     ) -> BenchmarkReport:
         """Evaluate the pipeline over the benchmark.
 
@@ -142,13 +160,13 @@ class VeraBenchEvaluator:
         if max_questions:
             questions = questions[:max_questions]
 
-        done: Dict[str, QuestionResult] = {}
+        done: dict[str, QuestionResult] = {}
         if checkpoint_path:
             done = self._load_checkpoint(checkpoint_path)
             if done:
                 logger.info(f"Resuming from checkpoint: {len(done)} question(s) already done")
 
-        results: List[QuestionResult] = []
+        results: list[QuestionResult] = []
         total = len(questions)
         for i, q in enumerate(questions):
             if callback:
@@ -164,14 +182,14 @@ class VeraBenchEvaluator:
         return self._build_report(results)
 
     @staticmethod
-    def _load_checkpoint(path: str) -> Dict[str, "QuestionResult"]:
+    def _load_checkpoint(path: str) -> dict[str, "QuestionResult"]:
         """Load previously-saved per-question results from a JSONL checkpoint."""
-        loaded: Dict[str, QuestionResult] = {}
+        loaded: dict[str, QuestionResult] = {}
         p = Path(path)
         if not p.exists():
             return loaded
         valid = {f.name for f in fields(QuestionResult)}
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -196,9 +214,9 @@ class VeraBenchEvaluator:
     def evaluate_baseline(self, answer_fn: Callable[[str], str], **kwargs) -> BenchmarkReport:
         """Evaluate a baseline function (takes question, returns answer)."""
         questions = self.benchmark.questions
-        if "question_types" in kwargs and kwargs["question_types"]:
+        if kwargs.get("question_types"):
             questions = [q for q in questions if q.type in kwargs["question_types"]]
-        if "max_questions" in kwargs and kwargs["max_questions"]:
+        if kwargs.get("max_questions"):
             questions = questions[:kwargs["max_questions"]]
 
         results = []
@@ -245,12 +263,16 @@ class VeraBenchEvaluator:
         em = AnswerMetrics.exact_match(answer, q.ground_truth_answer)
         f1 = AnswerMetrics.soft_f1_score(answer, q.ground_truth_answer)
 
-        predicted_evidence_ids = []
+        predicted_evidence_ids: list[str] = []
         gold_evidence_ids = [e.evidence_id for e in q.evidence]
         ep = EvidenceMetrics.evidence_precision(predicted_evidence_ids, gold_evidence_ids)
         er = EvidenceMetrics.evidence_recall(predicted_evidence_ids, gold_evidence_ids)
 
         actual_behavior = self._classify_behavior(q, answer)
+        gold_conflict_count = len({
+            f"{pair[0]}-{pair[1]}"
+            for pair in (tuple(sorted(c.pair)) for c in q.expected_conflicts)
+        })
 
         return QuestionResult(
             question_id=q.id, question_type=q.type, question=q.question,
@@ -259,6 +281,8 @@ class VeraBenchEvaluator:
             correct=(f1 > 0.3),
             answer_em=em, answer_f1=f1,
             evidence_recall=er, evidence_precision=ep,
+            gold_conflicts=gold_conflict_count,
+            conflict_false_negatives=gold_conflict_count,
             latency_seconds=latency,
             difficulty=q.difficulty,
         )
@@ -303,6 +327,8 @@ class VeraBenchEvaluator:
         if hasattr(output, "conflict_report") and output.conflict_report:
             edges = output.conflict_report.get("edges", [])
             for edge in edges:
+                if not self._is_conflict_edge(edge):
+                    continue
                 src_claim = edge.get("source_id", "")
                 tgt_claim = edge.get("target_id", "")
                 src_ev = claim_to_ev_id.get(src_claim, src_claim)
@@ -321,10 +347,15 @@ class VeraBenchEvaluator:
             gold_conflicts.append(pair)
 
         conflict_f1 = 0.0
+        pred_conflict_set = {f"{p[0]}-{p[1]}" for p in pred_conflicts}
+        gold_conflict_set = {f"{p[0]}-{p[1]}" for p in gold_conflicts}
+        conflict_tp = len(pred_conflict_set & gold_conflict_set)
+        conflict_fp = len(pred_conflict_set - gold_conflict_set)
+        conflict_fn = len(gold_conflict_set - pred_conflict_set)
         if gold_conflicts or pred_conflicts:
             conflict_f1 = EvidenceMetrics.evidence_f1(
-                [f"{p[0]}-{p[1]}" for p in pred_conflicts],
-                [f"{p[0]}-{p[1]}" for p in gold_conflicts],
+                list(pred_conflict_set),
+                list(gold_conflict_set),
             )
 
         # Claim verification
@@ -354,12 +385,39 @@ class VeraBenchEvaluator:
             correct=correct, answer_em=em, answer_f1=f1,
             evidence_recall=er, evidence_precision=ep,
             conflict_detection_f1=conflict_f1,
+            predicted_conflicts=len(pred_conflict_set),
+            gold_conflicts=len(gold_conflict_set),
+            conflict_true_positives=conflict_tp,
+            conflict_false_positives=conflict_fp,
+            conflict_false_negatives=conflict_fn,
             confidence=confidence, latency_seconds=latency,
             claims_supported=claims_supported,
             claims_refuted=claims_refuted,
             claims_nei=claims_nei,
             difficulty=q.difficulty,
         )
+
+    @staticmethod
+    def _is_conflict_edge(edge: dict[str, Any]) -> bool:
+        """Return True for edges that should count toward conflict detection.
+
+        The conflict graph can contain support and partial-support edges for
+        reasoning context. VeraBench conflict F1 should only score actual
+        disagreement edges; otherwise high-quality support detection becomes
+        false positives in the conflict metric.
+        """
+        conflict_type = edge.get("conflict_type", "")
+        return conflict_type in {
+            "refute",
+            "numeric_conflict",
+            "temporal_conflict",
+            "entity_mismatch",
+            "source_disagreement",
+            "definitional_conflict",
+            "scope_conflict",
+            "causal_conflict",
+            "granularity_conflict",
+        }
 
     def _classify_behavior(self, q: BenchmarkQuestion, answer: str) -> str:
         if not answer or not answer.strip():
@@ -383,7 +441,7 @@ class VeraBenchEvaluator:
 
         return "answer_with_citation"
 
-    def _build_report(self, results: List[QuestionResult]) -> BenchmarkReport:
+    def _build_report(self, results: list[QuestionResult]) -> BenchmarkReport:
         if not results:
             return BenchmarkReport()
 
@@ -408,6 +466,10 @@ class VeraBenchEvaluator:
             avg_latency=avg("latency_seconds"),
             results=results,
         )
+        report.calibration_bins = self._build_calibration_bins(completed)
+        report.conflict_summary = self._build_conflict_summary(completed)
+        report.behavior_confusion = self._build_behavior_confusion(completed)
+        report.failure_summary = self._build_failure_summary(completed, errored)
 
         # Calibration metrics (ECE, Brier Score)
         if completed:
@@ -440,3 +502,168 @@ class VeraBenchEvaluator:
                 }
 
         return report
+
+    @staticmethod
+    def _build_calibration_bins(
+        results: list[QuestionResult],
+        n_bins: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Aggregate confidence calibration bins for reliability diagrams."""
+        if not results:
+            return []
+
+        bins: list[dict[str, Any]] = []
+        for i in range(n_bins):
+            lower = i / n_bins
+            upper = (i + 1) / n_bins
+            if i == n_bins - 1:
+                rows = [r for r in results if lower <= r.confidence <= upper]
+            else:
+                rows = [r for r in results if lower <= r.confidence < upper]
+
+            if rows:
+                avg_confidence = sum(r.confidence for r in rows) / len(rows)
+                accuracy = sum(1 for r in rows if r.correct) / len(rows)
+            else:
+                avg_confidence = (lower + upper) / 2
+                accuracy = 0.0
+
+            bins.append({
+                "bin": i + 1,
+                "lower": round(lower, 4),
+                "upper": round(upper, 4),
+                "count": len(rows),
+                "avg_confidence": round(avg_confidence, 4),
+                "accuracy": round(accuracy, 4),
+                "gap": round(abs(avg_confidence - accuracy), 4),
+            })
+        return bins
+
+    @staticmethod
+    def _build_conflict_summary(results: list[QuestionResult]) -> dict[str, Any]:
+        """Aggregate conflict detection counts and likely failure mode."""
+        total_gold = sum(r.gold_conflicts for r in results)
+        total_pred = sum(r.predicted_conflicts for r in results)
+        total_tp = sum(r.conflict_true_positives for r in results)
+        total_fp = sum(r.conflict_false_positives for r in results)
+        total_fn = sum(r.conflict_false_negatives for r in results)
+
+        precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) else 0.0
+        recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) else 0.0
+
+        if total_fp > total_fn * 2:
+            dominant_failure = "over_detection"
+        elif total_fn > total_fp * 2:
+            dominant_failure = "under_detection"
+        elif total_fp or total_fn:
+            dominant_failure = "mixed"
+        else:
+            dominant_failure = "none"
+
+        by_type: dict[str, dict[str, int]] = {}
+        for r in results:
+            bucket = by_type.setdefault(r.question_type, {
+                "gold": 0,
+                "predicted": 0,
+                "tp": 0,
+                "fp": 0,
+                "fn": 0,
+            })
+            bucket["gold"] += r.gold_conflicts
+            bucket["predicted"] += r.predicted_conflicts
+            bucket["tp"] += r.conflict_true_positives
+            bucket["fp"] += r.conflict_false_positives
+            bucket["fn"] += r.conflict_false_negatives
+
+        return {
+            "available": True,
+            "gold_conflicts": total_gold,
+            "predicted_conflicts": total_pred,
+            "true_positives": total_tp,
+            "false_positives": total_fp,
+            "false_negatives": total_fn,
+            "precision": round(precision, 4),
+            "recall": round(recall, 4),
+            "dominant_failure": dominant_failure,
+            "by_type": by_type,
+        }
+
+    @staticmethod
+    def _build_behavior_confusion(results: list[QuestionResult]) -> dict[str, dict[str, int]]:
+        """Build expected-behavior -> actual-behavior counts for diagnosis."""
+        confusion: dict[str, dict[str, int]] = {}
+        for r in results:
+            expected = r.expected_behavior or "unknown"
+            actual = r.actual_behavior or "unknown"
+            confusion.setdefault(expected, {})
+            confusion[expected][actual] = confusion[expected].get(actual, 0) + 1
+        return confusion
+
+    @staticmethod
+    def _build_failure_summary(
+        completed: list[QuestionResult],
+        errored: list[QuestionResult],
+        max_examples: int = 10,
+    ) -> dict[str, Any]:
+        """Summarize the most useful failure modes for report readers."""
+        behavior_failures = [
+            r for r in completed
+            if r.actual_behavior != r.expected_behavior
+        ]
+        low_evidence_recall = [
+            r for r in completed
+            if r.evidence_recall < 0.5 and r.expected_behavior != "abstain"
+        ]
+        conflict_failures = [
+            r for r in completed
+            if r.question_type == "conflict"
+            and (
+                r.actual_behavior != r.expected_behavior
+                or r.conflict_detection_f1 < 0.5
+            )
+        ]
+
+        def by_type(rows: list[QuestionResult]) -> dict[str, int]:
+            counts: dict[str, int] = {}
+            for r in rows:
+                counts[r.question_type] = counts.get(r.question_type, 0) + 1
+            return dict(sorted(counts.items()))
+
+        def example(r: QuestionResult) -> dict[str, Any]:
+            predicted = r.predicted.replace("\n", " ").strip()
+            return {
+                "question_id": r.question_id,
+                "question_type": r.question_type,
+                "difficulty": r.difficulty,
+                "expected_behavior": r.expected_behavior,
+                "actual_behavior": r.actual_behavior,
+                "answer_f1": round(r.answer_f1, 4),
+                "evidence_recall": round(r.evidence_recall, 4),
+                "conflict_detection_f1": round(r.conflict_detection_f1, 4),
+                "confidence": round(r.confidence, 4),
+                "question": r.question,
+                "predicted_preview": predicted[:240],
+            }
+
+        # Rank examples by severity: behavior mismatch first, then weak evidence/conflict scores.
+        ranked_failures = sorted(
+            behavior_failures,
+            key=lambda r: (
+                r.answer_f1,
+                r.evidence_recall,
+                r.conflict_detection_f1,
+                -r.latency_seconds,
+            ),
+        )
+
+        return {
+            "behavior_failure_count": len(behavior_failures),
+            "behavior_failures_by_type": by_type(behavior_failures),
+            "low_evidence_recall_count": len(low_evidence_recall),
+            "low_evidence_recall_by_type": by_type(low_evidence_recall),
+            "conflict_failure_count": len(conflict_failures),
+            "errored_count": len(errored),
+            "top_behavior_failures": [
+                example(r) for r in ranked_failures[:max_examples]
+            ],
+        }

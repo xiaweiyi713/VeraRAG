@@ -16,17 +16,17 @@ Detects 11 types of relationships between evidence claims:
 import logging
 import re
 from difflib import SequenceMatcher
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Any, ClassVar
 
-from ..utils.data_structures import (
-    Evidence,
-    Claim,
-    EvidenceConflictGraph,
-    ConflictGraphNode,
-    ConflictEdge,
-    ConflictType,
-)
 from ..agents.base import BaseAgent
+from ..utils.data_structures import (
+    Claim,
+    ConflictEdge,
+    ConflictGraphNode,
+    ConflictType,
+    Evidence,
+    EvidenceConflictGraph,
+)
 
 logger = logging.getLogger("verarag")
 
@@ -77,7 +77,7 @@ class ConflictGraphBuilder(BaseAgent):
     Layer 3: LLM adjudication (for cases where Layer 1 & 2 are inconclusive)
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, llm_client: Optional[Any] = None):
+    def __init__(self, config: dict[str, Any] | None = None, llm_client: Any | None = None):
         super().__init__(config, llm_client)
         self.system_prompt = """You are an expert at detecting conflicts and relationships between claims.
 Identify whether claims support, refute, or partially support each other.
@@ -98,12 +98,12 @@ Output ONLY valid JSON, no other text."""
 
     def build_graph(
         self,
-        evidence_list: List[Evidence],
+        evidence_list: list[Evidence],
         use_llm: bool = True,
     ) -> EvidenceConflictGraph:
         graph = EvidenceConflictGraph()
 
-        all_claims: List[tuple] = []
+        all_claims: list[tuple] = []
         for ev in evidence_list:
             for claim in ev.claims:
                 node = ConflictGraphNode(
@@ -150,9 +150,9 @@ Output ONLY valid JSON, no other text."""
 
     def _nli_detect(
         self, claim_i: Claim, claim_j: Claim,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         """Use NLI cross-encoder to determine entailment / contradiction / neutral."""
-        if not self._nli_available:
+        if not self._nli_available or self._nli_model is None:
             return None
 
         try:
@@ -225,7 +225,7 @@ Output ONLY valid JSON, no other text."""
 
     def _check_support(
         self, claim_i: Claim, claim_j: Claim,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         """Detect SUPPORT relationship: highly similar claims with shared entities."""
         if not self.enable_support_detection:
             return None
@@ -260,7 +260,7 @@ Output ONLY valid JSON, no other text."""
         claim_j: Claim,
         ev_j: Evidence,
         use_llm: bool,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         # Layer 1: Rule-based detection
         edge = self._rule_based_conflict_detection(claim_i, ev_i, claim_j, ev_j)
         if edge:
@@ -285,7 +285,7 @@ Output ONLY valid JSON, no other text."""
         ev_i: Evidence,
         claim_j: Claim,
         ev_j: Evidence,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         """Run all rule-based detectors in priority order."""
 
         # 1. Numeric conflict (highest priority – clear signal)
@@ -346,7 +346,7 @@ Output ONLY valid JSON, no other text."""
     # 10. Semantic contradiction (rule-based)
     # ------------------------------------------------------------------
 
-    _NEGATION_PAIRS = [
+    _NEGATION_PAIRS: ClassVar[tuple[tuple[str, str], ...]] = (
         ("是", "不是"), ("有", "没有"), ("会", "不会"), ("能", "不能"),
         ("应该", "不应该"), ("可以", "不可以"), ("需要", "不需要"),
         ("是", "非"), ("对", "错"), ("正确", "错误"),
@@ -355,11 +355,11 @@ Output ONLY valid JSON, no other text."""
         (" was ", " was not "), (" has ", " has no "),
         (" can ", " cannot "), (" will ", " will not "),
         ("increased", "decreased"), ("rose", "fell"),
-    ]
+    )
 
     def _check_semantic_contradiction(
         self, claim_i: Claim, claim_j: Claim,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         """Detect contradiction via shared entities + negation pairs, even without
         exact keyword match — uses text similarity to confirm topical relevance."""
         ti = claim_i.claim.lower()
@@ -388,17 +388,17 @@ Output ONLY valid JSON, no other text."""
 
     def _check_numerical_conflict(
         self, claim_i: Claim, claim_j: Claim,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         nums_i = self._parse_numbers(claim_i.numbers)
         nums_j = self._parse_numbers(claim_j.numbers)
         if not nums_i or not nums_j:
             return None
 
         # Only compare numbers of comparable magnitude (skip year-vs-quantity)
-        for n_i, raw_i in zip(nums_i, claim_i.numbers):
+        for n_i, raw_i in zip(nums_i, claim_i.numbers, strict=False):
             if self._is_likely_year(raw_i):
                 continue
-            for n_j, raw_j in zip(nums_j, claim_j.numbers):
+            for n_j, raw_j in zip(nums_j, claim_j.numbers, strict=False):
                 if self._is_likely_year(raw_j):
                     continue
                 if n_i > 0 and n_j > 0:
@@ -430,7 +430,7 @@ Output ONLY valid JSON, no other text."""
         except (ValueError, TypeError):
             return False
 
-    def _parse_numbers(self, num_strings: List[str]) -> List[float]:
+    def _parse_numbers(self, num_strings: list[str]) -> list[float]:
         numbers = []
         for ns in num_strings:
             try:
@@ -446,7 +446,7 @@ Output ONLY valid JSON, no other text."""
 
     def _check_entity_conflict(
         self, claim_i: Claim, claim_j: Claim,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         entities_i = set(claim_i.entities)
         entities_j = set(claim_j.entities)
         shared = entities_i & entities_j
@@ -502,25 +502,27 @@ Output ONLY valid JSON, no other text."""
         claim_j: Claim,
         ev_i: Evidence,
         ev_j: Evidence,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         entities_i = set(claim_i.entities)
         entities_j = set(claim_j.entities)
 
         # If claims share entities but evidence has different dates
-        if entities_i & entities_j:
-            if ev_i.date and ev_j.date and ev_i.date != ev_j.date:
-                dates_different = ev_i.date[:4] != ev_j.date[:4] if len(ev_i.date) >= 4 and len(ev_j.date) >= 4 else False
-                if dates_different:
-                    newer = ev_j.date if ev_j.date > ev_i.date else ev_i.date
-                    return ConflictEdge(
-                        source_id=claim_i.claim_id,
-                        target_id=claim_j.claim_id,
-                        conflict_type=ConflictType.TEMPORAL_CONFLICT,
-                        confidence=0.7,
-                        severity=SEVERITY_MEDIUM,
-                        rationale=f"Evidence dates differ: {ev_i.date} vs {ev_j.date} for shared entities",
-                        resolver_strategy=RESOLVE_TEMPORAL,
-                    )
+        if entities_i & entities_j and ev_i.date and ev_j.date and ev_i.date != ev_j.date:
+            dates_different = (
+                ev_i.date[:4] != ev_j.date[:4]
+                if len(ev_i.date) >= 4 and len(ev_j.date) >= 4
+                else False
+            )
+            if dates_different:
+                return ConflictEdge(
+                    source_id=claim_i.claim_id,
+                    target_id=claim_j.claim_id,
+                    conflict_type=ConflictType.TEMPORAL_CONFLICT,
+                    confidence=0.7,
+                    severity=SEVERITY_MEDIUM,
+                    rationale=f"Evidence dates differ: {ev_i.date} vs {ev_j.date} for shared entities",
+                    resolver_strategy=RESOLVE_TEMPORAL,
+                )
 
         # Contradictory temporal markers in text
         if claim_i.time_expressions and claim_j.time_expressions:
@@ -546,7 +548,7 @@ Output ONLY valid JSON, no other text."""
 
     def _check_scope_conflict(
         self, claim_i: Claim, claim_j: Claim,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         ti = claim_i.claim.lower()
         tj = claim_j.claim.lower()
 
@@ -569,7 +571,7 @@ Output ONLY valid JSON, no other text."""
                 )
         return None
 
-    def _detect_scope(self, text: str) -> Optional[str]:
+    def _detect_scope(self, text: str) -> str | None:
         for kw in SCOPE_GLOBAL:
             if kw in text:
                 return "global"
@@ -587,7 +589,7 @@ Output ONLY valid JSON, no other text."""
 
     def _check_causal_conflict(
         self, claim_i: Claim, claim_j: Claim,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         ti = claim_i.claim.lower()
         tj = claim_j.claim.lower()
 
@@ -617,7 +619,7 @@ Output ONLY valid JSON, no other text."""
 
     def _check_granularity_conflict(
         self, claim_i: Claim, claim_j: Claim,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         ti = claim_i.claim.lower()
         tj = claim_j.claim.lower()
 
@@ -648,7 +650,7 @@ Output ONLY valid JSON, no other text."""
 
     def _check_definitional_conflict(
         self, claim_i: Claim, claim_j: Claim,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         defn_i = self._extract_definition(claim_i.claim)
         defn_j = self._extract_definition(claim_j.claim)
 
@@ -668,7 +670,7 @@ Output ONLY valid JSON, no other text."""
                 )
         return None
 
-    def _extract_definition(self, text: str) -> Optional[str]:
+    def _extract_definition(self, text: str) -> str | None:
         for pattern in DEFINITION_PATTERNS:
             m = re.search(pattern, text, re.IGNORECASE)
             if m:
@@ -679,7 +681,7 @@ Output ONLY valid JSON, no other text."""
     # 8. Source reliability conflict
     # ------------------------------------------------------------------
 
-    RELIABILITY_RANK = {
+    RELIABILITY_RANK: ClassVar[dict[str, int]] = {
         "official": 5,
         "paper": 4,
         "report": 3,
@@ -694,7 +696,7 @@ Output ONLY valid JSON, no other text."""
         ev_i: Evidence,
         claim_j: Claim,
         ev_j: Evidence,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         entities_i = set(claim_i.entities)
         entities_j = set(claim_j.entities)
 
@@ -730,7 +732,7 @@ Output ONLY valid JSON, no other text."""
 
     def _llm_conflict_detection(
         self, claim_i: Claim, claim_j: Claim,
-    ) -> Optional[ConflictEdge]:
+    ) -> ConflictEdge | None:
         import json
 
         prompt = f"""Determine the relationship between these two claims.
@@ -790,7 +792,7 @@ Guidelines:
     def update_graph(
         self,
         graph: EvidenceConflictGraph,
-        new_evidence: List[Evidence],
+        new_evidence: list[Evidence],
         use_llm: bool = True,
     ) -> EvidenceConflictGraph:
         for ev in new_evidence:

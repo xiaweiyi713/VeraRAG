@@ -1,6 +1,5 @@
 """Answer Metrics for VeraRAG Evaluation."""
 
-from typing import Dict, Any, List, Optional
 import re
 
 
@@ -67,7 +66,7 @@ class AnswerMetrics:
         return 2 * precision * recall / (precision + recall)
 
     @staticmethod
-    def _extract_keywords(text: str) -> List[str]:
+    def _extract_keywords(text: str) -> list[str]:
         """Extract keywords: numbers, English words, Chinese segments (2+ chars)."""
         keywords = []
 
@@ -80,7 +79,7 @@ class AnswerMetrics:
         keywords.extend(w.lower() for w in english if len(w) > 1)
 
         # Chinese key phrases: split by punctuation, take segments 2-10 chars
-        chinese_segments = re.split(r'[，。、；：！？\s,;:!?\(\)（）【】《》""''\-/]', text)
+        chinese_segments = re.split(r'[，。、；：！？\s,;:!?\(\)（）【】《》""'r'\-/]', text)
         for seg in chinese_segments:
             seg = seg.strip()
             if 2 <= len(seg) <= 20:
@@ -93,21 +92,27 @@ class AnswerMetrics:
         return keywords
 
     @staticmethod
-    def batch_exact_match(predictions: List[str], references: List[str]) -> float:
+    def batch_exact_match(predictions: list[str], references: list[str]) -> float:
         """Calculate average exact match across a batch."""
         if len(predictions) != len(references):
             raise ValueError("Predictions and references must have same length")
 
-        scores = [AnswerMetrics.exact_match(p, r) for p, r in zip(predictions, references)]
+        scores = [
+            AnswerMetrics.exact_match(p, r)
+            for p, r in zip(predictions, references, strict=False)
+        ]
         return sum(scores) / len(scores) if scores else 0.0
 
     @staticmethod
-    def batch_f1_score(predictions: List[str], references: List[str]) -> float:
+    def batch_f1_score(predictions: list[str], references: list[str]) -> float:
         """Calculate average F1 score across a batch."""
         if len(predictions) != len(references):
             raise ValueError("Predictions and references must have same length")
 
-        scores = [AnswerMetrics.f1_score(p, r) for p, r in zip(predictions, references)]
+        scores = [
+            AnswerMetrics.f1_score(p, r)
+            for p, r in zip(predictions, references, strict=False)
+        ]
         return sum(scores) / len(scores) if scores else 0.0
 
     @staticmethod
@@ -124,7 +129,7 @@ class AnswerMetrics:
         return answer
 
     @staticmethod
-    def _tokenize(answer: str) -> List[str]:
+    def _tokenize(answer: str) -> list[str]:
         """Tokenize answer into words."""
         return AnswerMetrics._normalize_answer(answer).split()
 
@@ -132,7 +137,7 @@ class AnswerMetrics:
     def compute_all(
         predicted: str,
         reference: str
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Compute all answer metrics.
 

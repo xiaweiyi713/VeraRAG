@@ -48,6 +48,21 @@ def compute_calibration(predicted_confidences, actual_correctness, n_bins=10):
     return bins, float(ece)
 
 
+def load_confidence_rows(path):
+    """Load confidences and correctness from current or legacy result JSON."""
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    if isinstance(data, list):
+        rows = data
+    else:
+        rows = data.get("question_results") or data.get("results") or []
+
+    predicted = np.array([float(r.get("confidence") or 0.0) for r in rows])
+    actual = np.array([1.0 if r.get("correct") else 0.0 for r in rows])
+    return predicted, actual
+
+
 def generate_svg(bins, ece, output_path):
     """Generate calibration curve SVG."""
     w, h = 600, 400
@@ -113,10 +128,7 @@ def main():
         predicted = np.clip(np.random.beta(5, 2, n), 0.1, 0.95)
         actual = (np.random.random(n) < predicted * 0.85).astype(float)
     elif args.input:
-        with open(args.input) as f:
-            results = json.load(f)
-        predicted = np.array([r["confidence"] for r in results])
-        actual = np.array([1.0 if r.get("correct") else 0.0 for r in results])
+        predicted, actual = load_confidence_rows(args.input)
     else:
         print("Specify --input or --demo")
         sys.exit(1)

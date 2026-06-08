@@ -1,9 +1,8 @@
 """Document chunking strategies."""
 
 import re
-import uuid
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional
+from typing import Any
 
 from .loader import RawDocument
 
@@ -15,9 +14,9 @@ class Chunk:
     doc_id: str
     text: str
     title: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_index_doc(self) -> Dict[str, Any]:
+    def to_index_doc(self) -> dict[str, Any]:
         return {
             "id": self.chunk_id,
             "text": self.text,
@@ -42,7 +41,7 @@ class TextChunker:
         self.strategy = strategy
         self.min_chunk_size = min_chunk_size
 
-    def chunk_document(self, doc: RawDocument) -> List[Chunk]:
+    def chunk_document(self, doc: RawDocument) -> list[Chunk]:
         if not doc.content or len(doc.content.strip()) < self.min_chunk_size:
             # Document too small, return as single chunk
             if doc.content.strip():
@@ -65,7 +64,7 @@ class TextChunker:
         chunker = strategy_map.get(self.strategy, self._fixed_chunk)
         text_chunks = chunker(doc.content)
 
-        chunks = []
+        chunks: list[Chunk] = []
         for i, text in enumerate(text_chunks):
             text = text.strip()
             if len(text) < self.min_chunk_size:
@@ -86,14 +85,14 @@ class TextChunker:
 
         return chunks
 
-    def chunk_documents(self, docs: List[RawDocument]) -> List[Chunk]:
-        all_chunks = []
+    def chunk_documents(self, docs: list[RawDocument]) -> list[Chunk]:
+        all_chunks: list[Chunk] = []
         for doc in docs:
             all_chunks.extend(self.chunk_document(doc))
         return all_chunks
 
-    def _fixed_chunk(self, text: str) -> List[str]:
-        chunks = []
+    def _fixed_chunk(self, text: str) -> list[str]:
+        chunks: list[str] = []
         start = 0
         while start < len(text):
             end = start + self.chunk_size
@@ -102,27 +101,27 @@ class TextChunker:
             start += self.chunk_size - self.chunk_overlap
         return chunks
 
-    def _sentence_chunk(self, text: str) -> List[str]:
+    def _sentence_chunk(self, text: str) -> list[str]:
         sentences = self._split_sentences(text)
         return self._merge_sentences(sentences)
 
-    def _paragraph_chunk(self, text: str) -> List[str]:
+    def _paragraph_chunk(self, text: str) -> list[str]:
         paragraphs = re.split(r'\n\s*\n', text)
         paragraphs = [p.strip() for p in paragraphs if p.strip()]
         return self._merge_paragraphs(paragraphs)
 
-    def _heading_chunk(self, text: str) -> List[str]:
+    def _heading_chunk(self, text: str) -> list[str]:
         sections = re.split(r'\n(?=#{1,4}\s)', text)
         return [s.strip() for s in sections if s.strip()]
 
-    def _split_sentences(self, text: str) -> List[str]:
+    def _split_sentences(self, text: str) -> list[str]:
         # Split on Chinese and English sentence endings
         parts = re.split(r'(?<=[。！？.!?])\s*', text)
         return [p.strip() for p in parts if p.strip()]
 
-    def _merge_sentences(self, sentences: List[str]) -> List[str]:
-        chunks = []
-        current = []
+    def _merge_sentences(self, sentences: list[str]) -> list[str]:
+        chunks: list[str] = []
+        current: list[str] = []
         current_len = 0
 
         for sent in sentences:
@@ -130,7 +129,7 @@ class TextChunker:
             if current_len + sent_len > self.chunk_size and current:
                 chunks.append(" ".join(current))
                 # Keep overlap
-                overlap_sents = []
+                overlap_sents: list[str] = []
                 overlap_len = 0
                 for s in reversed(current):
                     if overlap_len + len(s) > self.chunk_overlap:
@@ -148,9 +147,9 @@ class TextChunker:
 
         return chunks
 
-    def _merge_paragraphs(self, paragraphs: List[str]) -> List[str]:
-        chunks = []
-        current = []
+    def _merge_paragraphs(self, paragraphs: list[str]) -> list[str]:
+        chunks: list[str] = []
+        current: list[str] = []
         current_len = 0
 
         for para in paragraphs:

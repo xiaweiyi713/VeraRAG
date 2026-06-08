@@ -126,9 +126,7 @@ Output ONLY valid JSON, no other text."""
         # Speculative/opinion language makes it hard to verify
         speculative = ["可能", "或许", "也许", "大概", "might", "maybe", "perhaps", "possibly", "arguably"]
         lower = text.lower()
-        if any(kw in lower for kw in speculative):
-            return False
-        return True
+        return not any(kw in lower for kw in speculative)
 
     @staticmethod
     def _infer_support_type(text: str, numbers: list, entities: list, time_expr: list) -> str:

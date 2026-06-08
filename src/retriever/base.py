@@ -1,7 +1,7 @@
 """Base Retriever class for VeraRAG."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -12,11 +12,7 @@ class RetrievalResult:
     content: str
     title: str = ""
     score: float = 0.0
-    metadata: dict[str, Any] | None = None
-
-    def __post_init__(self):
-        if self.metadata is None:
-            self.metadata = {}
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class BaseRetriever(ABC):

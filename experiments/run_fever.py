@@ -1,23 +1,22 @@
 """Run VeraRAG on FEVER dataset."""
 
+import argparse
+import json
 import os
 import sys
-import json
-import argparse
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from src.pipeline.verarag import VeraRAG
-from configs import get_dataset_config
-from src.utils.data_structures import VerificationStatus
+from configs import get_dataset_config  # noqa: E402
+from src.pipeline.verarag import VeraRAG  # noqa: E402
 
 
-def load_fever(data_path: str) -> List[Dict[str, Any]]:
+def load_fever(data_path: str) -> list[dict[str, Any]]:
     """
     Load FEVER dataset.
 
@@ -27,7 +26,7 @@ def load_fever(data_path: str) -> List[Dict[str, Any]]:
     Returns:
         List of FEVER samples
     """
-    with open(data_path, 'r', encoding='utf-8') as f:
+    with open(data_path, encoding='utf-8') as f:
         data = [json.loads(line) for line in f]
 
     return data
@@ -35,10 +34,10 @@ def load_fever(data_path: str) -> List[Dict[str, Any]]:
 
 def evaluate_fever(
     verarag: VeraRAG,
-    fever_data: List[Dict[str, Any]],
+    fever_data: list[dict[str, Any]],
     num_samples: int = 100,
-    output_path: str = None
-) -> Dict[str, Any]:
+    output_path: str | None = None
+) -> dict[str, Any]:
     """
     Evaluate VeraRAG on FEVER dataset.
 
@@ -146,7 +145,7 @@ def evaluate_fever(
 
         print("\n=== Aggregate Results ===")
         print(f"  Accuracy: {accuracy:.4f}")
-        print(f"  Class Accuracies:")
+        print("  Class Accuracies:")
         for label, acc in class_accuracies.items():
             print(f"    {label}: {acc:.4f}")
 
@@ -160,7 +159,7 @@ def evaluate_fever(
     return results
 
 
-def generate_demo_data() -> List[Dict[str, Any]]:
+def generate_demo_data() -> list[dict[str, Any]]:
     """Generate synthetic FEVER-like data for demo mode."""
     return [
         {
@@ -209,7 +208,7 @@ def generate_demo_data() -> List[Dict[str, Any]]:
     ]
 
 
-def run_demo(output_path: str = None):
+def run_demo(output_path: str | None = None):
     """Run demo evaluation with synthetic data (no API needed)."""
     print("=" * 60)
     print("  FEVER Demo Mode (Synthetic Data)")
@@ -294,7 +293,7 @@ def run_demo(output_path: str = None):
 
         print("\n=== Aggregate Results ===")
         print(f"  Accuracy: {accuracy:.4f}")
-        print(f"  Class Accuracies:")
+        print("  Class Accuracies:")
         for label, acc in class_accuracies.items():
             print(f"    {label}: {acc:.4f}")
 

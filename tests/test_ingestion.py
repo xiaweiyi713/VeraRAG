@@ -11,10 +11,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.ingestion.chunker import Chunk, TextChunker
 from src.ingestion.loader import DocumentLoader, RawDocument
-from src.ingestion.chunker import TextChunker, Chunk
 from src.ingestion.pipeline import IngestionPipeline
-
 
 # --- Fixtures ---
 
@@ -187,7 +186,7 @@ class TestIngestionPipeline:
 
     def test_bm25_chinese_retrieval(self):
         pipeline = IngestionPipeline(chunk_size=512)
-        chunks, retriever = pipeline.ingest_and_index(
+        _chunks, retriever = pipeline.ingest_and_index(
             "data/verabench/corpus.jsonl", retriever_type="bm25",
         )
         # Test specific Chinese queries

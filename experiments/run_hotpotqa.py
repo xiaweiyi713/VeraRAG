@@ -1,24 +1,24 @@
 """Run VeraRAG on HotpotQA dataset."""
 
+import argparse
+import json
 import os
 import sys
-import json
-import argparse
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from src.pipeline.verarag import VeraRAG, create_verarag
-from configs import get_dataset_config
-from src.evaluation.answer_metrics import AnswerMetrics
-from src.evaluation.evidence_metrics import EvidenceMetrics
+from configs import get_dataset_config  # noqa: E402
+from src.evaluation.answer_metrics import AnswerMetrics  # noqa: E402
+from src.evaluation.evidence_metrics import EvidenceMetrics  # noqa: E402
+from src.pipeline.verarag import VeraRAG  # noqa: E402
 
 
-def load_hotpotqa(data_path: str, split: str = "dev") -> List[Dict[str, Any]]:
+def load_hotpotqa(data_path: str, split: str = "dev") -> list[dict[str, Any]]:
     """
     Load HotpotQA dataset.
 
@@ -29,13 +29,13 @@ def load_hotpotqa(data_path: str, split: str = "dev") -> List[Dict[str, Any]]:
     Returns:
         List of HotpotQA samples
     """
-    with open(data_path, 'r', encoding='utf-8') as f:
+    with open(data_path, encoding='utf-8') as f:
         data = json.load(f)
 
     return data
 
 
-def prepare_documents(hotpotqa_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def prepare_documents(hotpotqa_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Prepare documents for indexing from HotpotQA data.
 
@@ -64,10 +64,10 @@ def prepare_documents(hotpotqa_data: List[Dict[str, Any]]) -> List[Dict[str, Any
 
 def evaluate_hotpotqa(
     verarag: VeraRAG,
-    hotpotqa_data: List[Dict[str, Any]],
+    hotpotqa_data: list[dict[str, Any]],
     num_samples: int = 100,
-    output_path: str = None
-) -> Dict[str, Any]:
+    output_path: str | None = None
+) -> dict[str, Any]:
     """
     Evaluate VeraRAG on HotpotQA dataset.
 
@@ -170,7 +170,7 @@ def evaluate_hotpotqa(
     return results
 
 
-def generate_demo_data() -> List[Dict[str, Any]]:
+def generate_demo_data() -> list[dict[str, Any]]:
     """Generate synthetic HotpotQA-like data for demo mode."""
     return [
         {
@@ -240,13 +240,8 @@ def generate_demo_data() -> List[Dict[str, Any]]:
     ]
 
 
-def run_demo(output_path: str = None):
+def run_demo(output_path: str | None = None):
     """Run demo evaluation with synthetic data (no API needed)."""
-    from src.utils.data_structures import (
-        Evidence, AnswerClaim, VeraRAGOutput,
-        VerificationReport, VerificationStatus, UncertaintyBreakdown,
-        ReasoningStep
-    )
 
     print("=" * 60)
     print("  HotpotQA Demo Mode (Synthetic Data)")

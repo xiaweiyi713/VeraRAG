@@ -2,20 +2,23 @@
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
-from unittest.mock import MagicMock
-
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.utils.data_structures import (
-    TaskType, Complexity, TaskAnalysis,
-    Evidence, Claim, ClaimType, AnswerClaim,
-    VerificationStatus, VerificationReport,
-    ReasoningStep, SubQuestion, EvidenceConflictGraph,
-    ConflictEdge, ConflictGraphNode, ConflictType,
+    AnswerClaim,
+    Claim,
+    ClaimType,
+    ConflictEdge,
+    ConflictGraphNode,
+    ConflictType,
+    Evidence,
+    EvidenceConflictGraph,
+    SubQuestion,
+    TaskAnalysis,
+    VerificationReport,
+    VerificationStatus,
 )
 
 
@@ -99,7 +102,7 @@ class TestReasoningAgent:
             "steps": [{"step": 1, "description": "分析证据", "evidence_ids": ["E1"], "confidence": 0.85}]
         }'''
         agent = ReasoningAgent(llm_client=MockLLM(json_response))
-        answer, claims, steps = agent.reason(
+        answer, _claims, _steps = agent.reason(
             question="测试问题",
             subquestions=self._make_subquestions(),
             evidence=self._make_evidence(),
@@ -112,7 +115,7 @@ class TestReasoningAgent:
     def test_reason_fallback_on_bad_json(self):
         from src.agents.reasoning_agent import ReasoningAgent
         agent = ReasoningAgent(llm_client=MockLLM("not valid json"))
-        answer, claims, steps = agent.reason(
+        answer, _claims, _steps = agent.reason(
             question="测试问题",
             subquestions=[],
             evidence=self._make_evidence(1),
@@ -218,7 +221,7 @@ class TestConflictGraphBuilder:
             time_expressions=time_expr or [],
         )
 
-    def _make_evidence(self, claims: list, source: str = "test", date: str = None) -> Evidence:
+    def _make_evidence(self, claims: list, source: str = "test", date: str | None = None) -> Evidence:
         eid = f"E_{hash(source) % 10000:04d}"
         return Evidence(
             evidence_id=eid, source=source, title="T",
@@ -356,7 +359,7 @@ class TestRepairAgent:
             issues=[], missing_evidence_for=[],
             overconfident_claims=[], ignored_conflicts=[],
         )
-        answer, claims = agent.repair_answer(
+        answer, _claims = agent.repair_answer(
             answer="原答案",
             claims=[AnswerClaim(claim="c1", supporting_evidence=["E1"], conflicting_evidence=[],
                                confidence=0.9, verification_status=VerificationStatus.SUPPORTED)],
@@ -377,7 +380,7 @@ class TestRepairAgent:
             ignored_conflicts=[],
         )
         assert report.has_critical_issues()
-        answer, claims = agent.repair_answer(
+        answer, _claims = agent.repair_answer(
             answer="需要修复的答案",
             claims=[AnswerClaim(claim="c1", supporting_evidence=[], conflicting_evidence=["E1"],
                                confidence=0.2, verification_status=VerificationStatus.REFUTED)],

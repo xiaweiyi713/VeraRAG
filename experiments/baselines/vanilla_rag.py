@@ -7,22 +7,21 @@ Simple retrieve-then-generate pipeline:
 No conflict detection, no uncertainty estimation, no verification, no repair.
 """
 
-import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 _project_root = str(Path(__file__).resolve().parent.parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from src.retriever.bm25 import BM25Retriever
+from src.retriever.bm25 import BM25Retriever  # noqa: E402
 
 
 class VanillaRAG:
     """Vanilla RAG: single-round BM25 retrieval + LLM generation."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.retriever = BM25Retriever()
         self.top_k = self.config.get("retriever", {}).get("top_k", 5)
@@ -40,11 +39,11 @@ class VanillaRAG:
             )
         return self.llm
 
-    def index_documents(self, documents: List[Dict[str, Any]]):
+    def index_documents(self, documents: list[dict[str, Any]]):
         """Index documents for retrieval."""
         self.retriever.index_documents(documents)
 
-    def query(self, question: str) -> Dict[str, Any]:
+    def query(self, question: str) -> dict[str, Any]:
         """Run vanilla RAG: retrieve + generate."""
         # 1. Retrieve
         results = self.retriever.retrieve(question, top_k=self.top_k)
@@ -106,7 +105,7 @@ class MockVanillaRAG(VanillaRAG):
     def _get_llm(self):
         return None
 
-    def query(self, question: str) -> Dict[str, Any]:
+    def query(self, question: str) -> dict[str, Any]:
         results = self.retriever.retrieve(question, top_k=self.top_k)
         evidence_list = []
         for i, r in enumerate(results):

@@ -30,8 +30,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.benchmark.loader import load_verabench, QUESTION_TYPES
-from src.benchmark.evaluator import VeraBenchEvaluator
+from src.benchmark.evaluator import VeraBenchEvaluator  # noqa: E402
+from src.benchmark.loader import QUESTION_TYPES, load_verabench  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("verabench")
@@ -74,6 +74,31 @@ def print_report(report):
                 d = report.by_difficulty[diff]
                 print(f"  {diff:<10s} count={d['count']:<3d} EM={d['answer_em']:.3f} F1={d['answer_f1']:.3f} BhvAcc={d['behavior_accuracy']:.3f}")
 
+    if report.failure_summary:
+        summary = report.failure_summary
+        print("\n--- Failure Diagnostics ---")
+        print(f"  Behavior failures:     {summary.get('behavior_failure_count', 0)}")
+        print(f"  Low evidence recall:   {summary.get('low_evidence_recall_count', 0)}")
+        print(f"  Conflict failures:     {summary.get('conflict_failure_count', 0)}")
+        by_type = summary.get("behavior_failures_by_type", {})
+        if by_type:
+            formatted = ", ".join(f"{k}={v}" for k, v in sorted(by_type.items()))
+            print(f"  Behavior failures by type: {formatted}")
+
+    if report.conflict_summary:
+        c = report.conflict_summary
+        print("\n--- Conflict Diagnostics ---")
+        print(f"  Gold / Predicted: {c.get('gold_conflicts', 0)} / {c.get('predicted_conflicts', 0)}")
+        print(f"  TP / FP / FN:     {c.get('true_positives', 0)} / {c.get('false_positives', 0)} / {c.get('false_negatives', 0)}")
+        print(f"  Precision/Recall: {c.get('precision', 0):.4f} / {c.get('recall', 0):.4f}")
+        print(f"  Dominant failure: {c.get('dominant_failure', 'unknown')}")
+
+    if report.behavior_confusion:
+        print("\n--- Behavior Confusion (expected -> actual) ---")
+        for expected, actual_counts in sorted(report.behavior_confusion.items()):
+            actual = ", ".join(f"{k}:{v}" for k, v in sorted(actual_counts.items()))
+            print(f"  {expected:<26s} -> {actual}")
+
     # Error details
     errored = [r for r in report.results if r.error]
     if errored:
@@ -114,9 +139,10 @@ def main():
     if not args.demo and args.config:
         try:
             import yaml
+
             from src.pipeline.verarag import VeraRAG
 
-            with open(args.config, "r") as f:
+            with open(args.config) as f:
                 config = yaml.safe_load(f)
 
             # Auto-index VeraBench corpus into the pipeline.
@@ -133,7 +159,7 @@ def main():
                 if Path(corpus_path).exists():
                     from src.ingestion.pipeline import IngestionPipeline
                     ip = IngestionPipeline(chunk_size=512, chunk_overlap=64, chunk_strategy="fixed")
-                    chunks, retriever = ip.ingest_and_index(corpus_path, retriever_type="bm25")
+                    chunks, _retriever = ip.ingest_and_index(corpus_path, retriever_type="bm25")
                     index_docs = [c.to_index_doc() for c in chunks]
                     p.retriever.index_documents(index_docs)
                     logger.info(f"Indexed {len(chunks)} chunks from VeraBench corpus")
@@ -202,7 +228,7 @@ def main():
         if not args.demo and args.config:
             try:
                 import yaml
-                with open(args.config, "r") as f:
+                with open(args.config) as f:
                     cfg = yaml.safe_load(f)
                 llm = cfg.get("llm", {})
                 report_dict["metadata"]["model"] = llm.get("model", "")

@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,22 +13,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.benchmark.evaluator import QuestionResult, VeraBenchEvaluator
 from src.benchmark.loader import (
-    VeraBenchLoader,
-    VeraBench,
+    QUESTION_TYPES,
     BenchmarkQuestion,
     CorpusDocument,
-    EvidenceRef,
-    GroundTruthClaim,
-    ExpectedConflict,
+    VeraBenchLoader,
     load_verabench,
-    QUESTION_TYPES,
-    EVIDENCE_CATEGORIES,
-    CONFLICT_TYPES,
-    EXPECTED_BEHAVIORS,
 )
-from src.benchmark.evaluator import VeraBenchEvaluator, QuestionResult, BenchmarkReport
-
 
 # --- Fixtures ---
 
@@ -196,6 +189,16 @@ class TestVeraBenchLoader:
             with pytest.raises(FileNotFoundError, match="Corpus not found"):
                 loader.load()
 
+    def test_load_package_data_fallback(self, monkeypatch, tmp_path):
+        package_data = Path("src/benchmark/data/verabench").resolve()
+        monkeypatch.setattr(VeraBenchLoader, "DEFAULT_PATH", tmp_path / "missing-verabench")
+        monkeypatch.setattr(VeraBenchLoader, "PACKAGE_DATA_PATH", package_data)
+
+        bench = VeraBenchLoader().load()
+
+        assert len(bench.corpus) == 57
+        assert len(bench.questions) == 152
+
     def test_validation_bad_type(self, temp_bench_dir):
         bad_q = {
             "id": "T999", "type": "invalid_type", "question": "?",
@@ -310,7 +313,192 @@ class TestVeraBenchEvaluator:
         d = report.to_dict()
         assert "total_questions" in d
         assert "by_type" in d
+        assert "behavior_confusion" in d
+        assert "failure_summary" in d
         assert d["overall_answer_em"] == 1.0
+
+    def test_report_failure_diagnostics(self, temp_bench_dir):
+        bench = VeraBenchLoader(temp_bench_dir).load()
+        evaluator = VeraBenchEvaluator(benchmark=bench)
+        rows = [
+            QuestionResult(
+                question_id="T001", question_type="conflict",
+                question="?", ground_truth="A", predicted="A",
+                expected_behavior="answer_with_conflict_note",
+                actual_behavior="answer_with_citation", correct=False,
+                evidence_recall=0.25, conflict_detection_f1=0.0,
+            ),
+            QuestionResult(
+                question_id="T002", question_type="single_evidence",
+                question="?", ground_truth="A", predicted="A",
+                expected_behavior="answer_with_citation",
+                actual_behavior="answer_with_citation", correct=True,
+                evidence_recall=1.0, conflict_detection_f1=0.0,
+            ),
+        ]
+        report = evaluator._build_report(rows)
+        assert report.behavior_confusion["answer_with_conflict_note"]["answer_with_citation"] == 1
+        assert report.failure_summary["behavior_failure_count"] == 1
+        assert report.failure_summary["low_evidence_recall_count"] == 1
+        assert report.failure_summary["conflict_failure_count"] == 1
+        assert report.conflict_summary["gold_conflicts"] == 0
+        assert report.conflict_summary["available"] is True
+        assert len(report.calibration_bins) == 10
+
+    def test_report_conflict_counts(self, temp_bench_dir):
+        bench = VeraBenchLoader(temp_bench_dir).load()
+        evaluator = VeraBenchEvaluator(benchmark=bench)
+        rows = [
+            QuestionResult(
+                question_id="T001", question_type="conflict",
+                question="?", ground_truth="A", predicted="A",
+                expected_behavior="answer_with_conflict_note",
+                actual_behavior="answer_with_conflict_note", correct=True,
+                predicted_conflicts=3, gold_conflicts=1,
+                conflict_true_positives=1,
+                conflict_false_positives=2,
+                conflict_false_negatives=0,
+                confidence=0.8,
+            ),
+            QuestionResult(
+                question_id="T002", question_type="conflict",
+                question="?", ground_truth="A", predicted="A",
+                expected_behavior="answer_with_conflict_note",
+                actual_behavior="answer_with_citation", correct=False,
+                predicted_conflicts=0, gold_conflicts=1,
+                conflict_true_positives=0,
+                conflict_false_positives=0,
+                conflict_false_negatives=1,
+                confidence=0.2,
+            ),
+        ]
+        report = evaluator._build_report(rows)
+        assert report.conflict_summary["gold_conflicts"] == 2
+        assert report.conflict_summary["predicted_conflicts"] == 3
+        assert report.conflict_summary["true_positives"] == 1
+        assert report.conflict_summary["false_positives"] == 2
+        assert report.conflict_summary["false_negatives"] == 1
+        assert report.conflict_summary["dominant_failure"] == "mixed"
+
+    def test_conflict_scoring_ignores_support_edges(self, temp_bench_dir):
+        bench = VeraBenchLoader(temp_bench_dir).load()
+        evaluator = VeraBenchEvaluator(benchmark=bench)
+        q = bench.questions[1]  # gold conflict pair E1-E3
+
+        output = SimpleNamespace(
+            answer=q.ground_truth_answer,
+            confidence=0.8,
+            evidence=[],
+            verification_report=None,
+            conflict_report={
+                "nodes": [
+                    {"node_id": "C1", "evidence_ids": ["D001_c0"]},
+                    {"node_id": "C2", "evidence_ids": ["D003_c0"]},
+                    {"node_id": "C3", "evidence_ids": ["D002_c0"]},
+                ],
+                "edges": [
+                    {
+                        "source_id": "C1",
+                        "target_id": "C3",
+                        "conflict_type": "support",
+                    },
+                    {
+                        "source_id": "C1",
+                        "target_id": "C2",
+                        "conflict_type": "numeric_conflict",
+                    },
+                ],
+            },
+        )
+
+        result = evaluator._score_pipeline_output(q, output, latency=0.0)
+        assert result.predicted_conflicts == 1
+        assert result.gold_conflicts == 1
+        assert result.conflict_true_positives == 1
+        assert result.conflict_false_positives == 0
+        assert result.conflict_false_negatives == 0
+        assert result.conflict_detection_f1 == 1.0
+
+    def test_offline_result_analysis(self):
+        from experiments.analyze_verabench_results import analyze
+
+        report = {
+            "total_questions": 2,
+            "behavior_accuracy": 0.5,
+            "overall_answer_f1": 0.4,
+            "overall_evidence_recall": 0.6,
+            "overall_conflict_f1": 0.0,
+            "question_results": [
+                {
+                    "question_id": "T001",
+                    "question_type": "unanswerable",
+                    "question": "Q1",
+                    "expected_behavior": "abstain",
+                    "actual_behavior": "answer_with_citation",
+                    "answer_f1": 0.0,
+                    "evidence_recall": 0.0,
+                    "conflict_detection_f1": 0.0,
+                    "confidence": 0.1,
+                    "predicted_conflicts": 0,
+                    "gold_conflicts": 0,
+                },
+                {
+                    "question_id": "T002",
+                    "question_type": "single_evidence",
+                    "question": "Q2",
+                    "expected_behavior": "answer_with_citation",
+                    "actual_behavior": "answer_with_citation",
+                    "answer_f1": 0.8,
+                    "evidence_recall": 1.0,
+                    "conflict_detection_f1": 0.0,
+                    "confidence": 0.9,
+                    "predicted_conflicts": 2,
+                    "gold_conflicts": 1,
+                    "conflict_true_positives": 1,
+                    "conflict_false_positives": 1,
+                },
+            ],
+        }
+        analysis = analyze(report)
+        assert analysis["behavior_confusion"]["abstain"]["answer_with_citation"] == 1
+        assert analysis["failure_summary"]["behavior_failure_count"] == 1
+        assert analysis["failure_summary"]["behavior_failures_by_type"]["unanswerable"] == 1
+        assert analysis["conflict_summary"]["predicted_conflicts"] == 2
+        assert analysis["conflict_summary"]["false_positives"] == 1
+        assert analysis["conflict_summary"]["available"] is True
+        assert len(analysis["calibration_bins"]) == 10
+
+    def test_offline_result_analysis_marks_legacy_conflict_counts_unavailable(self):
+        from experiments.analyze_verabench_results import analyze
+
+        report = {
+            "question_results": [
+                {
+                    "question_id": "T001",
+                    "question_type": "conflict",
+                    "expected_behavior": "answer_with_conflict_note",
+                    "actual_behavior": "answer_with_citation",
+                    "correct": False,
+                    "confidence": 0.2,
+                }
+            ]
+        }
+        analysis = analyze(report)
+        assert analysis["conflict_summary"]["available"] is False
+
+    def test_calibration_curve_loads_report_json(self, tmp_path):
+        from experiments.calibration_curve import load_confidence_rows
+
+        path = tmp_path / "report.json"
+        path.write_text(json.dumps({
+            "question_results": [
+                {"confidence": 0.2, "correct": False},
+                {"confidence": 0.8, "correct": True},
+            ]
+        }), encoding="utf-8")
+        predicted, actual = load_confidence_rows(str(path))
+        assert predicted.tolist() == [0.2, 0.8]
+        assert actual.tolist() == [0.0, 1.0]
 
 
 class TestQuestionResult:

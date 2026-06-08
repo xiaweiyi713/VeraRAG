@@ -34,15 +34,14 @@ import sys
 import time
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Ensure project root on path
 _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from configs import merge_configs
-
+from configs import merge_configs  # noqa: E402
 
 # --- Ablation group definitions ---
 
@@ -95,7 +94,7 @@ ABLATION_GROUPS = {
 }
 
 
-def build_config(base: Dict[str, Any], group_name: str) -> Dict[str, Any]:
+def build_config(base: dict[str, Any], group_name: str) -> dict[str, Any]:
     """Build pipeline config for an ablation group by merging overrides."""
     group = ABLATION_GROUPS[group_name]
     return merge_configs(deepcopy(base), group["overrides"])
@@ -104,9 +103,9 @@ def build_config(base: Dict[str, Any], group_name: str) -> Dict[str, Any]:
 # --- Demo mode: simulate ablation results ---
 
 def run_demo_ablation(
-    groups: List[str],
-    max_questions: Optional[int] = None,
-) -> Dict[str, Any]:
+    groups: list[str],
+    max_questions: int | None = None,
+) -> dict[str, Any]:
     """Run simulated ablation without real LLM.
 
     Generates plausible score distributions: the full pipeline scores best,
@@ -144,7 +143,9 @@ def run_demo_ablation(
         per_question = []
         for q in questions:
             # Add small noise per question
-            noise = lambda base, sigma=0.08: max(0, min(1, base + random.gauss(0, sigma)))
+            def noise(base: float, sigma: float = 0.08) -> float:
+                return max(0, min(1, base + random.gauss(0, sigma)))
+
             per_question.append({
                 "question_id": q.id,
                 "question_type": q.type,
@@ -155,7 +156,9 @@ def run_demo_ablation(
             })
 
         # Aggregate
-        avg = lambda key: round(sum(p[key] for p in per_question) / n, 3) if n else 0
+        def avg(key: str) -> float:
+            return round(sum(p[key] for p in per_question) / n, 3) if n else 0
+
         group_result = {
             "group": group_name,
             "label": ABLATION_GROUPS[group_name]["label"],
@@ -192,14 +195,14 @@ def run_demo_ablation(
 # --- Full mode: real pipeline evaluation ---
 
 def run_full_ablation(
-    base_config: Dict[str, Any],
-    groups: List[str],
-    max_questions: Optional[int] = None,
-    question_types: Optional[List[str]] = None,
-) -> Dict[str, Any]:
+    base_config: dict[str, Any],
+    groups: list[str],
+    max_questions: int | None = None,
+    question_types: list[str] | None = None,
+) -> dict[str, Any]:
     """Run ablation with real VeraRAG pipeline on VeraBench."""
-    from src.benchmark.loader import load_verabench
     from src.benchmark.evaluator import VeraBenchEvaluator
+    from src.benchmark.loader import load_verabench
     from src.pipeline.verarag import VeraRAG
 
     benchmark = load_verabench()
@@ -213,7 +216,9 @@ def run_full_ablation(
         print(f"Running ablation group: {group_name} ({label})")
         print(f"{'='*60}")
 
-        factory = lambda cfg=config: VeraRAG(cfg)
+        def factory(cfg=config):
+            return VeraRAG(cfg)
+
         evaluator = VeraBenchEvaluator(
             benchmark=benchmark,
             pipeline_factory=factory,
@@ -261,7 +266,7 @@ def run_full_ablation(
     }
 
 
-def print_table(summary: Dict[str, Any]):
+def print_table(summary: dict[str, Any]):
     """Print ablation results as a formatted table."""
     results = summary["results"]
     metrics = summary["metrics"]
@@ -308,7 +313,8 @@ def main():
             sys.exit(1)
 
         import yaml
-        base_config = yaml.safe_load(open(args.config))
+        with open(args.config, encoding="utf-8") as f:
+            base_config = yaml.safe_load(f)
 
         summary = run_full_ablation(
             base_config=base_config,
@@ -321,7 +327,8 @@ def main():
 
     if args.output:
         os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
-        import subprocess, time as _t
+        import subprocess
+        import time as _t
         try:
             _gh = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
         except Exception:

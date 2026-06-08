@@ -1,24 +1,23 @@
 """Run VeraRAG on CKT-Conflict dataset."""
 
+import argparse
+import json
 import os
 import sys
-import json
-import argparse
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.pipeline.verarag import VeraRAG
 from configs import get_dataset_config
 from src.evaluation.answer_metrics import AnswerMetrics
-from src.evaluation.conflict_metrics import ConflictMetrics
 from src.evaluation.calibration_metrics import CalibrationMetrics
-from src.evaluation.hallucination_metrics import HallucinationMetrics
+from src.evaluation.conflict_metrics import ConflictMetrics
+from src.pipeline.verarag import VeraRAG
 
 
-def load_ckt_conflict(data_path: str) -> List[Dict[str, Any]]:
+def load_ckt_conflict(data_path: str) -> list[dict[str, Any]]:
     """
     Load CKT-Conflict dataset.
 
@@ -28,7 +27,7 @@ def load_ckt_conflict(data_path: str) -> List[Dict[str, Any]]:
     Returns:
         List of CKT-Conflict samples
     """
-    with open(data_path, 'r', encoding='utf-8') as f:
+    with open(data_path, encoding='utf-8') as f:
         data = json.load(f)
 
     return data.get("samples", data)
@@ -36,10 +35,10 @@ def load_ckt_conflict(data_path: str) -> List[Dict[str, Any]]:
 
 def evaluate_ckt_conflict(
     verarag: VeraRAG,
-    ckt_data: List[Dict[str, Any]],
+    ckt_data: list[dict[str, Any]],
     num_samples: int = 100,
-    output_path: str = None
-) -> Dict[str, Any]:
+    output_path: str | None = None
+) -> dict[str, Any]:
     """
     Evaluate VeraRAG on CKT-Conflict dataset.
 

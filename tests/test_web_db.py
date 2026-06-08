@@ -2,8 +2,8 @@
 
 import os
 import sys
-import unittest
 import tempfile
+import unittest
 
 sys.path.insert(0, 'src')
 
@@ -14,17 +14,17 @@ class TestDatabase(unittest.TestCase):
     """Test SQLite database operations."""
 
     def setUp(self):
-        self.tmpfile = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
-        self.tmpfile.close()
-        self.db = Database(self.tmpfile.name)
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmpfile:
+            self.db_path = tmpfile.name
+        self.db = Database(self.db_path)
 
     def tearDown(self):
-        os.unlink(self.tmpfile.name)
+        os.unlink(self.db_path)
 
     def test_init_creates_table(self):
         """初始化时应自动创建 queries 表"""
         import sqlite3
-        conn = sqlite3.connect(self.tmpfile.name)
+        conn = sqlite3.connect(self.db_path)
         cursor = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='queries'"
         )
@@ -88,7 +88,7 @@ class TestDatabase(unittest.TestCase):
 
         # Raw DB value should NOT contain the plaintext key
         import sqlite3
-        conn = sqlite3.connect(self.tmpfile.name)
+        conn = sqlite3.connect(self.db_path)
         row = conn.execute("SELECT value FROM config WHERE key = 'llm_config'").fetchone()
         conn.close()
         raw_value = row[0]

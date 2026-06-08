@@ -36,6 +36,7 @@ class HybridRetriever(BaseRetriever):
 
         # Dense retriever is optional — may not have sentence-transformers installed
         self._dense_available = True
+        self.dense_retriever: DenseRetriever | None
         try:
             self.dense_retriever = DenseRetriever(
                 config=dense_config,
@@ -135,7 +136,8 @@ class HybridRetriever(BaseRetriever):
         save_dir = Path(path)
 
         self.sparse_retriever.save_index(str(save_dir / "sparse_index.pkl"))
-        self.dense_retriever.save_index(str(save_dir / "dense_index.pkl"))
+        if self._dense_available and self.dense_retriever is not None:
+            self.dense_retriever.save_index(str(save_dir / "dense_index.pkl"))
 
     def load_index(self, path: str) -> None:
         """Load both indexes from disk."""
@@ -143,4 +145,5 @@ class HybridRetriever(BaseRetriever):
         load_dir = Path(path)
 
         self.sparse_retriever.load_index(str(load_dir / "sparse_index.pkl"))
-        self.dense_retriever.load_index(str(load_dir / "dense_index.pkl"))
+        if self._dense_available and self.dense_retriever is not None:
+            self.dense_retriever.load_index(str(load_dir / "dense_index.pkl"))

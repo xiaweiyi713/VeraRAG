@@ -1,27 +1,27 @@
 """VeraRAG Main Pipeline."""
 
 import os
-from typing import Dict, Any, Optional, List
 import time
+from typing import Any
 
 from ..agents.base import LLMClient
-from ..agents.task_analyzer import TaskAnalyzer
 from ..agents.planner import DecompositionPlanner
-from ..agents.retrieval_agent import DynamicRetrievalAgent
 from ..agents.reasoning_agent import ReasoningAgent
-from ..agents.verifier_agent import VerifierAgent
 from ..agents.repair_agent import RepairAgent
+from ..agents.retrieval_agent import DynamicRetrievalAgent
+from ..agents.task_analyzer import TaskAnalyzer
+from ..agents.verifier_agent import VerifierAgent
+from ..evidence.conflict_graph import ConflictGraphBuilder
 from ..evidence.extractor import EvidenceExtractor
 from ..evidence.normalizer import EvidenceNormalizer
-from ..evidence.conflict_graph import ConflictGraphBuilder
-from ..uncertainty.controller import UncertaintyController, Action
-from ..utils.data_structures import (
-    VeraRAGOutput,
-    UncertaintyBreakdown,
-    Evidence,
-    EvidenceConflictGraph
-)
 from ..retriever.hybrid import HybridRetriever
+from ..uncertainty.controller import Action, UncertaintyController
+from ..utils.data_structures import (
+    Evidence,
+    EvidenceConflictGraph,
+    UncertaintyBreakdown,
+    VeraRAGOutput,
+)
 
 
 class VeraRAG:
@@ -41,7 +41,7 @@ class VeraRAG:
     10. Final Output: Assemble result
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         """
         Initialize VeraRAG pipeline.
 
@@ -113,7 +113,7 @@ class VeraRAG:
         self.enable_verification = pipeline_config.get("enable_verification", True)
         self.enable_repair = pipeline_config.get("enable_repair", True)
 
-    def index_documents(self, documents: List[Dict[str, Any]]) -> None:
+    def index_documents(self, documents: list[dict[str, Any]]) -> None:
         """
         Build retrieval index from documents.
 
@@ -125,7 +125,7 @@ class VeraRAG:
     def query(
         self,
         question: str,
-        max_rounds: Optional[int] = None
+        max_rounds: int | None = None
     ) -> VeraRAGOutput:
         """
         Process a question through the VeraRAG pipeline.
@@ -139,18 +139,18 @@ class VeraRAG:
         """
         return self.query_stream(question, max_rounds=max_rounds, callback=None)
 
-    def _normalize_evidence(self, evidence_list: List[Evidence]) -> List[Evidence]:
+    def _normalize_evidence(self, evidence_list: list[Evidence]) -> list[Evidence]:
         """Normalize a list of evidence."""
         # Filter and deduplicate
         evidence_list = self.evidence_normalizer.filter_low_quality(evidence_list)
         evidence_list = self.evidence_normalizer.deduplicate(evidence_list)
         return evidence_list
 
-    def _retrieval_result_to_evidence(self, result) -> Evidence:
+    def _retrieval_result_to_evidence(self, result: Any) -> Evidence:
         """Convert retrieval result to evidence."""
         # Handle both RetrievalResult and Evidence types
         if hasattr(result, 'evidence_id'):
-            return result
+            return result  # type: ignore[no-any-return]
 
         from ..utils.data_structures import Evidence
 
@@ -171,7 +171,7 @@ class VeraRAG:
     def query_stream(
         self,
         question: str,
-        max_rounds: Optional[int] = None,
+        max_rounds: int | None = None,
         callback=None
     ) -> VeraRAGOutput:
         """
@@ -210,7 +210,7 @@ class VeraRAG:
         })
 
         # Stage 3 & 4 & 5: Dynamic Retrieval, Normalization, Conflict Graph
-        evidence_pool: List[Evidence] = []
+        evidence_pool: list[Evidence] = []
         conflict_graph = EvidenceConflictGraph()
         prev_decision = None
 
@@ -223,13 +223,10 @@ class VeraRAG:
             })
 
             # Determine retrieval strategy based on previous uncertainty decision
-            from ..uncertainty.controller import Action
             retrieve_budget = 50
-            seek_counter = False
             if round_id > 0 and prev_decision is not None:
                 if prev_decision.action == Action.RESOLVE_CONFLICTS:
                     # Prioritize counter-evidence for conflicting claims
-                    seek_counter = True
                     retrieve_budget = 30
                 elif prev_decision.action == Action.CONTINUE_RETRIEVAL:
                     # Broader retrieval with higher budget
@@ -386,9 +383,9 @@ class VeraRAG:
 
     def batch_query(
         self,
-        questions: List[str],
-        max_rounds: Optional[int] = None
-    ) -> List[VeraRAGOutput]:
+        questions: list[str],
+        max_rounds: int | None = None
+    ) -> list[VeraRAGOutput]:
         """
         Process multiple questions.
 
@@ -402,7 +399,7 @@ class VeraRAG:
         return [self.query(q, max_rounds) for q in questions]
 
 
-def create_verarag(config_path: Optional[str] = None) -> VeraRAG:
+def create_verarag(config_path: str | None = None) -> VeraRAG:
     """
     Factory function to create VeraRAG instance.
 
@@ -415,8 +412,8 @@ def create_verarag(config_path: Optional[str] = None) -> VeraRAG:
     config = None
 
     if config_path:
-        import yaml
-        with open(config_path, 'r') as f:
+        import yaml  # type: ignore[import-untyped]
+        with open(config_path) as f:
             config = yaml.safe_load(f)
 
     return VeraRAG(config)

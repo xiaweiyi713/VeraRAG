@@ -2,15 +2,14 @@
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.retriever.bm25 import BM25Retriever
 from src.retriever.base import RetrievalResult
+from src.retriever.bm25 import BM25Retriever
 
 
 class TestBM25Retriever:

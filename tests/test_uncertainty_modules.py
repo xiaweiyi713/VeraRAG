@@ -3,16 +3,17 @@
 import sys
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.utils.data_structures import (
-    Evidence, EvidenceConflictGraph, ConflictEdge, ConflictType,
-    SubQuestion, UncertaintyBreakdown,
+    ConflictEdge,
+    ConflictType,
+    Evidence,
+    EvidenceConflictGraph,
+    SubQuestion,
+    UncertaintyBreakdown,
 )
-
 
 # --- UncertaintyEstimator Tests ---
 
@@ -53,7 +54,6 @@ class TestUncertaintyEstimator:
 
     def test_conflicts_increase_uncertainty(self):
         from src.uncertainty.estimator import UncertaintyEstimator
-        from src.utils.data_structures import ConflictEdge, ConflictType
         estimator = UncertaintyEstimator()
         graph_clean = EvidenceConflictGraph()
         graph_conflict = EvidenceConflictGraph()
@@ -138,7 +138,7 @@ class TestUncertaintyController:
                 for i in range(count)]
 
     def test_assess_proceed_with_good_evidence(self):
-        from src.uncertainty.controller import UncertaintyController, Action
+        from src.uncertainty.controller import Action, UncertaintyController
         ctrl = UncertaintyController()
         decision = ctrl.assess(
             subquestions=self._make_subquestions(),
@@ -150,7 +150,7 @@ class TestUncertaintyController:
         assert decision.confidence >= 0
 
     def test_assess_continue_with_low_coverage(self):
-        from src.uncertainty.controller import UncertaintyController, Action
+        from src.uncertainty.controller import Action, UncertaintyController
         ctrl = UncertaintyController(config={"acceptable_threshold": 0.1})
         sq = [SubQuestion(id="sq1", question="Q", required_evidence_type="factual",
                          dependency_ids=[], requires_counter_evidence=False,
@@ -163,7 +163,7 @@ class TestUncertaintyController:
         assert decision.action == Action.CONTINUE_RETRIEVAL
 
     def test_assess_for_repair_with_unsupported_claims(self):
-        from src.uncertainty.controller import UncertaintyController, Action
+        from src.uncertainty.controller import Action, UncertaintyController
         ctrl = UncertaintyController()
         decision = ctrl.assess_for_repair(
             verification_uncertainty=0.6, has_unsupported_claims=True, has_ignored_conflicts=False,

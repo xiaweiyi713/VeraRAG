@@ -3,11 +3,11 @@
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, field
 
 
 @dataclass
@@ -17,13 +17,13 @@ class RawDocument:
     title: str
     content: str
     source: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class DocumentLoader:
     """Load documents from various file formats."""
 
-    def load_file(self, file_path: str) -> List[RawDocument]:
+    def load_file(self, file_path: str) -> list[RawDocument]:
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
@@ -43,13 +43,13 @@ class DocumentLoader:
 
         return loader(path)
 
-    def load_directory(self, dir_path: str, recursive: bool = True) -> List[RawDocument]:
+    def load_directory(self, dir_path: str, recursive: bool = True) -> list[RawDocument]:
         path = Path(dir_path)
         if not path.is_dir():
             raise NotADirectoryError(f"Not a directory: {dir_path}")
 
         extensions = {".jsonl", ".json", ".txt", ".md", ".pdf"}
-        docs = []
+        docs: list[RawDocument] = []
 
         pattern = "**/*" if recursive else "*"
         for fp in path.glob(pattern):
@@ -61,9 +61,9 @@ class DocumentLoader:
 
         return docs
 
-    def _load_jsonl(self, path: Path) -> List[RawDocument]:
-        docs = []
-        with open(path, "r", encoding="utf-8") as f:
+    def _load_jsonl(self, path: Path) -> list[RawDocument]:
+        docs: list[RawDocument] = []
+        with open(path, encoding="utf-8") as f:
             for i, line in enumerate(f):
                 line = line.strip()
                 if not line:
@@ -81,12 +81,12 @@ class DocumentLoader:
                 ))
         return docs
 
-    def _load_json(self, path: Path) -> List[RawDocument]:
-        with open(path, "r", encoding="utf-8") as f:
+    def _load_json(self, path: Path) -> list[RawDocument]:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
         if isinstance(data, list):
-            docs = []
+            docs: list[RawDocument] = []
             for i, item in enumerate(data):
                 doc_id = item.get("doc_id", item.get("id", f"{path.stem}_{i}"))
                 title = item.get("title", "")
@@ -111,7 +111,7 @@ class DocumentLoader:
                      if k not in ("doc_id", "id", "title", "content", "text", "source")},
         )]
 
-    def _load_text(self, path: Path) -> List[RawDocument]:
+    def _load_text(self, path: Path) -> list[RawDocument]:
         content = path.read_text(encoding="utf-8")
         return [RawDocument(
             doc_id=path.stem,
@@ -121,7 +121,7 @@ class DocumentLoader:
             metadata={"file_path": str(path), "format": "txt"},
         )]
 
-    def _load_markdown(self, path: Path) -> List[Document if False else RawDocument]:
+    def _load_markdown(self, path: Path) -> list[RawDocument]:
         content = path.read_text(encoding="utf-8")
         # Split by headings into sections
         sections = re.split(r'\n(?=#{1,3}\s)', content)
@@ -135,7 +135,7 @@ class DocumentLoader:
                 metadata={"file_path": str(path), "format": "md"},
             )]
 
-        docs = []
+        docs: list[RawDocument] = []
         for i, section in enumerate(sections):
             section = section.strip()
             if not section:
@@ -152,7 +152,7 @@ class DocumentLoader:
             ))
         return docs
 
-    def _load_pdf(self, path: Path) -> List[RawDocument]:
+    def _load_pdf(self, path: Path) -> list[RawDocument]:
         try:
             import fitz  # PyMuPDF
         except ImportError:
@@ -161,7 +161,7 @@ class DocumentLoader:
             )
 
         doc = fitz.open(str(path))
-        pages = []
+        pages: list[RawDocument] = []
         for page_num in range(len(doc)):
             page = doc[page_num]
             text = page.get_text()

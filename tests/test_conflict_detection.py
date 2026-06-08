@@ -8,10 +8,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import unittest
 
-from src.utils.data_structures import (
-    Claim, ClaimType, ConflictType, Evidence, ConflictEdge,
-)
 from src.evidence.conflict_graph import ConflictGraphBuilder
+from src.utils.data_structures import (
+    Claim,
+    ClaimType,
+    ConflictEdge,
+    ConflictType,
+    Evidence,
+)
 
 
 def _make_claim(claim_id, text, entities=None, numbers=None, time_expressions=None):

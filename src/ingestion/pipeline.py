@@ -1,11 +1,11 @@
 """Ingestion pipeline: load → chunk → index."""
 
 import logging
-from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any
 
+from ..retriever.base import BaseRetriever
+from .chunker import Chunk, TextChunker
 from .loader import DocumentLoader, RawDocument
-from .chunker import TextChunker, Chunk
 
 logger = logging.getLogger("verarag.ingestion")
 
@@ -28,23 +28,23 @@ class IngestionPipeline:
             min_chunk_size=min_chunk_size,
         )
 
-    def ingest_file(self, file_path: str) -> List[Chunk]:
+    def ingest_file(self, file_path: str) -> list[Chunk]:
         docs = self.loader.load_file(file_path)
         return self.chunker.chunk_documents(docs)
 
-    def ingest_directory(self, dir_path: str, recursive: bool = True) -> List[Chunk]:
+    def ingest_directory(self, dir_path: str, recursive: bool = True) -> list[Chunk]:
         docs = self.loader.load_directory(dir_path, recursive=recursive)
         return self.chunker.chunk_documents(docs)
 
-    def ingest_documents(self, docs: List[RawDocument]) -> List[Chunk]:
+    def ingest_documents(self, docs: list[RawDocument]) -> list[Chunk]:
         return self.chunker.chunk_documents(docs)
 
     def build_retriever_index(
         self,
-        chunks: List[Chunk],
+        chunks: list[Chunk],
         retriever_type: str = "bm25",
-        retriever_config: Optional[Dict[str, Any]] = None,
-    ):
+        retriever_config: dict[str, Any] | None = None,
+    ) -> BaseRetriever:
         """Build a retriever index from chunks.
 
         Args:
@@ -59,7 +59,7 @@ class IngestionPipeline:
 
         if retriever_type == "bm25":
             from ..retriever.bm25 import BM25Retriever
-            retriever = BM25Retriever(config=retriever_config)
+            retriever: BaseRetriever = BM25Retriever(config=retriever_config)
         elif retriever_type == "dense":
             from ..retriever.dense import DenseRetriever
             model_name = (retriever_config or {}).get("model_name", "BAAI/bge-base-en-v1.5")
@@ -84,9 +84,9 @@ class IngestionPipeline:
         self,
         source_path: str,
         retriever_type: str = "bm25",
-        retriever_config: Optional[Dict[str, Any]] = None,
+        retriever_config: dict[str, Any] | None = None,
         is_directory: bool = False,
-    ) -> tuple:
+    ) -> tuple[list[Chunk], BaseRetriever]:
         """Full pipeline: load → chunk → index.
 
         Returns:
@@ -107,8 +107,8 @@ class IngestionPipeline:
         self,
         documents: list,
         retriever_type: str = "bm25",
-        retriever_config: Optional[Dict[str, Any]] = None,
-    ) -> tuple:
+        retriever_config: dict[str, Any] | None = None,
+    ) -> tuple[list[Chunk], BaseRetriever]:
         """Index from pre-parsed document list (id, text, title).
 
         Returns:
@@ -116,7 +116,7 @@ class IngestionPipeline:
         """
         from .chunker import Chunk
 
-        chunks = []
+        chunks: list[Chunk] = []
         for doc in documents:
             chunk = Chunk(
                 chunk_id=doc.get("id", ""),

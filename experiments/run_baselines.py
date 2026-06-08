@@ -17,19 +17,17 @@ Usage:
 import argparse
 import json
 import os
-import random
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 _project_root = str(Path(__file__).resolve().parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from src.benchmark.loader import load_verabench
-from src.ingestion.pipeline import IngestionPipeline
-
+from src.benchmark.loader import load_verabench  # noqa: E402
+from src.ingestion.pipeline import IngestionPipeline  # noqa: E402
 
 BASELINES = {
     "vanilla_rag": {"label": "Vanilla RAG", "module": "vanilla_rag", "class": "MockVanillaRAG"},
@@ -64,9 +62,9 @@ def _score_answer(predicted: str, ground_truth: str) -> float:
 
 
 def run_demo_baselines(
-    baseline_names: List[str],
-    max_questions: Optional[int] = None,
-) -> Dict[str, Any]:
+    baseline_names: list[str],
+    max_questions: int | None = None,
+) -> dict[str, Any]:
     """Run baselines in demo mode (Mock LLM, real BM25 retrieval)."""
     benchmark = load_verabench()
     questions = benchmark.questions
@@ -107,7 +105,9 @@ def run_demo_baselines(
             })
 
         n = len(per_question)
-        avg = lambda key: round(sum(p[key] for p in per_question) / n, 3) if n else 0
+        def avg(key: str) -> float:
+            return round(sum(p[key] for p in per_question) / n, 3) if n else 0
+
         all_results[name] = {
             "baseline": name,
             "label": info["label"],
@@ -129,12 +129,11 @@ def run_demo_baselines(
 
 
 def run_full_baselines(
-    config: Dict[str, Any],
-    baseline_names: List[str],
-    max_questions: Optional[int] = None,
-) -> Dict[str, Any]:
+    config: dict[str, Any],
+    baseline_names: list[str],
+    max_questions: int | None = None,
+) -> dict[str, Any]:
     """Run baselines with real LLM."""
-    import yaml
     benchmark = load_verabench()
     questions = benchmark.questions
     if max_questions:
@@ -173,7 +172,9 @@ def run_full_baselines(
             })
 
         n = len(per_question)
-        avg = lambda key: round(sum(p[key] for p in per_question) / n, 3) if n else 0
+        def avg(key: str) -> float:
+            return round(sum(p[key] for p in per_question) / n, 3) if n else 0
+
         all_results[name] = {
             "baseline": name,
             "label": info["label"],
@@ -187,7 +188,7 @@ def run_full_baselines(
     return {"mode": "full", "baselines": list(all_results.values())}
 
 
-def print_comparison_table(summary: Dict[str, Any]):
+def print_comparison_table(summary: dict[str, Any]):
     """Print formatted comparison table."""
     baselines = summary["baselines"]
     print(f"\n{'Baseline':<16} {'Label':<14} {'F1':>8} {'Conf':>8} {'Evidence':>10} {'Latency':>10}")
@@ -216,14 +217,16 @@ def main():
             print("Error: --config required for full mode (or use --demo)")
             sys.exit(1)
         import yaml
-        config = yaml.safe_load(open(args.config))
+        with open(args.config, encoding="utf-8") as f:
+            config = yaml.safe_load(f)
         summary = run_full_baselines(config, args.baselines, args.max)
 
     print_comparison_table(summary)
 
     if args.output:
         os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
-        import subprocess, time as _t
+        import subprocess
+        import time as _t
         try:
             _gh = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
         except Exception:

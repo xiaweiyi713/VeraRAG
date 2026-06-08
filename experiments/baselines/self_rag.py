@@ -14,19 +14,19 @@ No conflict detection, no uncertainty estimation.
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 _project_root = str(Path(__file__).resolve().parent.parent.parent)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from src.retriever.bm25 import BM25Retriever
+from src.retriever.bm25 import BM25Retriever  # noqa: E402
 
 
 class SelfRAGBaseline:
     """Self-RAG: retrieve → generate → critique → regenerate."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.retriever = BM25Retriever()
         self.top_k = self.config.get("retriever", {}).get("top_k", 5)
@@ -45,10 +45,10 @@ class SelfRAGBaseline:
             )
         return self.llm
 
-    def index_documents(self, documents: List[Dict[str, Any]]):
+    def index_documents(self, documents: list[dict[str, Any]]):
         self.retriever.index_documents(documents)
 
-    def query(self, question: str) -> Dict[str, Any]:
+    def query(self, question: str) -> dict[str, Any]:
         # 1. Retrieve
         results = self.retriever.retrieve(question, top_k=self.top_k)
 
@@ -153,7 +153,7 @@ class MockSelfRAG(SelfRAGBaseline):
     def _get_llm(self):
         return None
 
-    def query(self, question: str) -> Dict[str, Any]:
+    def query(self, question: str) -> dict[str, Any]:
         results = self.retriever.retrieve(question, top_k=self.top_k)
         evidence_list = []
         for i, r in enumerate(results):

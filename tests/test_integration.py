@@ -3,8 +3,7 @@
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -12,11 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.utils.data_structures import (
-    VeraRAGOutput, TaskType, Complexity, TaskAnalysis,
-    Evidence, AnswerClaim, VerificationStatus, VerificationReport,
-    UncertaintyBreakdown, ReasoningStep,
+    VeraRAGOutput,
 )
-from src.retriever.base import RetrievalResult
 
 
 class MockRetriever:

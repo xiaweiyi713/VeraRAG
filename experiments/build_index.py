@@ -19,16 +19,16 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import sys
-import json
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.ingestion.pipeline import IngestionPipeline
+from src.ingestion.pipeline import IngestionPipeline  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("build_index")
@@ -69,7 +69,7 @@ def main():
 
     # Show sample chunks
     if chunks:
-        print(f"\n  Sample chunks:")
+        print("\n  Sample chunks:")
         for c in chunks[:3]:
             preview = c.text[:80].replace("\n", " ")
             print(f"    [{c.chunk_id}] {preview}...")
