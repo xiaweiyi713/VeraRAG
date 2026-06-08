@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use VeraRAG in research or evaluation, please cite this project."
+title: "VeraRAG: Verifiable Agentic Retrieval-Augmented Reasoning"
+version: 0.1.0
+date-released: 2026-06-06
+license: MIT
+authors:
+  - name: "VeraRAG Team"
+repository-code: "https://github.com/xiaweiyi713/VeraRAG"
+keywords:
+  - retrieval-augmented generation
+  - agentic RAG
+  - verification
+  - evidence conflict
+  - uncertainty calibration
+

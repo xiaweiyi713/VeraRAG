@@ -1,6 +1,23 @@
 # VeraRAG 开发进度
 
-> 最后更新：2026-06-01
+> 最后更新：2026-06-06
+
+## 🆕 本次更新（2026-06-06）：评测透明度与失败诊断
+
+为把项目继续推向高质量开源，本次重点增强 VeraBench 结果的**可解释性和可复盘性**：
+
+1. **BenchmarkReport 新增失败诊断字段**：`behavior_confusion` 记录 expected behavior → actual behavior 的混淆矩阵；`failure_summary` 汇总行为失败、低证据召回、冲突失败及 Top 失败样例。
+2. **新增冲突检测诊断计数**：每题记录 `predicted_conflicts/gold_conflicts/tp/fp/fn`，报告汇总 `conflict_summary`，用于区分过度检测、漏检或混合失败。
+3. **新增校准分桶**：报告生成 `calibration_bins`，离线分析可直接查看每个置信度区间的样本量、平均置信度、真实准确率和 gap。
+4. **`run_verabench.py` 控制台报告新增诊断区**：真实/演示评测结束后直接打印失败数量、按类型分布、冲突 FP/FN 和行为混淆，便于不用打开 JSON 也能定位问题。
+5. **新增离线分析 CLI**：`experiments/analyze_verabench_results.py` 可直接分析已有 `results/*.json`，无需 API key 或重新调用 LLM；`calibration_curve.py` 也已兼容完整 VeraBench 报告 JSON。
+6. **补充测试覆盖**：新增评估诊断、冲突计数、校准报告读取、包内 VeraBench 数据 fallback、公开 API、quickstart 示例、leaderboard 生成与离线分析测试，当前全量测试为 **197 passed + 3 skipped**。
+7. **README 同步更新**：加入离线分析/校准曲线命令，并修正测试用例数量与 lint 状态说明。
+8. **开源治理补齐**：新增 CONTRIBUTING / SECURITY / CHANGELOG / CITATION / Code of Conduct、Issue/PR 模板和 `docs/EVALUATION.md`，并修正 `pyproject.toml` dev 依赖与 Ruff 流程一致。
+9. **CI 质量门禁增强**：GitHub Actions 升级为 Python 3.10/3.11/3.12/3.13 测试矩阵，并新增全仓 Ruff、全量 `src`/`verarag` mypy 与 wheel/sdist 构建检查；当前 `src/web/experiments/examples/tests` Ruff 债务已清零。
+10. **发布包可用性增强**：VeraBench 数据、Web 模板/静态资源、默认配置和 examples 纳入 wheel/sdist；`verarag-web` console script 已补齐可执行入口；`load_verabench()` 支持仓库数据与包内数据 fallback。
+11. **公开使用路径补齐**：新增 `docs/API.md`、`docs/ARCHITECTURE.md` 和 `examples/quickstart.py`，让新用户可以从 API、系统设计和无需 API key 的示例三条路径快速理解项目。
+12. **结果发布流程补齐**：新增 `verarag-leaderboard` / `experiments/build_verabench_leaderboard.py`、`docs/RESULTS.md` 和 `docs/RELEASING.md`，把真实评测结果、复现命令和发布检查从人工说明变成可生成流程。
 
 ## 🆕 本次更新（2026-06-01）：首次完整真实评测 + 关键 bug 修复
 
@@ -32,7 +49,7 @@
 |------|------|
 | 仓库 | https://github.com/xiaweiyi713/VeraRAG |
 | 源码行数 | ~8,200 行 (src/) |
-| 测试 | 182 passed + 3 skipped (real LLM) |
+| 测试 | 197 passed + 3 skipped (real LLM) |
 | Web UI | ~1,800 行 (web/) |
 | VeraBench 题库 | 152 题 / 6 类型 |
 | VeraBench 语料 | 57 篇 / 13 主题 |
@@ -85,6 +102,8 @@
 - [x] CalibrationMetrics — ECE, Brier Score, AUROC
 - [x] HallucinationMetrics — unsupported claim rate, entity/numerical hallucination
 - [x] **评估报告新增 ECE + Brier Score 校准指标**
+- [x] **评估报告新增行为混淆矩阵 + 失败样例摘要**
+- [x] **评估报告新增冲突 TP/FP/FN 汇总 + 校准分桶**
 
 ### 6. VeraBench 基准测试集（本次扩展）
 - [x] 57 篇语料（AI政策/科技公司/气候/量子计算/新能源/半导体/AI医疗/LLM历史/生物医药/航天/核聚变）
@@ -149,7 +168,7 @@
 - [x] pyproject.toml（可 pip install -e .）
 - [x] MIT LICENSE
 - [x] requirements.txt
-- [x] GitHub Actions CI（Python 3.10/3.11/3.12）
+- [x] GitHub Actions CI（Python 3.10/3.11/3.12/3.13 + 全仓 Ruff + 全量 `src`/`verarag` mypy + wheel/sdist 构建）
 - [x] Dockerfile
 - [x] Makefile（test/lint/format/run/coverage/docker）
 - [x] API Key Fernet 加密存储

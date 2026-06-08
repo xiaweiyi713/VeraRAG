@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose an improvement to VeraRAG
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What limitation or workflow does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior or API.
+    validations:
+      required: true
+  - type: textarea
+    id: evaluation
+    attributes:
+      label: Evaluation impact
+      description: If relevant, explain how this should be measured on VeraBench or another benchmark.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+
