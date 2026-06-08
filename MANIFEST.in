@@ -1,0 +1,26 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include CITATION.cff
+include CODE_OF_CONDUCT.md
+include CONTRIBUTING.md
+include SECURITY.md
+include requirements.txt
+include environment.yml
+include ruff.toml
+include mypy.ini
+include verarag/py.typed
+include src/py.typed
+recursive-include src/benchmark/data/verabench *.jsonl
+recursive-include web/templates *.html
+recursive-include web/static *
+recursive-include configs *.yaml
+include docs/EVALUATION.md
+include docs/API.md
+include docs/ARCHITECTURE.md
+include docs/RESULTS.md
+include docs/RELEASING.md
+recursive-include examples *.py
+prune docs/superpowers
+recursive-include data/verabench *.jsonl
+recursive-include .github *.yml *.md

@@ -21,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
@@ -48,18 +49,29 @@ eval = ["matplotlib>=3.5.0", "seaborn>=0.12.0"]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
-    "black>=22.0.0",
-    "flake8>=5.0.0",
+    "ruff>=0.4.0",
     "mypy>=1.0.0",
+    "build>=1.0.0",
 ]
 all = ["verarag[dense,ollama,pdf,eval,dev]"]
 
 [project.scripts]
 verarag-web = "web.app:main"
+verarag-benchmark = "experiments.run_verabench:main"
+verarag-analyze = "experiments.analyze_verabench_results:main"
+verarag-calibration = "experiments.calibration_curve:main"
+verarag-leaderboard = "experiments.build_verabench_leaderboard:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*", "web*", "configs*", "experiments*"]
+include = ["verarag*", "src*", "web*", "configs*", "experiments*"]
+
+[tool.setuptools.package-data]
+"verarag" = ["py.typed"]
+"src" = ["py.typed"]
+"src.benchmark" = ["data/verabench/*.jsonl"]
+"web" = ["templates/*.html", "static/*"]
+"configs" = ["*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -70,7 +82,3 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
-
-[tool.black]
-line-length = 100
-target-version = ["py310"]

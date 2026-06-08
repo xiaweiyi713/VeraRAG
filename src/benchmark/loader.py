@@ -2,9 +2,9 @@
 
 import json
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-
+from typing import Any
 
 QUESTION_TYPES = [
     "single_evidence",
@@ -45,15 +45,15 @@ class CorpusDocument:
     doc_id: str
     title: str
     source: str
-    date: Optional[str]
-    author: Optional[str]
-    url: Optional[str]
+    date: str | None
+    author: str | None
+    url: str | None
     content: str
-    entities: List[str] = field(default_factory=list)
-    tags: List[str] = field(default_factory=list)
+    entities: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
 
     @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "CorpusDocument":
+    def from_dict(d: dict[str, Any]) -> "CorpusDocument":
         return CorpusDocument(
             doc_id=d["doc_id"],
             title=d["title"],
@@ -75,7 +75,7 @@ class EvidenceRef:
     category: str = "supporting"
 
     @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "EvidenceRef":
+    def from_dict(d: dict[str, Any]) -> "EvidenceRef":
         return EvidenceRef(
             evidence_id=d["evidence_id"],
             doc_id=d["doc_id"],
@@ -86,11 +86,11 @@ class EvidenceRef:
 
 @dataclass
 class ExpectedConflict:
-    pair: List[str]
+    pair: list[str]
     conflict_type: str
 
     @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "ExpectedConflict":
+    def from_dict(d: dict[str, Any]) -> "ExpectedConflict":
         return ExpectedConflict(
             pair=d["pair"],
             conflict_type=d["conflict_type"],
@@ -101,10 +101,10 @@ class ExpectedConflict:
 class GroundTruthClaim:
     claim: str
     status: str
-    evidence_ids: List[str] = field(default_factory=list)
+    evidence_ids: list[str] = field(default_factory=list)
 
     @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "GroundTruthClaim":
+    def from_dict(d: dict[str, Any]) -> "GroundTruthClaim":
         return GroundTruthClaim(
             claim=d["claim"],
             status=d["status"],
@@ -118,16 +118,16 @@ class BenchmarkQuestion:
     type: str
     question: str
     ground_truth_answer: str
-    ground_truth_claims: List[GroundTruthClaim] = field(default_factory=list)
-    evidence: List[EvidenceRef] = field(default_factory=list)
-    expected_conflicts: List[ExpectedConflict] = field(default_factory=list)
+    ground_truth_claims: list[GroundTruthClaim] = field(default_factory=list)
+    evidence: list[EvidenceRef] = field(default_factory=list)
+    expected_conflicts: list[ExpectedConflict] = field(default_factory=list)
     difficulty: str = "medium"
     requires_multi_hop: bool = False
     expected_behavior: str = "answer_with_citation"
-    tags: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
 
     @staticmethod
-    def from_dict(d: Dict[str, Any]) -> "BenchmarkQuestion":
+    def from_dict(d: dict[str, Any]) -> "BenchmarkQuestion":
         return BenchmarkQuestion(
             id=d["id"],
             type=d["type"],
@@ -149,21 +149,21 @@ class BenchmarkQuestion:
 
 @dataclass
 class VeraBench:
-    corpus: Dict[str, CorpusDocument]
-    questions: List[BenchmarkQuestion]
+    corpus: dict[str, CorpusDocument]
+    questions: list[BenchmarkQuestion]
     version: str = "1.0"
 
-    def get_questions_by_type(self, qtype: str) -> List[BenchmarkQuestion]:
+    def get_questions_by_type(self, qtype: str) -> list[BenchmarkQuestion]:
         return [q for q in self.questions if q.type == qtype]
 
-    def get_questions_by_difficulty(self, difficulty: str) -> List[BenchmarkQuestion]:
+    def get_questions_by_difficulty(self, difficulty: str) -> list[BenchmarkQuestion]:
         return [q for q in self.questions if q.difficulty == difficulty]
 
-    def get_document(self, doc_id: str) -> Optional[CorpusDocument]:
+    def get_document(self, doc_id: str) -> CorpusDocument | None:
         return self.corpus.get(doc_id)
 
-    def stats(self) -> Dict[str, Any]:
-        type_counts = {}
+    def stats(self) -> dict[str, Any]:
+        type_counts: dict[str, int] = {}
         for q in self.questions:
             type_counts[q.type] = type_counts.get(q.type, 0) + 1
         return {
@@ -177,9 +177,15 @@ class VeraBench:
 
 class VeraBenchLoader:
     DEFAULT_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "verabench"
+    PACKAGE_DATA_PATH = resources.files(__package__) / "data" / "verabench"
 
-    def __init__(self, data_dir: Optional[str] = None):
-        self.data_dir = Path(data_dir) if data_dir else self.DEFAULT_PATH
+    def __init__(self, data_dir: str | None = None):
+        if data_dir:
+            self.data_dir = Path(data_dir)
+        elif self.DEFAULT_PATH.exists():
+            self.data_dir = self.DEFAULT_PATH
+        else:
+            self.data_dir = Path(str(self.PACKAGE_DATA_PATH))
 
     def load(self) -> VeraBench:
         corpus_path = self.data_dir / "corpus.jsonl"
@@ -191,7 +197,7 @@ class VeraBenchLoader:
             raise FileNotFoundError(f"Questions not found: {questions_path}")
 
         corpus = {}
-        with open(corpus_path, "r", encoding="utf-8") as f:
+        with open(corpus_path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line:
@@ -199,7 +205,7 @@ class VeraBenchLoader:
                     corpus[doc.doc_id] = doc
 
         questions = []
-        with open(questions_path, "r", encoding="utf-8") as f:
+        with open(questions_path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line:
@@ -208,7 +214,7 @@ class VeraBenchLoader:
         self._validate(corpus, questions)
         return VeraBench(corpus=corpus, questions=questions)
 
-    def _validate(self, corpus: Dict[str, CorpusDocument], questions: List[BenchmarkQuestion]):
+    def _validate(self, corpus: dict[str, CorpusDocument], questions: list[BenchmarkQuestion]):
         errors = []
         for q in questions:
             if q.type not in QUESTION_TYPES:
@@ -224,9 +230,9 @@ class VeraBenchLoader:
                 if c.conflict_type not in CONFLICT_TYPES:
                     errors.append(f"{q.id}: unknown conflict type '{c.conflict_type}'")
         if errors:
-            raise ValueError(f"Benchmark validation failed:\n" + "\n".join(errors))
+            raise ValueError("Benchmark validation failed:\n" + "\n".join(errors))
 
 
-def load_verabench(data_dir: Optional[str] = None) -> VeraBench:
+def load_verabench(data_dir: str | None = None) -> VeraBench:
     loader = VeraBenchLoader(data_dir)
     return loader.load()
