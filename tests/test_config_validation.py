@@ -17,6 +17,7 @@ def test_config_validation_accepts_repository_configs():
     assert "configs/deepseek_run.yaml" in audit.files
     assert "configs/deepseek_rules_only.yaml" in audit.files
     assert "configs/verabench_v112_canonical.yaml" in audit.files
+    assert "configs/verabench_v112_retrieval_adaptive.yaml" in audit.files
 
 
 def test_canonical_verabench_config_freezes_authoritative_run_identity():
@@ -39,6 +40,25 @@ def test_canonical_verabench_config_freezes_authoritative_run_identity():
     assert config["retriever"]["type"] == "bm25"
     assert config["retriever"]["top_k_policy"] == "fixed"
     assert config["pipeline"]["max_retrieval_rounds"] == 1
+
+
+def test_retrieval_adaptive_config_preserves_canonical_except_policy():
+    canonical = yaml.safe_load(
+        Path("configs/verabench_v112_canonical.yaml").read_text(encoding="utf-8")
+    )
+    adaptive = yaml.safe_load(
+        Path("configs/verabench_v112_retrieval_adaptive.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert adaptive["canonical_run"]["name"] == "verabench_v112_retrieval_adaptive_deepseek"
+    assert adaptive["canonical_run"]["benchmark_version"] == canonical["canonical_run"]["benchmark_version"]
+    assert adaptive["llm"] == canonical["llm"]
+    assert adaptive["pipeline"] == canonical["pipeline"]
+    assert adaptive["retriever"]["type"] == canonical["retriever"]["type"]
+    assert adaptive["retriever"]["top_k_policy"] == "complexity_adaptive"
+    assert canonical["retriever"]["top_k_policy"] == "fixed"
 
 
 def test_config_validation_reports_runtime_shape_errors(tmp_path):

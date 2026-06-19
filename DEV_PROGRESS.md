@@ -639,6 +639,12 @@
     policy 裁剪、validator 校验和 pipeline 传参；`run_verabench` report metadata
     现在也记录 retriever type/top-k policy/阈值字段，方便后续 fixed vs adaptive
     真实 A/B 审计。
+98. **动态 top-k 端到端 A/B 配置**：新增
+    `configs/verabench_v112_retrieval_adaptive.yaml`，镜像 canonical v1.1.2
+    DeepSeek 全量配置，仅将 `retriever.top_k_policy` 改为
+    `complexity_adaptive` 并使用独立 run/output/checkpoint identity。这样后续
+    `compare_verabench_reports` 可以直接比较 canonical fixed 与 adaptive 策略，
+    不需要临时手改权威配置。
 
 ## 🆕 本次更新（2026-06-14）：冲突检测召回、检索锚点与回答行为闭环
 

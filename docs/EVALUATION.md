@@ -399,6 +399,9 @@ retriever:
 Pipeline defaults and the canonical v1.1.2 run keep `top_k_policy: fixed` until
 an end-to-end ablation proves that the smaller evidence set improves Evidence
 Precision without causing over-abstention or behavior regressions.
+For that A/B, use `configs/verabench_v112_retrieval_adaptive.yaml`; it mirrors
+the canonical v1.1.2 DeepSeek run except for `retriever.top_k_policy` and its
+run/output identity.
 
 ## Calibration Diagnostics
 

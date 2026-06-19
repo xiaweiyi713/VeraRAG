@@ -185,6 +185,8 @@ All notable changes to VeraRAG are recorded here.
 - Record retriever type and top-k policy fields in VeraBench report metadata so
   future fixed-vs-adaptive runs can be audited without manually opening config
   files.
+- Add `configs/verabench_v112_retrieval_adaptive.yaml`, a fixed-identity
+  end-to-end A/B config for the Stage-3 retrieval top-k policy experiment.
 - Add `verarag-calibrate-report`, a held-out post-hoc confidence calibration
   CLI that fits Platt or temperature scaling, preserves original row
   confidences, and writes before/after calibration and holdout metrics into
