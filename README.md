@@ -712,7 +712,7 @@ Dockerfile、`.dockerignore`、Makefile 与 README 的一致性。
 - [ ] VeraBench 扩展至 300+ 题，补充 hard 难度与新领域
 - [ ] 多轮对话、英文 VeraBench 子集、Agent 路由优化
 
-> 详细开发进度见 [DEV_PROGRESS.md](DEV_PROGRESS.md)。
+> 完整长期研究计划见 [docs/ROADMAP.md](docs/ROADMAP.md)；详细开发进度见 [DEV_PROGRESS.md](DEV_PROGRESS.md)。
 
 ---
 
