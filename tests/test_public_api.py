@@ -90,6 +90,7 @@ def test_console_scripts_are_registered():
     assert 'verarag-compare-conflicts = "experiments.compare_conflict_detectors:main"' in pyproject
     assert 'verarag-audit-conflict-model = "experiments.audit_conflict_model:main"' in pyproject
     assert 'verarag-conflict-ablation = "experiments.run_conflict_ablation:main"' in pyproject
+    assert 'verarag-evaluate-retrieval = "experiments.evaluate_retrieval:main"' in pyproject
     assert 'verarag-validate-benchmark = "experiments.validate_verabench:main"' in pyproject
     assert 'verarag-audit-contamination = "experiments.audit_verabench_contamination:main"' in pyproject
     assert 'verarag-build-external-annotation-packet = "experiments.build_external_annotation_packet:main"' in pyproject

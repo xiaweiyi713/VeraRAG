@@ -1,0 +1,280 @@
+#!/usr/bin/env python3
+"""Offline VeraBench retrieval evaluation."""
+
+import argparse
+import hashlib
+import json
+import math
+import sys
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.benchmark.loader import BenchmarkQuestion, VeraBenchLoader  # noqa: E402
+from src.evaluation.evidence_metrics import EvidenceMetrics  # noqa: E402
+from src.retriever.base import BaseRetriever  # noqa: E402
+from src.retriever.bm25 import BM25Retriever  # noqa: E402
+from src.retriever.hybrid import HybridRetriever  # noqa: E402
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _documents_for_index(loader: VeraBenchLoader) -> list[dict[str, Any]]:
+    benchmark = loader.load()
+    return [
+        {
+            "id": document.doc_id,
+            "title": document.title,
+            "text": document.content,
+            "source": document.source,
+            "date": document.date,
+            "author": document.author,
+            "url": document.url,
+            "entities": document.entities,
+            "tags": document.tags,
+        }
+        for document in benchmark.corpus.values()
+    ]
+
+
+def _make_retriever(name: str) -> BaseRetriever:
+    if name == "bm25":
+        return BM25Retriever()
+    if name == "hybrid":
+        return HybridRetriever()
+    raise ValueError(f"Unsupported retriever: {name}")
+
+
+def _ndcg_binary(retrieved: list[str], relevant: set[str]) -> float:
+    if not relevant:
+        return 1.0
+    dcg = 0.0
+    for index, doc_id in enumerate(retrieved):
+        if doc_id in relevant:
+            dcg += 1.0 / math.log2(index + 2)
+    ideal_hits = min(len(relevant), len(retrieved))
+    if ideal_hits == 0:
+        return 0.0
+    idcg = sum(1.0 / math.log2(index + 2) for index in range(ideal_hits))
+    return dcg / idcg if idcg else 0.0
+
+
+def _mrr(retrieved: list[str], relevant: set[str]) -> float:
+    for index, doc_id in enumerate(retrieved):
+        if doc_id in relevant:
+            return 1.0 / (index + 1)
+    return 0.0
+
+
+def _unique_preserving_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
+
+
+def evaluate_questions(
+    questions: list[BenchmarkQuestion],
+    retriever: BaseRetriever,
+    *,
+    top_k: int,
+    include_no_gold: bool = False,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for question in questions:
+        relevant_doc_ids = sorted({evidence.doc_id for evidence in question.evidence})
+        if not relevant_doc_ids and not include_no_gold:
+            continue
+        results = retriever.retrieve(question.question, top_k=top_k)
+        retrieved_doc_ids = _unique_preserving_order([result.doc_id for result in results])
+        relevant_set = set(relevant_doc_ids)
+        hit_count = len(set(retrieved_doc_ids) & relevant_set)
+        precision = EvidenceMetrics.evidence_precision(
+            retrieved_doc_ids,
+            relevant_doc_ids,
+        )
+        recall = EvidenceMetrics.evidence_recall(
+            retrieved_doc_ids,
+            relevant_doc_ids,
+        )
+        f1 = EvidenceMetrics.evidence_f1(retrieved_doc_ids, relevant_doc_ids)
+        rows.append({
+            "question_id": question.id,
+            "question_type": question.type,
+            "difficulty": question.difficulty,
+            "requires_multi_hop": question.requires_multi_hop,
+            "question": question.question,
+            "gold_document_ids": relevant_doc_ids,
+            "retrieved_document_ids": retrieved_doc_ids,
+            "hit_count": hit_count,
+            "retrieved_count": len(retrieved_doc_ids),
+            "gold_count": len(relevant_doc_ids),
+            "precision": round(precision, 6),
+            "recall": round(recall, 6),
+            "f1": round(f1, 6),
+            "hit": hit_count > 0 or not relevant_doc_ids,
+            "all_gold_retrieved": recall >= 1.0,
+            "mrr": round(_mrr(retrieved_doc_ids, relevant_set), 6),
+            "ndcg": round(_ndcg_binary(retrieved_doc_ids, relevant_set), 6),
+        })
+    return rows
+
+
+def _mean(rows: list[dict[str, Any]], field: str) -> float:
+    if not rows:
+        return 0.0
+    return sum(float(row[field]) for row in rows) / len(rows)
+
+
+def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    if not rows:
+        return {
+            "questions": 0,
+            "macro_precision": 0.0,
+            "macro_recall": 0.0,
+            "macro_f1": 0.0,
+            "hit_rate": 0.0,
+            "all_gold_retrieved_rate": 0.0,
+            "mrr": 0.0,
+            "ndcg": 0.0,
+            "micro_precision": 0.0,
+            "micro_recall": 0.0,
+        }
+    total_hits = sum(int(row["hit_count"]) for row in rows)
+    total_retrieved = sum(int(row["retrieved_count"]) for row in rows)
+    total_gold = sum(int(row["gold_count"]) for row in rows)
+    return {
+        "questions": len(rows),
+        "macro_precision": round(_mean(rows, "precision"), 6),
+        "macro_recall": round(_mean(rows, "recall"), 6),
+        "macro_f1": round(_mean(rows, "f1"), 6),
+        "hit_rate": round(sum(bool(row["hit"]) for row in rows) / len(rows), 6),
+        "all_gold_retrieved_rate": round(
+            sum(bool(row["all_gold_retrieved"]) for row in rows) / len(rows),
+            6,
+        ),
+        "mrr": round(_mean(rows, "mrr"), 6),
+        "ndcg": round(_mean(rows, "ndcg"), 6),
+        "micro_precision": round(total_hits / total_retrieved, 6) if total_retrieved else 0.0,
+        "micro_recall": round(total_hits / total_gold, 6) if total_gold else 1.0,
+    }
+
+
+def _grouped(rows: list[dict[str, Any]], field: str) -> dict[str, dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        groups[str(row[field])].append(row)
+    return {key: _aggregate(value) for key, value in sorted(groups.items())}
+
+
+def build_report(
+    *,
+    data_dir: str | None,
+    retriever_name: str,
+    top_k: int,
+    question_types: list[str] | None = None,
+    question_ids: list[str] | None = None,
+    max_questions: int | None = None,
+    include_no_gold: bool = False,
+) -> dict[str, Any]:
+    loader = VeraBenchLoader(data_dir)
+    benchmark = loader.load()
+    documents = _documents_for_index(loader)
+    retriever = _make_retriever(retriever_name)
+    retriever.index_documents(documents)
+
+    questions = benchmark.questions
+    if question_types:
+        requested_types = set(question_types)
+        questions = [question for question in questions if question.type in requested_types]
+    if question_ids:
+        requested_ids = set(question_ids)
+        known_ids = {question.id for question in benchmark.questions}
+        unknown_ids = sorted(requested_ids - known_ids)
+        if unknown_ids:
+            raise ValueError(f"Unknown VeraBench question id(s): {', '.join(unknown_ids)}")
+        questions = [question for question in questions if question.id in requested_ids]
+    if max_questions is not None:
+        questions = questions[:max_questions]
+
+    rows = evaluate_questions(
+        questions,
+        retriever,
+        top_k=top_k,
+        include_no_gold=include_no_gold,
+    )
+    return {
+        "schema_version": "retrieval-eval-v1",
+        "retriever": retriever_name,
+        "top_k": top_k,
+        "include_no_gold": include_no_gold,
+        "benchmark": {
+            "version": benchmark.version,
+            "questions": len(benchmark.questions),
+            "documents": len(benchmark.corpus),
+            "fingerprints": {
+                "corpus_sha256": _sha256(loader.data_dir / "corpus.jsonl"),
+                "questions_sha256": _sha256(loader.data_dir / "questions.jsonl"),
+            },
+        },
+        "selected_questions": len(questions),
+        "evaluated_questions": len(rows),
+        "summary": _aggregate(rows),
+        "by_type": _grouped(rows, "question_type"),
+        "by_difficulty": _grouped(rows, "difficulty"),
+        "by_multi_hop": _grouped(rows, "requires_multi_hop"),
+        "question_results": rows,
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Evaluate VeraBench retrieval offline")
+    parser.add_argument("--data-dir", help="Optional VeraBench data directory")
+    parser.add_argument(
+        "--retriever",
+        choices=["bm25", "hybrid"],
+        default="bm25",
+        help="Retriever variant to evaluate. Hybrid falls back to BM25 if dense is unavailable.",
+    )
+    parser.add_argument("--top-k", type=int, default=10)
+    parser.add_argument("--types", nargs="+", help="Question types to include")
+    parser.add_argument("--ids", nargs="+", help="Question ids to include")
+    parser.add_argument("--max", type=int, dest="max_questions", help="Limit selected questions")
+    parser.add_argument(
+        "--include-no-gold",
+        action="store_true",
+        help="Include questions with no gold evidence, such as unanswerable rows.",
+    )
+    parser.add_argument("--output", help="Optional JSON output path")
+    args = parser.parse_args()
+
+    report = build_report(
+        data_dir=args.data_dir,
+        retriever_name=args.retriever,
+        top_k=args.top_k,
+        question_types=args.types,
+        question_ids=args.ids,
+        max_questions=args.max_questions,
+        include_no_gold=args.include_no_gold,
+    )
+    payload = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(payload, encoding="utf-8")
+    else:
+        print(payload, end="")
+
+
+if __name__ == "__main__":
+    main()

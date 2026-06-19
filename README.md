@@ -324,6 +324,13 @@ python experiments/run_conflict_ablation.py \
 
 # 完整 Windows GPU 流程与 training_metrics.json 说明见 docs/GPU_TRAINING.md
 
+# 离线检索消融基线（不调用 LLM）
+python experiments/evaluate_retrieval.py \
+    --retriever bm25 \
+    --top-k 10 \
+    --output outputs/retrieval_eval_bm25_top10.json
+# 或 verarag-evaluate-retrieval --retriever bm25 --top-k 10 --output outputs/retrieval_eval_bm25_top10.json
+
 # 消融实验（7 组）与基线对比（3 种）
 python experiments/run_ablation.py --demo    # make ablation
 python experiments/run_baselines.py --demo   # make baselines

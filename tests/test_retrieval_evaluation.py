@@ -1,0 +1,130 @@
+import json
+import subprocess
+import sys
+
+import pytest
+
+from experiments.evaluate_retrieval import build_report
+
+
+@pytest.fixture
+def sample_bench_dir(tmp_path):
+    corpus = [
+        {
+            "doc_id": "D001",
+            "title": "测试文档1",
+            "source": "report",
+            "content": "verarag_budget_truth 2024年1月，某系统正式发布，预算为500万元。",
+        },
+        {
+            "doc_id": "D002",
+            "title": "测试文档2",
+            "source": "report",
+            "content": "2022年6月，该系统预算为300万元。",
+        },
+        {
+            "doc_id": "D003",
+            "title": "不实报道",
+            "source": "blog",
+            "content": "verarag_false_report 该系统预算为800万元。",
+        },
+    ]
+    questions = [
+        {
+            "id": "T001",
+            "type": "single_evidence",
+            "question": "verarag_budget_truth 该系统2024年的预算是多少？",
+            "ground_truth_answer": "500万元。",
+            "expected_behavior": "answer_with_citation",
+            "evidence": [
+                {
+                    "evidence_id": "E1",
+                    "doc_id": "D001",
+                    "text_span": "预算为500万元",
+                    "category": "supporting",
+                }
+            ],
+        },
+        {
+            "id": "T002",
+            "type": "conflict",
+            "question": "verarag_budget_truth 和 verarag_false_report 对该系统预算有什么冲突？",
+            "ground_truth_answer": "根据2024年文档为500万元，但有不实报道称800万元。",
+            "expected_behavior": "answer_with_conflict_note",
+            "evidence": [
+                {
+                    "evidence_id": "E1",
+                    "doc_id": "D001",
+                    "text_span": "预算为500万元",
+                    "category": "supporting",
+                },
+                {
+                    "evidence_id": "E3",
+                    "doc_id": "D003",
+                    "text_span": "该系统预算为800万元",
+                    "category": "conflicting",
+                },
+            ],
+            "expected_conflicts": [
+                {"pair": ["E1", "E3"], "conflict_type": "numeric_conflict"}
+            ],
+        },
+        {
+            "id": "T003",
+            "type": "unanswerable",
+            "question": "该系统用了什么编程语言？",
+            "ground_truth_answer": "无法回答。文档中没有相关信息。",
+            "expected_behavior": "abstain",
+            "evidence": [],
+        },
+    ]
+    (tmp_path / "corpus.jsonl").write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in corpus),
+        encoding="utf-8",
+    )
+    (tmp_path / "questions.jsonl").write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in questions),
+        encoding="utf-8",
+    )
+    return str(tmp_path)
+
+
+def test_build_retrieval_report_scores_sample_benchmark(sample_bench_dir):
+    report = build_report(
+        data_dir=sample_bench_dir,
+        retriever_name="bm25",
+        top_k=3,
+    )
+
+    assert report["schema_version"] == "retrieval-eval-v1"
+    assert report["retriever"] == "bm25"
+    assert report["selected_questions"] == 3
+    assert report["evaluated_questions"] == 2
+    assert report["summary"]["macro_recall"] == 1.0
+    assert report["summary"]["micro_recall"] == 1.0
+    assert "single_evidence" in report["by_type"]
+    assert "conflict" in report["by_type"]
+
+
+def test_evaluate_retrieval_cli_writes_json(sample_bench_dir, tmp_path):
+    output = tmp_path / "retrieval.json"
+
+    subprocess.run(
+        [
+            sys.executable,
+            "experiments/evaluate_retrieval.py",
+            "--data-dir",
+            sample_bench_dir,
+            "--retriever",
+            "bm25",
+            "--top-k",
+            "3",
+            "--output",
+            str(output),
+        ],
+        check=True,
+    )
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["evaluated_questions"] == 2
+    assert payload["summary"]["hit_rate"] == 1.0

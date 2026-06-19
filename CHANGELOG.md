@@ -172,6 +172,10 @@ All notable changes to VeraRAG are recorded here.
 - Close current v1.1.2 gold-evidence rules-only conflict edge gaps by handling
   same-evidence numeric contrasts, ITER schedule self-refutations, and corrected
   reported-claim cross-evidence deduplication.
+- Add `verarag-evaluate-retrieval` / `experiments/evaluate_retrieval.py`, an
+  offline VeraBench retrieval diagnostic that scores BM25/Hybrid document
+  retrieval against gold evidence with grouped precision, recall, F1, hit rate,
+  all-gold-retrieved rate, MRR, and nDCG.
 - Add `verarag-calibrate-report`, a held-out post-hoc confidence calibration
   CLI that fits Platt or temperature scaling, preserves original row
   confidences, and writes before/after calibration and holdout metrics into

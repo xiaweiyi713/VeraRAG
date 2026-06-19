@@ -341,6 +341,30 @@ the failure is retrieval. If the gold document is present but
 fact-slot gates. If `conflict_edges` contains the right edge but the mapped pair
 does not match gold, inspect evaluator mapping or VeraBench annotations.
 
+## Retrieval Diagnostics
+
+Run document-level retrieval evaluation without an LLM:
+
+```bash
+python experiments/evaluate_retrieval.py \
+  --retriever bm25 \
+  --top-k 10 \
+  --output outputs/retrieval_eval_bm25_top10.json
+```
+
+The report scores retrieved document ids against VeraBench gold evidence ids and
+groups precision, recall, F1, hit rate, all-gold-retrieved rate, MRR, and nDCG
+by question type, difficulty, and multi-hop flag. By default, questions without
+gold evidence are skipped so unanswerable rows do not distort retrieval quality;
+pass `--include-no-gold` when auditing those rows explicitly.
+
+Current bundled VeraBench v1.1.2 BM25 top-10 baseline evaluates 147 rows and
+scores macro precision `0.1293`, macro recall `0.9830`, macro F1 `0.2244`,
+hit rate `1.0000`, all-gold-retrieved rate `0.9660`, MRR `0.9427`, and nDCG
+`0.9325`. This makes the Stage-3 failure mode concrete: recall is already high,
+while precision is low enough that reranking, dynamic top-k, and evidence
+deduplication should be measured before any end-to-end LLM spend.
+
 ## Calibration Diagnostics
 
 Analyze confidence bins:

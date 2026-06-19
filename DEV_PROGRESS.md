@@ -614,6 +614,15 @@
     verified 且 dependency/text overlap 为 **0**；`train_conflict_cross_encoder`
     dry-run 显示 train loader 经正例过采样后为 **212** 对、正负 **106/106**。当前
     `windows-gpu` 仍然 SSH 超时，因此真实 cross-encoder GPU 训练尚未完成。
+95. **离线检索消融入口**：新增 `experiments/evaluate_retrieval.py` /
+    `verarag-evaluate-retrieval`，可在不调用 LLM 的情况下按 VeraBench gold evidence
+    评估 BM25 / Hybrid 文档检索，输出 overall、by_type、by_difficulty、
+    by_multi_hop 的 precision/recall/F1、hit rate、all-gold-retrieved rate、MRR
+    与 nDCG。当前 bundled VeraBench v1.1.2 BM25 top-10 基线覆盖 **147** 个有
+    gold evidence 的问题，macro precision **0.1293**、macro recall **0.9830**、
+    macro F1 **0.2244**、hit rate **1.0000**、all-gold-retrieved rate **0.9660**、
+    MRR **0.9427**、nDCG **0.9325**；这把阶段 3 的主要问题明确为“召回高但
+    top-k 精度低”，下一步应优先评估 reranker、动态 top-k 与证据去冗。
 
 ## 🆕 本次更新（2026-06-14）：冲突检测召回、检索锚点与回答行为闭环
 
