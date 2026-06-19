@@ -11,10 +11,15 @@ BATCH_SIZE="${VERARAG_GPU_BATCH_SIZE:-16}"
 WARMUP_STEPS="${VERARAG_GPU_WARMUP_STEPS:-10}"
 SEED="${VERARAG_GPU_SEED:-13}"
 OFFLINE="${VERARAG_GPU_OFFLINE:-1}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 quote_remote() {
   printf "%q" "$1"
 }
+
+if [ "${VERARAG_GPU_SKIP_PREFLIGHT:-0}" != "1" ]; then
+  "${SCRIPT_DIR}/check_windows_conflict_training_ready.sh"
+fi
 
 ssh "${REMOTE_HOST}" \
   "VERARAG_REMOTE_PROJECT=$(quote_remote "${REMOTE_PROJECT}") \

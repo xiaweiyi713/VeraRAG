@@ -605,6 +605,15 @@
     dependency-aware test split 也为 **3/0/0**。新增回归测试锁住这三种模式。注意：
     这是 gold-evidence edge 层结果，端到端 conflict behavior 仍需 canonical v1.1.2
     全量 LLM run 验证。
+94. **GPU 训练前置门禁**：新增 `scripts/check_windows_conflict_training_ready.sh`
+    与 `make gpu-check`，并让单 seed / 多 seed conflict training launcher 默认先
+    预检远端 SSH、项目路径、tmux、`train` conda 环境、`torch` /
+    `sentence_transformers`、CUDA 可见性和 offline base model 路径；手动维修时可用
+    `VERARAG_GPU_SKIP_PREFLIGHT=1` 绕过。本地已重新生成 v1.1.2 pairwise 训练数据：
+    总计 **181** 对、正例 **29**、train/val/test **129/26/26**，split integrity
+    verified 且 dependency/text overlap 为 **0**；`train_conflict_cross_encoder`
+    dry-run 显示 train loader 经正例过采样后为 **212** 对、正负 **106/106**。当前
+    `windows-gpu` 仍然 SSH 超时，因此真实 cross-encoder GPU 训练尚未完成。
 
 ## 🆕 本次更新（2026-06-14）：冲突检测召回、检索锚点与回答行为闭环
 

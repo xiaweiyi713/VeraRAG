@@ -15,10 +15,15 @@ DATASET_DIR="${VERARAG_GPU_DATASET_DIR:-outputs/conflict_pairs_v112_leakfree}"
 OUTPUT_PREFIX="${VERARAG_GPU_OUTPUT_PREFIX:-outputs/conflict_cross_encoder_v112_leakfree}"
 ABLATION_OUTPUT="${VERARAG_GPU_ABLATION_OUTPUT:-outputs/conflict_detector_v112_leakfree_matrix_test.json}"
 AUDIT_OUTPUT="${VERARAG_GPU_AUDIT_OUTPUT:-outputs/conflict_model_promotion_audit_matrix.json}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 quote_remote() {
   printf "%q" "$1"
 }
+
+if [ "${VERARAG_GPU_SKIP_PREFLIGHT:-0}" != "1" ]; then
+  "${SCRIPT_DIR}/check_windows_conflict_training_ready.sh"
+fi
 
 ssh "${REMOTE_HOST}" \
   "VERARAG_REMOTE_PROJECT=$(quote_remote "${REMOTE_PROJECT}") \

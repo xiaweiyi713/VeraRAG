@@ -1,4 +1,4 @@
-.PHONY: test lint lint-all format security security-local version-check python-support-check doctor-check configs-check docs-check results-check examples-check deployment-check precommit-check deps-check metadata-check sbom-check release-checksums-check build package-check installed-wheel-check benchmark-check release-artifacts-check external-fixture-check release-check run clean coverage coverage-check docker-build docker-run demo ablation baselines benchmark gpu-sync gpu-status
+.PHONY: test lint lint-all format security security-local version-check python-support-check doctor-check configs-check docs-check results-check examples-check deployment-check precommit-check deps-check metadata-check sbom-check release-checksums-check build package-check installed-wheel-check benchmark-check release-artifacts-check external-fixture-check release-check run clean coverage coverage-check docker-build docker-run demo ablation baselines benchmark gpu-sync gpu-status gpu-check
 
 PYTHON ?= python3
 COVERAGE_MIN ?= 80
@@ -113,6 +113,9 @@ benchmark:
 
 gpu-sync:
 	scripts/sync_windows_gpu.sh
+
+gpu-check:
+	scripts/check_windows_conflict_training_ready.sh
 
 gpu-status:
 	scripts/windows_gpu_status.sh

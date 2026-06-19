@@ -290,6 +290,21 @@ Watch GPU continuously:
 scripts/windows_gpu_status.sh gpu
 ```
 
+Before starting a training run, the launchers run a remote preflight by
+default. You can also run it directly:
+
+```bash
+scripts/check_windows_conflict_training_ready.sh
+# or
+make gpu-check
+```
+
+The preflight checks SSH reachability, the remote project path, tmux, the
+`train` conda environment, train dependencies, CUDA visibility, and the
+offline base model path when `VERARAG_GPU_OFFLINE=1`. If you intentionally want
+to bypass this gate during a manual repair, set `VERARAG_GPU_SKIP_PREFLIGHT=1`
+for the launcher command.
+
 For formal reproducibility evidence, use the multi-seed matrix launcher:
 
 ```bash

@@ -152,6 +152,10 @@ All notable changes to VeraRAG are recorded here.
 - Add `scripts/windows_gpu_status.sh` plus `make gpu-status`, a read-only
   Windows GPU operations helper that reports tmux sessions, attach commands,
   GPU utilization, disk space, and recent training/evaluation artifacts.
+- Add `scripts/check_windows_conflict_training_ready.sh` plus `make gpu-check`,
+  and make both conflict-training launchers run this preflight by default so
+  SSH, tmux, conda, train dependencies, CUDA visibility, and offline base-model
+  availability fail before a detached tmux job is started.
 - Add `configs/verabench_v112_canonical.yaml`, the canonical VeraBench v1.1.2
   DeepSeek full-run configuration, and make the remote VeraBench launcher,
   RESULTS page, and validation contract point at the same reproducible run

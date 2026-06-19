@@ -7,6 +7,7 @@ from pathlib import Path
 
 def test_windows_conflict_training_scripts_have_valid_bash_syntax():
     for script in (
+        "scripts/check_windows_conflict_training_ready.sh",
         "scripts/start_windows_conflict_training.sh",
         "scripts/start_windows_conflict_training_matrix.sh",
         "scripts/start_windows_verabench_eval.sh",
@@ -21,6 +22,8 @@ def test_matrix_training_script_matches_promotion_audit_workflow():
     )
 
     assert "VERARAG_GPU_SEEDS:-13 17 23" in script
+    assert "check_windows_conflict_training_ready.sh" in script
+    assert "VERARAG_GPU_SKIP_PREFLIGHT" in script
     assert "quote_remote()" in script
     assert "tmux has-session" in script
     assert "VERARAG_REMOTE_PROJECT=$(quote_remote \"${REMOTE_PROJECT}\")" in script
@@ -66,6 +69,8 @@ def test_single_seed_training_script_quotes_remote_values():
         encoding="utf-8"
     )
 
+    assert "check_windows_conflict_training_ready.sh" in script
+    assert "VERARAG_GPU_SKIP_PREFLIGHT" in script
     assert "quote_remote()" in script
     assert "tmux has-session" in script
     assert "VERARAG_REMOTE_PROJECT=$(quote_remote \"${REMOTE_PROJECT}\")" in script
@@ -74,6 +79,22 @@ def test_single_seed_training_script_quotes_remote_values():
     assert 'cd "${project}"' in script
     assert "cd ${REMOTE_PROJECT}" not in script
     assert "--model \"${base_model}\"" in script
+
+
+def test_conflict_training_preflight_checks_remote_cuda_and_model():
+    script = Path("scripts/check_windows_conflict_training_ready.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "VERARAG_GPU_SSH_CONNECT_TIMEOUT" in script
+    assert "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" in script
+    assert "conda env exists" in script
+    assert "torch.cuda.is_available()" in script
+    assert "sentence_transformers" in script
+    assert "offline base model exists" in script
+    assert "Remote conflict-training preflight failed" in script
+    assert "Remote conflict-training preflight could not complete" in script
+    assert "VERARAG_GPU_SKIP_PREFLIGHT=1" in script
 
 
 def test_verabench_eval_launcher_uses_fifo_secret_injection():
