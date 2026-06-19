@@ -328,8 +328,16 @@ python experiments/run_conflict_ablation.py \
 python experiments/evaluate_retrieval.py \
     --retriever bm25 \
     --top-k 10 \
+    --sweep-top-k 1 2 3 4 5 6 8 10 \
     --output outputs/retrieval_eval_bm25_top10.json
 # 或 verarag-evaluate-retrieval --retriever bm25 --top-k 10 --output outputs/retrieval_eval_bm25_top10.json
+
+# 离线 top-k 策略前沿：precision_cap 当前 macro P/R/F1 = 0.3044/0.9546/0.4492；
+# complexity_adaptive 当前 macro P/R/F1 = 0.3500/0.9456/0.4977。
+python experiments/evaluate_retrieval.py \
+    --retriever bm25 \
+    --top-k 10 \
+    --top-k-policy complexity_adaptive
 
 # 消融实验（7 组）与基线对比（3 种）
 python experiments/run_ablation.py --demo    # make ablation

@@ -20,13 +20,14 @@ from src.retriever.base import BaseRetriever  # noqa: E402
 from src.retriever.bm25 import BM25Retriever  # noqa: E402
 from src.retriever.hybrid import HybridRetriever  # noqa: E402
 
+TOP_K_POLICIES = ("fixed", "precision_cap", "complexity_adaptive")
+
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _documents_for_index(loader: VeraBenchLoader) -> list[dict[str, Any]]:
-    benchmark = loader.load()
+def _documents_for_index(benchmark: Any) -> list[dict[str, Any]]:
     return [
         {
             "id": document.doc_id,
@@ -83,20 +84,52 @@ def _unique_preserving_order(values: list[str]) -> list[str]:
     return unique
 
 
+def _select_top_k(
+    question: BenchmarkQuestion,
+    *,
+    retrieval_depth: int,
+    policy: str,
+) -> int:
+    if retrieval_depth < 0:
+        raise ValueError("top_k must be non-negative")
+    if policy == "fixed":
+        return retrieval_depth
+    if policy == "precision_cap":
+        return min(retrieval_depth, 4)
+    if policy == "complexity_adaptive":
+        if question.type in {"multi_evidence", "conflict"} or question.requires_multi_hop:
+            return min(retrieval_depth, 5)
+        if question.type in {"temporal", "misleading"}:
+            return min(retrieval_depth, 4)
+        return min(retrieval_depth, 2)
+    raise ValueError(f"Unsupported top-k policy: {policy}")
+
+
 def evaluate_questions(
     questions: list[BenchmarkQuestion],
     retriever: BaseRetriever,
     *,
     top_k: int,
+    top_k_policy: str = "fixed",
     include_no_gold: bool = False,
 ) -> list[dict[str, Any]]:
+    if top_k < 0:
+        raise ValueError("top_k must be non-negative")
     rows: list[dict[str, Any]] = []
     for question in questions:
         relevant_doc_ids = sorted({evidence.doc_id for evidence in question.evidence})
         if not relevant_doc_ids and not include_no_gold:
             continue
-        results = retriever.retrieve(question.question, top_k=top_k)
-        retrieved_doc_ids = _unique_preserving_order([result.doc_id for result in results])
+        retrieval_depth = top_k
+        selected_top_k = _select_top_k(
+            question,
+            retrieval_depth=retrieval_depth,
+            policy=top_k_policy,
+        )
+        results = retriever.retrieve(question.question, top_k=retrieval_depth)
+        retrieved_doc_ids = _unique_preserving_order(
+            [result.doc_id for result in results]
+        )[:selected_top_k]
         relevant_set = set(relevant_doc_ids)
         hit_count = len(set(retrieved_doc_ids) & relevant_set)
         precision = EvidenceMetrics.evidence_precision(
@@ -116,6 +149,9 @@ def evaluate_questions(
             "question": question.question,
             "gold_document_ids": relevant_doc_ids,
             "retrieved_document_ids": retrieved_doc_ids,
+            "retrieval_depth": retrieval_depth,
+            "selected_top_k": selected_top_k,
+            "top_k_policy": top_k_policy,
             "hit_count": hit_count,
             "retrieved_count": len(retrieved_doc_ids),
             "gold_count": len(relevant_doc_ids),
@@ -182,6 +218,8 @@ def build_report(
     data_dir: str | None,
     retriever_name: str,
     top_k: int,
+    top_k_policy: str = "fixed",
+    sweep_top_k: list[int] | None = None,
     question_types: list[str] | None = None,
     question_ids: list[str] | None = None,
     max_questions: int | None = None,
@@ -189,7 +227,7 @@ def build_report(
 ) -> dict[str, Any]:
     loader = VeraBenchLoader(data_dir)
     benchmark = loader.load()
-    documents = _documents_for_index(loader)
+    documents = _documents_for_index(benchmark)
     retriever = _make_retriever(retriever_name)
     retriever.index_documents(documents)
 
@@ -211,12 +249,31 @@ def build_report(
         questions,
         retriever,
         top_k=top_k,
+        top_k_policy=top_k_policy,
         include_no_gold=include_no_gold,
     )
+    sweep = []
+    for sweep_k in sweep_top_k or []:
+        if sweep_k == top_k:
+            sweep_rows = rows
+        else:
+            sweep_rows = evaluate_questions(
+                questions,
+                retriever,
+                top_k=sweep_k,
+                top_k_policy=top_k_policy,
+                include_no_gold=include_no_gold,
+            )
+        sweep.append({
+            "top_k": sweep_k,
+            "top_k_policy": top_k_policy,
+            "summary": _aggregate(sweep_rows),
+        })
     return {
         "schema_version": "retrieval-eval-v1",
         "retriever": retriever_name,
         "top_k": top_k,
+        "top_k_policy": top_k_policy,
         "include_no_gold": include_no_gold,
         "benchmark": {
             "version": benchmark.version,
@@ -233,6 +290,7 @@ def build_report(
         "by_type": _grouped(rows, "question_type"),
         "by_difficulty": _grouped(rows, "difficulty"),
         "by_multi_hop": _grouped(rows, "requires_multi_hop"),
+        "sweep": sweep,
         "question_results": rows,
     }
 
@@ -247,6 +305,22 @@ def main() -> None:
         help="Retriever variant to evaluate. Hybrid falls back to BM25 if dense is unavailable.",
     )
     parser.add_argument("--top-k", type=int, default=10)
+    parser.add_argument(
+        "--top-k-policy",
+        choices=TOP_K_POLICIES,
+        default="fixed",
+        help=(
+            "Post-retrieval selection policy. fixed keeps --top-k; "
+            "precision_cap caps at 4; complexity_adaptive uses smaller caps "
+            "for simple rows and larger caps for multi-hop/conflict rows."
+        ),
+    )
+    parser.add_argument(
+        "--sweep-top-k",
+        nargs="+",
+        type=int,
+        help="Also report summaries for these retrieval depths under the selected policy.",
+    )
     parser.add_argument("--types", nargs="+", help="Question types to include")
     parser.add_argument("--ids", nargs="+", help="Question ids to include")
     parser.add_argument("--max", type=int, dest="max_questions", help="Limit selected questions")
@@ -262,6 +336,8 @@ def main() -> None:
         data_dir=args.data_dir,
         retriever_name=args.retriever,
         top_k=args.top_k,
+        top_k_policy=args.top_k_policy,
+        sweep_top_k=args.sweep_top_k,
         question_types=args.types,
         question_ids=args.ids,
         max_questions=args.max_questions,

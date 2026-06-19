@@ -623,6 +623,13 @@
     macro F1 **0.2244**、hit rate **1.0000**、all-gold-retrieved rate **0.9660**、
     MRR **0.9427**、nDCG **0.9325**；这把阶段 3 的主要问题明确为“召回高但
     top-k 精度低”，下一步应优先评估 reranker、动态 top-k 与证据去冗。
+96. **动态 top-k 离线前沿**：`verarag-evaluate-retrieval` 新增 `--sweep-top-k`
+    和 `--top-k-policy`。当前 BM25 `precision_cap`（保留最多 4 篇）达到 macro
+    precision **0.3044**、recall **0.9546**、F1 **0.4492**；`complexity_adaptive`
+    （简单题 2 篇、temporal/misleading 4 篇、multi-hop/conflict 5 篇）达到 macro
+    precision **0.3500**、recall **0.9456**、F1 **0.4977**。这满足“离线文档检索
+    精度 ≥0.30 且召回仍高”的中间目标，但还不是端到端 Evidence Precision /
+    Behavior 改善证明，下一步需要在 pipeline 或 ablation 中验证是否会引发过度拒答。
 
 ## 🆕 本次更新（2026-06-14）：冲突检测召回、检索锚点与回答行为闭环
 

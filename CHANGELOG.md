@@ -176,6 +176,9 @@ All notable changes to VeraRAG are recorded here.
   offline VeraBench retrieval diagnostic that scores BM25/Hybrid document
   retrieval against gold evidence with grouped precision, recall, F1, hit rate,
   all-gold-retrieved rate, MRR, and nDCG.
+- Extend `verarag-evaluate-retrieval` with top-k sweeps plus `precision_cap`
+  and `complexity_adaptive` selection policies, making the retrieval
+  precision/recall frontier reproducible before changing pipeline defaults.
 - Add `verarag-calibrate-report`, a held-out post-hoc confidence calibration
   CLI that fits Platt or temperature scaling, preserves original row
   confidences, and writes before/after calibration and holdout metrics into

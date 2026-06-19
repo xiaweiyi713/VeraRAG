@@ -104,9 +104,24 @@ def test_build_retrieval_report_scores_sample_benchmark(sample_bench_dir):
     assert report["summary"]["micro_recall"] == 1.0
     assert "single_evidence" in report["by_type"]
     assert "conflict" in report["by_type"]
+    assert all(row["top_k_policy"] == "fixed" for row in report["question_results"])
 
 
-def test_evaluate_retrieval_cli_writes_json(sample_bench_dir, tmp_path):
+def test_complexity_adaptive_policy_records_selected_top_k(sample_bench_dir):
+    report = build_report(
+        data_dir=sample_bench_dir,
+        retriever_name="bm25",
+        top_k=10,
+        top_k_policy="complexity_adaptive",
+    )
+
+    by_id = {row["question_id"]: row for row in report["question_results"]}
+    assert by_id["T001"]["selected_top_k"] == 2
+    assert by_id["T002"]["selected_top_k"] == 5
+    assert report["top_k_policy"] == "complexity_adaptive"
+
+
+def test_evaluate_retrieval_cli_writes_json_with_sweep(sample_bench_dir, tmp_path):
     output = tmp_path / "retrieval.json"
 
     subprocess.run(
@@ -119,6 +134,9 @@ def test_evaluate_retrieval_cli_writes_json(sample_bench_dir, tmp_path):
             "bm25",
             "--top-k",
             "3",
+            "--sweep-top-k",
+            "1",
+            "3",
             "--output",
             str(output),
         ],
@@ -128,3 +146,4 @@ def test_evaluate_retrieval_cli_writes_json(sample_bench_dir, tmp_path):
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["evaluated_questions"] == 2
     assert payload["summary"]["hit_rate"] == 1.0
+    assert [row["top_k"] for row in payload["sweep"]] == [1, 3]

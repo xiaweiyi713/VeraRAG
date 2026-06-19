@@ -349,6 +349,7 @@ Run document-level retrieval evaluation without an LLM:
 python experiments/evaluate_retrieval.py \
   --retriever bm25 \
   --top-k 10 \
+  --sweep-top-k 1 2 3 4 5 6 8 10 \
   --output outputs/retrieval_eval_bm25_top10.json
 ```
 
@@ -364,6 +365,27 @@ hit rate `1.0000`, all-gold-retrieved rate `0.9660`, MRR `0.9427`, and nDCG
 `0.9325`. This makes the Stage-3 failure mode concrete: recall is already high,
 while precision is low enough that reranking, dynamic top-k, and evidence
 deduplication should be measured before any end-to-end LLM spend.
+
+Two offline selection policies are available for that precision work:
+
+```bash
+python experiments/evaluate_retrieval.py \
+  --retriever bm25 \
+  --top-k 10 \
+  --top-k-policy precision_cap
+
+python experiments/evaluate_retrieval.py \
+  --retriever bm25 \
+  --top-k 10 \
+  --top-k-policy complexity_adaptive
+```
+
+On current v1.1.2 data, `precision_cap` caps the retained set at four documents
+and scores macro precision `0.3044`, recall `0.9546`, and F1 `0.4492`.
+`complexity_adaptive` keeps two documents for simple rows, four for
+temporal/misleading rows, and five for multi-hop/conflict rows; it scores macro
+precision `0.3500`, recall `0.9456`, and F1 `0.4977`. These are offline
+retrieval-selection diagnostics, not end-to-end behavior claims.
 
 ## Calibration Diagnostics
 
