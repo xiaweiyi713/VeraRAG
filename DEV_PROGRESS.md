@@ -645,6 +645,12 @@
     `complexity_adaptive` 并使用独立 run/output/checkpoint identity。这样后续
     `compare_verabench_reports` 可以直接比较 canonical fixed 与 adaptive 策略，
     不需要临时手改权威配置。
+99. **动态 top-k A/B 计划器**：新增 `experiments/plan_retrieval_ablation.py` /
+    `verarag-plan-retrieval-ablation`，在不需要 API key 的情况下校验 fixed 与
+    adaptive 配置是否只在 retrieval policy/run identity 上分叉，并输出 baseline
+    run、candidate run 与 `compare_verabench_reports` 命令。默认计划写向
+    `outputs/remote_results/verabench_v112_retrieval_adaptive_comparison.md`，为
+    Windows GPU 真实实验提供可审计执行单。
 
 ## 🆕 本次更新（2026-06-14）：冲突检测召回、检索锚点与回答行为闭环
 

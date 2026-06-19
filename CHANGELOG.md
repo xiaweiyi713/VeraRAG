@@ -187,6 +187,9 @@ All notable changes to VeraRAG are recorded here.
   files.
 - Add `configs/verabench_v112_retrieval_adaptive.yaml`, a fixed-identity
   end-to-end A/B config for the Stage-3 retrieval top-k policy experiment.
+- Add `verarag-plan-retrieval-ablation`, a no-key planning CLI that validates
+  the fixed-vs-adaptive retrieval configs and emits the exact VeraBench run and
+  paired comparison commands.
 - Add `verarag-calibrate-report`, a held-out post-hoc confidence calibration
   CLI that fits Platt or temperature scaling, preserves original row
   confidences, and writes before/after calibration and holdout metrics into

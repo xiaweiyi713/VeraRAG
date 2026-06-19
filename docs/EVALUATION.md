@@ -403,6 +403,18 @@ For that A/B, use `configs/verabench_v112_retrieval_adaptive.yaml`; it mirrors
 the canonical v1.1.2 DeepSeek run except for `retriever.top_k_policy` and its
 run/output identity.
 
+Generate the fixed-vs-adaptive run plan before launching remote jobs:
+
+```bash
+python experiments/plan_retrieval_ablation.py \
+  --restart \
+  --output outputs/remote_results/verabench_v112_retrieval_ablation_plan.json
+```
+
+The plan validates that benchmark version, LLM settings, pipeline settings, and
+retriever type match, and that only `retriever.top_k_policy` differs. It emits
+the baseline run command, candidate run command, and paired comparison command.
+
 ## Calibration Diagnostics
 
 Analyze confidence bins:
