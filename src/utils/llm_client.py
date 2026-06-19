@@ -26,9 +26,9 @@ class LLMClient:
         temperature: float = 0.7,
         max_tokens: int = 2000
     ):
-        self.provider = provider
+        self.provider = provider.strip().lower()
         self.model = model
-        self.api_key = api_key or os.getenv(f"{provider.upper()}_API_KEY", "")
+        self.api_key = api_key or os.getenv(f"{self.provider.upper()}_API_KEY", "")
         self.base_url = base_url
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -58,21 +58,21 @@ class LLMClient:
             import openai
             self._client = openai.OpenAI(
                 api_key=self.api_key,
-                base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+                base_url=self.base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"
             )
 
         elif self.provider == "zhipuai":  # 智谱 AI
             import openai
             self._client = openai.OpenAI(
                 api_key=self.api_key,
-                base_url="https://open.bigmodel.cn/api/paas/v4/"
+                base_url=self.base_url or "https://open.bigmodel.cn/api/paas/v4/"
             )
 
         elif self.provider == "deepseek":
             import openai
             self._client = openai.OpenAI(
                 api_key=self.api_key,
-                base_url="https://api.deepseek.com"
+                base_url=self.base_url or "https://api.deepseek.com"
             )
 
         else:
@@ -89,8 +89,8 @@ class LLMClient:
         response_format: str | None = None
     ) -> str:
         """Generate text from the LLM."""
-        max_tokens = max_tokens or self.max_tokens
-        temperature = temperature or self.temperature
+        max_tokens = self.max_tokens if max_tokens is None else max_tokens
+        temperature = self.temperature if temperature is None else temperature
         client = self._get_client()
 
         if self.provider == "openai":
@@ -121,7 +121,7 @@ class LLMClient:
             return response.content[0].text  # type: ignore[no-any-return]
 
         elif self.provider == "ollama":
-            # Ollama API
+            # Ollama generate API accepts a prompt directly and returns text in "response".
             kwargs = {
                 "model": self.model,
                 "prompt": prompt,
@@ -132,10 +132,11 @@ class LLMClient:
             }
             if system_prompt:
                 kwargs["system"] = system_prompt
+            if response_format == "json":
+                kwargs["format"] = "json"
 
-            # Ollama returns a generator for chat
-            response = client.chat(**kwargs)
-            return response["message"]["content"]  # type: ignore[no-any-return]
+            response = client.generate(**kwargs)
+            return response["response"]  # type: ignore[no-any-return]
 
         elif self.provider in ["dashscope", "zhipuai", "deepseek"]:
             # These use OpenAI-compatible API

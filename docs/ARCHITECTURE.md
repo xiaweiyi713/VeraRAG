@@ -64,8 +64,11 @@ Conflict detection is layered:
 
 1. Rule detectors for numeric, temporal, entity, source, definition, scope, and
    related conflicts.
-2. NLI-based checks when local model dependencies are available.
-3. LLM adjudication for cases that need semantic judgment.
+2. Optional experimental binary CrossEncoder trained from dependency-aware,
+   leakage-audited VeraBench conflict pairs. It remains disabled by default
+   until held-out evidence-group evaluation demonstrates an improvement.
+3. NLI-based checks when local model dependencies are available.
+4. LLM adjudication for cases that need semantic judgment.
 
 The graph reports:
 
@@ -100,24 +103,41 @@ VeraBench contains:
   unanswerable, and misleading;
 - expected evidence references, expected conflicts, and expected behavior.
 
+Version 1.1.2 contains 27 single-evidence, 26 multi-evidence, 11 conflict, 25
+temporal, 26 unanswerable, and 37 misleading questions. Structural validation
+enforces type/behavior alignment, evidence references, ordered evidence-span
+traceability, conflict pair validity, unique IDs, and synchronized
+repository/package data fingerprints. The audit also exposes shared-evidence
+dependency components and near-duplicate question candidates.
+
 `VeraBenchEvaluator` can run in three modes:
 
 - demo mode: ground truth self-evaluation for plumbing checks;
 - baseline mode: any `answer_fn(question) -> answer`;
 - pipeline mode: real VeraRAG runs through a `pipeline_factory`.
 
+The benchmark CLI requires an explicit, mutually exclusive choice between
+`--demo` and `--config`. Pipeline initialization failures are fatal rather than
+silently producing demo results. Demo reports populate all gold-supervised
+fields and remain clearly labeled `metadata.mode = "demo"`.
+
 Reports include answer metrics, evidence recall/precision, conflict F1, behavior
 accuracy, confidence calibration, failure summaries, conflict TP/FP/FN, and
-behavior confusion matrices.
+behavior confusion matrices. Aggregate reports also include deterministic
+question-type-stratified bootstrap confidence intervals. Compatible reports can
+be compared with paired stratified bootstrap deltas and an exact McNemar test
+for behavior correctness.
 
 ## Runtime Surfaces
 
-VeraRAG exposes four primary runtime surfaces:
+VeraRAG exposes five primary runtime surfaces:
 
 - Python API: `from verarag import VeraRAG, load_verabench`.
 - Web UI: `verarag-web --port 8000`.
 - Benchmark CLI: `verarag-benchmark --demo`.
 - Offline diagnostics: `verarag-analyze` and `verarag-calibration`.
+- Benchmark validation and report processing: `verarag-validate-benchmark`,
+  `verarag-rescore`, and `verarag-merge-reports`.
 
 ## Degradation Behavior
 
@@ -135,6 +155,9 @@ Useful extension points for contributors:
 
 - Add a retriever under `src/retriever/` and wire it through pipeline config.
 - Add a conflict detector in `src/evidence/conflict_graph.py`.
+- Train a pairwise conflict detector from VeraBench with
+  `experiments/build_conflict_training_data.py` and
+  `experiments/train_conflict_cross_encoder.py`.
 - Add evaluation metrics under `src/evaluation/`.
 - Add benchmark questions to `data/verabench/questions.jsonl` and package data
   under `src/benchmark/data/verabench/`.
@@ -148,7 +171,7 @@ Before publishing or opening a PR, run:
 ```bash
 make lint
 python -m pytest tests -q
-python -m build --sdist --wheel --no-isolation
+python -m build --sdist --wheel
 ```
 
 The release package should include VeraBench data, Web templates/static files,

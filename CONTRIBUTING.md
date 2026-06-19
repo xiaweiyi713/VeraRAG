@@ -9,9 +9,19 @@ git clone https://github.com/xiaweiyi713/VeraRAG.git
 cd VeraRAG
 python -m pip install -r requirements.txt
 python -m pip install -e .
+verarag-doctor --json
 ```
 
 Python 3.10+ is required. Optional dense retrieval, FAISS, NLI, and PDF features may need larger dependencies; BM25 and demo mode should work with the base install.
+`verarag-doctor` reports the local Python version, required modules, optional feature dependencies, benchmark data files, and provider environment variable presence without printing secret values.
+
+To mirror the fast local gates before each commit:
+
+```bash
+python -m pip install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
 
 ## Before Opening a PR
 
@@ -20,15 +30,39 @@ Run the fast checks:
 ```bash
 python -m pytest tests -q
 make lint
+make version-check
+make python-support-check
+make doctor-check
+make configs-check
+make docs-check
+make results-check
+make examples-check
+make deployment-check
+make precommit-check
+make deps-check
 ```
 
 If your change affects packaging, the Web UI, benchmark data, or default configs, also run:
 
 ```bash
-python -m build --sdist --wheel --no-isolation
+make package-check
 ```
 
-`make lint` runs the repository-wide Ruff gate plus mypy over `src/`.
+Before a release or any broad evaluation/packaging change, run the full gate:
+
+```bash
+make release-check
+```
+
+`make lint` runs the repository-wide Ruff gate, mypy over `src/` and
+`verarag/`, and the high-confidence secret scanner. `make precommit-check`
+validates that `.pre-commit-config.yaml`, CI, README, and this guide still
+point at the same local quality hooks. `make release-check` also runs
+documentation, no-key quickstart example validation, deployment config
+validation, version identity validation, published results validation,
+Python support validation, environment diagnosis, YAML config validation, pre-commit config validation, dependency metadata,
+project metadata, coverage, benchmark health, package archive, and
+installed-wheel smoke checks.
 
 ## Evaluation Changes
 

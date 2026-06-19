@@ -5,6 +5,7 @@ Rules:
   medium: ≤2 hops, ≤2 conflicts
   hard: ≥2 hops or ≥2 conflicts or multi_evidence with 3+ sources
 """
+
 import json
 import sys
 from pathlib import Path

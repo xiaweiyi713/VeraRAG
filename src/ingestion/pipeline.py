@@ -1,6 +1,7 @@
 """Ingestion pipeline: load → chunk → index."""
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from ..retriever.base import BaseRetriever
@@ -8,6 +9,8 @@ from .chunker import Chunk, TextChunker
 from .loader import DocumentLoader, RawDocument
 
 logger = logging.getLogger("verarag.ingestion")
+
+_DOCUMENT_FIELDS = {"id", "doc_id", "text", "content", "title", "metadata"}
 
 
 class IngestionPipeline:
@@ -55,6 +58,10 @@ class IngestionPipeline:
         Returns:
             Initialized retriever with documents indexed
         """
+        if not chunks:
+            raise ValueError("Cannot build retriever index from zero chunks")
+
+        retriever_type = retriever_type.lower().strip()
         index_docs = [c.to_index_doc() for c in chunks]
 
         if retriever_type == "bm25":
@@ -72,7 +79,10 @@ class IngestionPipeline:
             from ..retriever.hybrid import HybridRetriever
             retriever = HybridRetriever(config=retriever_config)
         else:
-            raise ValueError(f"Unknown retriever type: {retriever_type}")
+            raise ValueError(
+                "Unknown retriever type: "
+                f"{retriever_type}. Expected one of: bm25, dense, faiss, hybrid"
+            )
 
         logger.info(f"Indexing {len(index_docs)} chunks with {retriever_type}...")
         retriever.index_documents(index_docs)
@@ -105,7 +115,7 @@ class IngestionPipeline:
 
     def ingest_and_index_from_docs(
         self,
-        documents: list,
+        documents: list[Mapping[str, Any]],
         retriever_type: str = "bm25",
         retriever_config: dict[str, Any] | None = None,
     ) -> tuple[list[Chunk], BaseRetriever]:
@@ -114,17 +124,47 @@ class IngestionPipeline:
         Returns:
             Tuple of (chunks, retriever)
         """
-        from .chunker import Chunk
-
         chunks: list[Chunk] = []
-        for doc in documents:
-            chunk = Chunk(
-                chunk_id=doc.get("id", ""),
-                doc_id=doc.get("id", ""),
-                text=doc.get("text", ""),
-                title=doc.get("title", ""),
-            )
+        seen_ids: set[str] = set()
+        for i, doc in enumerate(documents):
+            chunk = self._chunk_from_preparsed_document(doc, i)
+            if chunk.doc_id in seen_ids:
+                raise ValueError(f"Duplicate document id in pre-parsed documents: {chunk.doc_id}")
+            seen_ids.add(chunk.doc_id)
             chunks.append(chunk)
 
         retriever = self.build_retriever_index(chunks, retriever_type, retriever_config)
         return chunks, retriever
+
+    def _chunk_from_preparsed_document(
+        self,
+        document: Mapping[str, Any],
+        index: int,
+    ) -> Chunk:
+        if not isinstance(document, Mapping):
+            raise ValueError(f"Pre-parsed document {index} must be a mapping")
+
+        doc_id = document.get("id", document.get("doc_id"))
+        text = document.get("text", document.get("content"))
+        title = document.get("title", "")
+        metadata = document.get("metadata", {})
+
+        if doc_id is None or str(doc_id).strip() == "":
+            raise ValueError(f"Pre-parsed document {index} is missing a non-empty id")
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(f"Pre-parsed document {index} is missing non-empty text")
+        if metadata is None:
+            metadata = {}
+        if not isinstance(metadata, Mapping):
+            raise ValueError(f"Pre-parsed document {index} metadata must be a mapping")
+
+        extra_metadata = {k: v for k, v in document.items() if k not in _DOCUMENT_FIELDS}
+        merged_metadata = {**dict(metadata), **extra_metadata}
+        stable_id = str(doc_id).strip()
+        return Chunk(
+            chunk_id=stable_id,
+            doc_id=stable_id,
+            text=text.strip(),
+            title=str(title),
+            metadata=merged_metadata,
+        )

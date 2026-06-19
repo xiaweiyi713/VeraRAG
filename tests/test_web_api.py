@@ -4,11 +4,13 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, 'src')
 
 from fastapi.testclient import TestClient
 
+from web import api as web_api
 from web.app import create_app
 
 
@@ -16,12 +18,16 @@ class TestAPIEndpoints(unittest.TestCase):
     """Test API endpoints."""
 
     def setUp(self):
+        web_api._bm25_retriever = None
+        web_api._bm25_chunks = {}
         self.tmpfile = tempfile.NamedTemporaryFile(suffix='.db', delete=False)  # noqa: SIM115
         self.tmpfile.close()
         self.app = create_app(db_path=self.tmpfile.name)
         self.client = TestClient(self.app)
 
     def tearDown(self):
+        web_api._bm25_retriever = None
+        web_api._bm25_chunks = {}
         os.unlink(self.tmpfile.name)
 
     def test_home_page(self):
@@ -124,6 +130,50 @@ class TestAPIEndpoints(unittest.TestCase):
         queries = self.app.state.db.list_queries()
         self.assertGreater(len(queries), 0)
         self.assertIn("Demo question", queries[0]["question"])
+
+    def test_upload_extends_shared_index_without_deadlock(self):
+        response = self.client.post(
+            "/upload",
+            files={
+                "file": (
+                    "notes.txt",
+                    b"verarag_unique_upload_token describes uploaded evidence",
+                    "text/plain",
+                )
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        retriever, chunks = web_api._get_bm25()
+        self.assertIn("D001", chunks)
+        hits = retriever.retrieve("verarag_unique_upload_token", top_k=10)
+        self.assertTrue(any(hit.doc_id.startswith("upload-") for hit in hits))
+
+    def test_real_pipeline_receives_shared_web_index(self):
+        class FakeRetrievalAgent:
+            retriever = None
+
+        class FakePipeline:
+            retriever = None
+            retrieval_agent = FakeRetrievalAgent()
+
+        pipeline = web_api._build_indexed_pipeline(
+            lambda _config: FakePipeline(),
+            {},
+        )
+        shared_retriever, _chunks = web_api._get_bm25()
+
+        self.assertIs(pipeline.retriever, shared_retriever)
+        self.assertIs(pipeline.retrieval_agent.retriever, shared_retriever)
+
+    def test_upload_rejects_oversized_file(self):
+        with patch.object(web_api, "_MAX_UPLOAD_BYTES", 8):
+            response = self.client.post(
+                "/upload",
+                files={"file": ("large.txt", b"123456789", "text/plain")},
+            )
+
+        self.assertEqual(response.status_code, 413)
 
 
 if __name__ == "__main__":

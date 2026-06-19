@@ -2,7 +2,12 @@
 
 from typing import Any
 
-from ..utils.data_structures import AnswerClaim, Evidence, VerificationReport
+from ..utils.data_structures import (
+    AnswerClaim,
+    Evidence,
+    VerificationReport,
+    VerificationStatus,
+)
 from .base import BaseAgent
 
 
@@ -81,10 +86,12 @@ Output ONLY valid JSON, no other text."""
         evidence: list[Evidence]
     ) -> AnswerClaim:
         """Repair a single claim based on verification."""
-        status = verification["status"]
-        confidence = verification.get("confidence", claim.confidence)
+        status = self._normalize_status(verification["status"])
+        confidence = self._normalize_confidence(
+            verification.get("confidence", claim.confidence)
+        )
 
-        if status == "REFUTED":
+        if status is VerificationStatus.REFUTED:
             # Refuted claims should be removed or heavily qualified
             return AnswerClaim(
                 claim=self._downgrade_claim(claim.claim),
@@ -94,7 +101,7 @@ Output ONLY valid JSON, no other text."""
                 verification_status=status
             )
 
-        elif status == "NOT_ENOUGH_INFO":
+        elif status is VerificationStatus.NOT_ENOUGH_INFO:
             # Unsupported claims should be downgraded
             return AnswerClaim(
                 claim=self._add_uncertainty_hedge(claim.claim),
@@ -127,6 +134,32 @@ Output ONLY valid JSON, no other text."""
             return claim_text
         return hedge + claim_text
 
+    def _normalize_status(self, status: Any) -> VerificationStatus:
+        """Normalize verifier status values from enum, enum-name, or wire value."""
+        if isinstance(status, VerificationStatus):
+            return status
+        if not isinstance(status, str):
+            raise ValueError("verification status must be a VerificationStatus or string")
+
+        normalized = status.strip().lower()
+        by_name = {
+            "supported": VerificationStatus.SUPPORTED,
+            "refuted": VerificationStatus.REFUTED,
+            "not_enough_info": VerificationStatus.NOT_ENOUGH_INFO,
+            "not enough info": VerificationStatus.NOT_ENOUGH_INFO,
+            "nei": VerificationStatus.NOT_ENOUGH_INFO,
+        }
+        if normalized in by_name:
+            return by_name[normalized]
+
+        raise ValueError(f"Unknown verification status: {status}")
+
+    def _normalize_confidence(self, confidence: Any) -> float:
+        """Normalize and clamp verifier confidence into [0, 1]."""
+        if isinstance(confidence, bool) or not isinstance(confidence, int | float):
+            raise ValueError("verification confidence must be a number in [0, 1]")
+        return max(0.0, min(1.0, float(confidence)))
+
     def _generate_repaired_answer(
         self,
         original_answer: str,
@@ -147,7 +180,8 @@ Output ONLY valid JSON, no other text."""
             return "根据现有证据，信息不足，无法给出可靠回答。"
 
         has_unsupported = any(
-            getattr(c, "verification_status", None) in ("NOT_ENOUGH_INFO", "REFUTED")
+            getattr(c, "verification_status", None)
+            in (VerificationStatus.NOT_ENOUGH_INFO, VerificationStatus.REFUTED)
             for c in repaired_claims
         )
         caveat = "（注：上述部分论断证据有限，请谨慎对待。）"

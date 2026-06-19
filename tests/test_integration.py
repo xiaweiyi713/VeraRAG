@@ -11,6 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.utils.data_structures import (
+    Claim,
+    ClaimType,
+    ConflictEdge,
+    ConflictType,
+    Evidence,
+    EvidenceConflictGraph,
     VeraRAGOutput,
 )
 
@@ -117,6 +123,1042 @@ def _create_pipeline(config):
 
 
 class TestPipelineIntegration:
+    def test_original_question_retrieval_anchor_is_added(self):
+        from src.pipeline.verarag import VeraRAG
+        from src.utils.data_structures import SubQuestion
+
+        subquestions = [
+            SubQuestion(id="sq0", question="该法案的适用范围是什么？"),
+        ]
+
+        anchored = VeraRAG._ensure_original_question_retrieval_anchor(
+            "欧盟AI法案是否禁止所有人脸识别？",
+            subquestions,
+            requires_counter_evidence=True,
+        )
+
+        assert anchored[0].id == "sq_original"
+        assert anchored[0].question == "欧盟AI法案是否禁止所有人脸识别？"
+        assert anchored[0].requires_counter_evidence is True
+        assert anchored[1:] == subquestions
+
+    def test_original_question_retrieval_anchor_is_not_duplicated(self):
+        from src.pipeline.verarag import VeraRAG
+        from src.utils.data_structures import SubQuestion
+
+        subquestions = [
+            SubQuestion(id="sq0", question="欧盟AI法案是否禁止所有人脸识别？"),
+        ]
+
+        anchored = VeraRAG._ensure_original_question_retrieval_anchor(
+            "欧盟AI法案是否禁止所有人脸识别？",
+            subquestions,
+            requires_counter_evidence=True,
+        )
+
+        assert anchored == subquestions
+
+    def test_title_entity_anchors_filter_metric_phrases(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+
+        anchors = pipeline._title_entity_anchors("全球新能源汽车销量突破2000万辆")
+
+        assert "全球新能源汽车销量" not in anchors
+
+    def test_title_entity_anchors_keep_named_subjects(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+
+        company_anchors = pipeline._title_entity_anchors("星辰科技2023年度财务报告")
+        policy_anchors = pipeline._title_entity_anchors("欧盟人工智能法案：从提案到立法")
+
+        assert "星辰科技" in company_anchors
+        assert "欧盟AI法案" in policy_anchors
+
+    def test_retrieval_result_metadata_preserved_as_evidence_anchors(self, pipeline_config):
+        from src.pipeline.verarag import VeraRAG
+        from src.retriever.base import RetrievalResult
+
+        pipeline = VeraRAG({
+            **pipeline_config,
+            "retriever": {"type": "bm25"},
+        })
+        result = RetrievalResult(
+            doc_id="D017_c0",
+            content="欧盟AI法案已于2024年3月13日通过。",
+            title="欧盟AI法案",
+            score=0.9,
+            metadata={
+                "source": "official",
+                "date": "2024-03-13",
+                "url": "https://example.test/eu-ai-act",
+                "entities": ["欧盟AI法案"],
+            },
+        )
+
+        evidence = pipeline._retrieval_result_to_evidence(result)
+
+        assert evidence.entities == ["欧盟AI法案"]
+        assert evidence.date == "2024-03-13"
+        assert evidence.url == "https://example.test/eu-ai-act"
+
+    def test_question_focus_filters_unrelated_conflict_edges(self, pipeline_config):
+        pipeline = _create_pipeline({
+            **pipeline_config,
+            "pipeline": {
+                **pipeline_config["pipeline"],
+                "enable_verification": False,
+                "enable_repair": False,
+            },
+        })
+        passed = Claim(
+            claim_id="C_passed",
+            claim="欧盟AI法案已于2024年3月13日通过",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+        )
+        shelved = Claim(
+            claim_id="C_shelved",
+            claim="欧盟AI法案已无限期搁置",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+            source_span="reported_claim",
+        )
+        all_face = Claim(
+            claim_id="C_all_face",
+            claim="欧盟AI法案禁止所有人脸识别",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+        )
+        limited_face = Claim(
+            claim_id="C_limited_face",
+            claim="欧盟AI法案仅禁止实时远程生物识别",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+        )
+        evidence_pool = [
+            Evidence("E_passed", "official", "欧盟AI法案", "", claims=[passed], relevance_score=0.9),
+            Evidence("E_blog", "blog", "争议报道", "", claims=[shelved], relevance_score=0.5),
+            Evidence("E_scope", "report", "AI监管范围", "", claims=[all_face, limited_face], relevance_score=0.8),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_shelved", "C_passed", ConflictType.REFUTE, 0.9),
+            ConflictEdge("C_all_face", "C_limited_face", ConflictType.SCOPE_CONFLICT, 0.85),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "欧盟AI法案是否已经通过？",
+        )
+
+        assert [(edge.source_id, edge.target_id) for edge in filtered.get_conflicts()] == [
+            ("C_shelved", "C_passed")
+        ]
+
+    def test_question_fact_slot_filters_law_status_from_fine_question(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        passed = Claim(
+            claim_id="C_passed",
+            claim="欧盟AI法案已于2024年3月13日通过",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+        )
+        shelved = Claim(
+            claim_id="C_shelved",
+            claim="欧盟AI法案已无限期搁置",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+        )
+        evidence_pool = [
+            Evidence("E_passed", "official", "欧盟AI法案", "", claims=[passed]),
+            Evidence("E_shelved", "blog", "错误解读", "", claims=[shelved]),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_passed", "C_shelved", ConflictType.REFUTE, 0.9),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "欧盟AI法案将违规罚款上限设定为多少？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_question_fact_slot_filters_runtime_from_qubit_question(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        google_runtime = Claim(
+            claim_id="C_google_runtime",
+            claim="谷歌称经典超级计算机需要约10000年完成该计算任务",
+            claim_type=ClaimType.FACTUAL,
+            entities=["谷歌", "量子霸权"],
+            numbers=["10000年"],
+        )
+        ibm_runtime = Claim(
+            claim_id="C_ibm_runtime",
+            claim="IBM认为经典算法只需2.5天完成相同计算任务",
+            claim_type=ClaimType.FACTUAL,
+            entities=["谷歌", "IBM", "量子霸权"],
+            numbers=["2.5天"],
+        )
+        evidence = Evidence(
+            "D030_c0",
+            "paper",
+            "谷歌量子计算里程碑",
+            "",
+            claims=[google_runtime, ibm_runtime],
+        )
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_google_runtime",
+                "C_ibm_runtime",
+                ConflictType.NUMERIC_CONFLICT,
+                0.9,
+            ),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            [evidence],
+            "谷歌Willow量子处理器有多少个量子比特？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_question_fact_slot_checks_both_sides_of_mixed_claim(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        mixed = Claim(
+            claim_id="C_mixed",
+            claim="谷歌53量子比特处理器在200秒内完成采样任务",
+            claim_type=ClaimType.FACTUAL,
+            entities=["谷歌", "Sycamore"],
+            numbers=["53量子比特", "200秒"],
+        )
+        runtime = Claim(
+            claim_id="C_runtime",
+            claim="IBM认为经典算法可在2.5天内完成相同任务",
+            claim_type=ClaimType.FACTUAL,
+            entities=["谷歌", "IBM", "Sycamore"],
+            numbers=["2.5天"],
+        )
+        evidence = Evidence(
+            "D030_c0",
+            "paper",
+            "谷歌量子霸权论文",
+            "",
+            claims=[mixed, runtime],
+        )
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_mixed", "C_runtime", ConflictType.NUMERIC_CONFLICT, 0.9),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            [evidence],
+            "谷歌Willow量子处理器有多少个量子比特？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_opposite_attribute_values_share_question_fact_slot(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        decline = Claim(
+            claim_id="C_decline",
+            claim="全球碳排放已经开始下降",
+            claim_type=ClaimType.FACTUAL,
+            entities=["全球碳排放"],
+        )
+        growth = Claim(
+            claim_id="C_growth",
+            claim="全球化石燃料CO2排放仍在增长并创历史新高",
+            claim_type=ClaimType.FACTUAL,
+            entities=["全球碳排放"],
+        )
+        evidence = Evidence(
+            "E1",
+            "report",
+            "全球碳排放",
+            "",
+            claims=[decline, growth],
+        )
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_decline", "C_growth", ConflictType.SCOPE_CONFLICT, 0.9),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            [evidence],
+            "全球碳排放已经在下降了，对吗？",
+        )
+
+        assert len(filtered.get_conflicts()) == 1
+
+    def test_founder_question_filters_company_metric_conflicts(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        employees_official = Claim(
+            claim_id="C_employees_official",
+            claim="公司员工总数为41000人",
+            claim_type=ClaimType.FACTUAL,
+            entities=["星辰科技"],
+            numbers=["41000人"],
+        )
+        employees_media = Claim(
+            claim_id="C_employees_media",
+            claim="该公司员工已超过6万人",
+            claim_type=ClaimType.FACTUAL,
+            entities=["星辰科技"],
+            numbers=["6万人"],
+        )
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_employees_official",
+                "C_employees_media",
+                ConflictType.NUMERIC_CONFLICT,
+                0.8,
+            ),
+        ]
+        evidence = Evidence(
+            "E1",
+            "report",
+            "星辰科技",
+            "",
+            claims=[employees_official, employees_media],
+        )
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            [evidence],
+            "星辰科技的创始人是谁？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_strategy_question_filters_unrelated_runtime_dispute(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        google = Claim(
+            claim_id="C_google",
+            claim="谷歌称经典超算需要10000年完成采样",
+            claim_type=ClaimType.FACTUAL,
+            entities=["谷歌", "IBM"],
+            numbers=["10000年"],
+        )
+        ibm = Claim(
+            claim_id="C_ibm",
+            claim="IBM认为经典算法只需2.5天",
+            claim_type=ClaimType.FACTUAL,
+            entities=["谷歌", "IBM"],
+            numbers=["2.5天"],
+        )
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_google", "C_ibm", ConflictType.NUMERIC_CONFLICT, 0.9),
+        ]
+        evidence = Evidence("E1", "paper", "量子计算", "", claims=[google, ibm])
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            [evidence],
+            "比较谷歌和IBM在量子计算路线上的不同策略。",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_self_refutation_edge_requires_premise_validation_question(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        claim = Claim(
+            claim_id="C_emissions",
+            claim="全球碳排放仍在增长并创历史新高",
+            claim_type=ClaimType.FACTUAL,
+            entities=["全球碳排放"],
+        )
+        evidence = Evidence("E1", "report", "全球碳排放", "", claims=[claim])
+        edge = ConflictEdge(
+            "C_emissions",
+            "C_emissions",
+            ConflictType.SCOPE_CONFLICT,
+            0.72,
+            rationale="Claim says global emissions are growing or at a record high",
+        )
+
+        neutral_graph = EvidenceConflictGraph()
+        neutral_graph.edges = [edge]
+        neutral = pipeline._filter_conflict_graph_for_question(
+            neutral_graph,
+            [evidence],
+            "全球碳排放现状如何？",
+        )
+        assert neutral.get_conflicts() == []
+
+        validation_graph = EvidenceConflictGraph()
+        validation_graph.edges = [edge]
+        validation = pipeline._filter_conflict_graph_for_question(
+            validation_graph,
+            [evidence],
+            "全球碳排放已经在下降了，对吗？",
+        )
+        assert len(validation.get_conflicts()) == 1
+
+    def test_point_in_time_question_filters_expected_version_evolution(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        proposal = Claim(
+            claim_id="C_proposal",
+            claim="提案将罚款上限设定为3000万欧元或全球年营业额6%",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+            numbers=["3000万欧元", "6%"],
+        )
+        final = Claim(
+            claim_id="C_final",
+            claim="最终法案将罚款上限设定为3500万欧元或全球年营业额7%",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+            numbers=["3500万欧元", "7%"],
+        )
+        evidence_pool = [
+            Evidence(
+                "D002_c0",
+                "report",
+                "欧盟AI法案早期提案版本要点",
+                "2021年初始提案。",
+                date="2021-04-21",
+                claims=[proposal],
+            ),
+            Evidence(
+                "D001_c0",
+                "official",
+                "欧盟人工智能法案：从提案到立法",
+                "2024年最终通过。",
+                date="2024-03-13",
+                claims=[final],
+            ),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_proposal", "C_final", ConflictType.NUMERIC_CONFLICT, 0.9),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "欧盟AI法案将违规罚款上限设定为多少？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+        comparison = EvidenceConflictGraph()
+        comparison.edges = [
+            ConflictEdge("C_proposal", "C_final", ConflictType.NUMERIC_CONFLICT, 0.9),
+        ]
+        compared = pipeline._filter_conflict_graph_for_question(
+            comparison,
+            evidence_pool,
+            "欧盟AI法案早期提案与最终版本的罚款上限相比有何变化？",
+        )
+
+        assert len(compared.get_conflicts()) == 1
+
+    def test_reported_claim_conflict_dedupe_prefers_stronger_evidence(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        reported = Claim(
+            claim_id="C_reported",
+            claim="欧盟AI法案已无限期搁置",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+            source_span="reported_claim",
+        )
+        official = Claim(
+            claim_id="C_official",
+            claim="欧盟AI法案已于2024年3月13日通过",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+        )
+        blog = Claim(
+            claim_id="C_blog",
+            claim="欧盟AI法案的通过标志监管框架成型",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+        )
+        evidence_pool = [
+            Evidence("E_reported", "blog", "争议报道", "", claims=[reported], relevance_score=0.4),
+            Evidence("E_official", "official", "欧盟AI法案", "", claims=[official], relevance_score=0.95),
+            Evidence("E_blog", "blog", "政策评论", "", claims=[blog], relevance_score=0.7),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_reported", "C_blog", ConflictType.REFUTE, 0.95),
+            ConflictEdge("C_reported", "C_official", ConflictType.REFUTE, 0.8),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "欧盟AI法案是否已经通过？",
+        )
+
+        conflicts = filtered.get_conflicts()
+        assert len(conflicts) == 1
+        assert conflicts[0].target_id == "C_official"
+
+    def test_reported_claim_dedupe_prefers_newer_same_tier_evidence(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        reported = Claim(
+            claim_id="C_reported",
+            claim="星辰科技于2010年成立",
+            claim_type=ClaimType.FACTUAL,
+            entities=["星辰科技"],
+            source_span="reported_claim",
+        )
+        old_report = Claim(
+            claim_id="C_old_report",
+            claim="星辰科技由李明远博士于2012年创立",
+            claim_type=ClaimType.FACTUAL,
+            entities=["星辰科技"],
+        )
+        newer_wiki = Claim(
+            claim_id="C_newer_wiki",
+            claim="星辰科技由李明远博士于2012年在北京创立",
+            claim_type=ClaimType.FACTUAL,
+            entities=["星辰科技"],
+        )
+        evidence_pool = [
+            Evidence("E_reported", "news", "不实报道", "", claims=[reported], relevance_score=0.8),
+            Evidence("E_old", "report", "2022财报", "", date="2023-03-30", claims=[old_report]),
+            Evidence("E_new", "wiki", "公司介绍", "", date="2024-01-15", claims=[newer_wiki]),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_reported", "C_old_report", ConflictType.TEMPORAL_CONFLICT, 0.7),
+            ConflictEdge("C_reported", "C_newer_wiki", ConflictType.TEMPORAL_CONFLICT, 0.7),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "星辰科技2010年成立，对吗？",
+        )
+
+        conflicts = filtered.get_conflicts()
+        assert len(conflicts) == 1
+        assert conflicts[0].target_id == "C_newer_wiki"
+
+    def test_question_focus_filters_by_question_entity_and_year(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        reported = Claim(
+            claim_id="C_reported",
+            claim="星辰科技2023年营收突破800亿元",
+            claim_type=ClaimType.FACTUAL,
+            entities=["星辰科技"],
+            numbers=["2023年", "800亿元"],
+            time_expressions=["2023"],
+            source_span="reported_claim",
+        )
+        official_2023 = Claim(
+            claim_id="C_official_2023",
+            claim="星辰科技2023财年全年营收达到612亿元人民币",
+            claim_type=ClaimType.FACTUAL,
+            entities=["星辰科技"],
+            numbers=["2023", "612亿元"],
+            time_expressions=["2023"],
+        )
+        old_2022 = Claim(
+            claim_id="C_old_2022",
+            claim="星辰科技2022财年全年营收为458亿元人民币",
+            claim_type=ClaimType.FACTUAL,
+            entities=["星辰科技"],
+            numbers=["2022", "458亿元"],
+            time_expressions=["2022"],
+        )
+        industry = Claim(
+            claim_id="C_industry",
+            claim="2023年AI芯片市场营收增长超过200%",
+            claim_type=ClaimType.FACTUAL,
+            entities=["AI芯片市场"],
+            numbers=["2023年", "200%"],
+            time_expressions=["2023"],
+        )
+        evidence_pool = [
+            Evidence("E_reported", "news", "不实报道", "", claims=[reported], relevance_score=0.8),
+            Evidence("E_official", "report", "2023财报", "", claims=[official_2023], relevance_score=0.9),
+            Evidence("E_old", "report", "2022财报", "", claims=[old_2022], relevance_score=0.7),
+            Evidence("E_industry", "report", "行业报告", "", claims=[industry], relevance_score=0.9),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_reported", "C_old_2022", ConflictType.NUMERIC_CONFLICT, 0.9),
+            ConflictEdge("C_reported", "C_industry", ConflictType.NUMERIC_CONFLICT, 0.95),
+            ConflictEdge("C_reported", "C_official_2023", ConflictType.NUMERIC_CONFLICT, 0.7),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "星辰科技2023年的营收是多少？",
+        )
+
+        conflicts = filtered.get_conflicts()
+        assert len(conflicts) == 1
+        assert conflicts[0].target_id == "C_official_2023"
+
+    def test_question_focus_does_not_match_only_weak_ai_entity(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        medical = Claim(
+            claim_id="C_medical",
+            claim="AI医疗诊断也面临诸多挑战",
+            claim_type=ClaimType.FACTUAL,
+            entities=["AI医疗"],
+        )
+        shelved = Claim(
+            claim_id="C_shelved",
+            claim="欧盟AI法案已无限期搁置",
+            claim_type=ClaimType.FACTUAL,
+            entities=["AI", "欧盟AI法案"],
+        )
+        passed = Claim(
+            claim_id="C_passed",
+            claim="欧盟AI法案已于2024年3月通过",
+            claim_type=ClaimType.FACTUAL,
+            entities=["AI", "欧盟AI法案"],
+        )
+        evidence_pool = [
+            Evidence("E_medical", "paper", "AI医疗诊断", "", entities=["AI医疗"], claims=[medical]),
+            Evidence("E_blog", "blog", "AI监管争议", "", entities=["AI", "欧盟AI法案"], claims=[shelved]),
+            Evidence("E_official", "official", "欧盟AI法案", "", entities=["AI", "欧盟AI法案"], claims=[passed]),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_shelved", "C_passed", ConflictType.REFUTE, 0.9),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "中国AI医疗诊断技术已经被证明全面超越人类医生，对吗？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_question_focus_requires_strong_entity_when_ai_is_broad(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        us_policy = Claim(
+            claim_id="C_us",
+            claim="美国目前尚未通过联邦层面的综合性AI立法",
+            claim_type=ClaimType.FACTUAL,
+            entities=["美国", "AI"],
+        )
+        shelved = Claim(
+            claim_id="C_shelved",
+            claim="欧盟AI法案已无限期搁置",
+            claim_type=ClaimType.FACTUAL,
+            entities=["AI", "欧盟AI法案"],
+        )
+        passed = Claim(
+            claim_id="C_passed",
+            claim="欧盟AI法案已于2024年3月通过",
+            claim_type=ClaimType.FACTUAL,
+            entities=["AI", "欧盟AI法案"],
+        )
+        evidence_pool = [
+            Evidence("E_us", "official", "美国AI行政命令", "", entities=["美国", "AI"], claims=[us_policy]),
+            Evidence("E_blog", "blog", "AI监管争议", "", entities=["AI", "欧盟AI法案"], claims=[shelved]),
+            Evidence("E_official", "official", "欧盟AI法案", "", entities=["AI", "欧盟AI法案"], claims=[passed]),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_shelved", "C_passed", ConflictType.REFUTE, 0.9),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "美国已经通过了联邦层面的综合性AI立法，对吗？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_extrapolation_questions_drop_same_evidence_numeric_edges(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        quantum = Claim(
+            claim_id="C_quantum",
+            claim="谷歌量子处理器用约200秒完成采样任务，IBM认为经典算法约2.5天可完成",
+            claim_type=ClaimType.FACTUAL,
+            entities=["量子霸权", "谷歌", "IBM"],
+            numbers=["200秒", "2.5天"],
+        )
+        evidence_pool = [
+            Evidence("E_quantum", "paper", "量子霸权争议", "", entities=["量子霸权", "谷歌", "IBM"], claims=[quantum]),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_quantum", "C_quantum", ConflictType.NUMERIC_CONFLICT, 0.9),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "既然谷歌2019年就实现了量子霸权，量子计算机现在应该已经取代经典计算机了，对吧？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_extrapolation_questions_drop_global_emissions_self_refutation(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        emissions = Claim(
+            claim_id="C_emissions",
+            claim="2023年全球化石燃料CO2排放量预计达到368亿吨，较2022年增长1.1%，创历史新高",
+            claim_type=ClaimType.FACTUAL,
+            entities=["CO2", "碳排放"],
+            numbers=["2023年", "368亿", "2022年", "1.1%"],
+        )
+        evidence_pool = [
+            Evidence("E_emissions", "report", "全球碳计划2023年度报告", "", entities=["CO2", "碳排放"], claims=[emissions]),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_emissions",
+                "C_emissions",
+                ConflictType.SCOPE_CONFLICT,
+                0.72,
+                rationale="Claim says global emissions are growing or at a record high",
+            ),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "既然全球碳排放还在创新高，减排政策是不是完全无效？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_implication_questions_drop_process_self_refutation(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        process = Claim(
+            claim_id="C_process",
+            claim='"3nm"和"5nm"等命名已不再代表实际的物理栅极长度',
+            claim_type=ClaimType.FACTUAL,
+            entities=["芯片制程", "台积电"],
+            numbers=["3nm", "5nm"],
+        )
+        evidence_pool = [
+            Evidence("E_process", "blog", "关于芯片制程的常见误解", "", entities=["芯片制程", "台积电"], claims=[process]),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_process",
+                "C_process",
+                ConflictType.DEFINITIONAL_CONFLICT,
+                0.72,
+                rationale="Process-node naming is explicitly distinguished from physical dimensions",
+            ),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "台积电的3nm工艺意味着晶体管栅极长度只有3纳米，对吗？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_advanced_packaging_self_refutation_requires_packaging_focus(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        packaging = Claim(
+            claim_id="C_packaging",
+            claim="随着摩尔定律放缓，先进封装成为延续芯片性能提升的关键路径",
+            claim_type=ClaimType.FACTUAL,
+            entities=["先进封装", "台积电"],
+        )
+        evidence_pool = [
+            Evidence("E_packaging", "report", "半导体先进封装技术演进", "", entities=["先进封装", "台积电"], claims=[packaging]),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_packaging",
+                "C_packaging",
+                ConflictType.DEFINITIONAL_CONFLICT,
+                0.72,
+                rationale="Claim frames advanced packaging as one improvement path, not a complete process replacement",
+            ),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "台积电的3nm工艺意味着晶体管栅极长度只有3纳米，对吗？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_process_self_refutation_kept_for_matching_question_focus(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        process = Claim(
+            claim_id="C_process",
+            claim='"3nm"和"5nm"等命名已不再代表实际的物理栅极长度',
+            claim_type=ClaimType.FACTUAL,
+            entities=["芯片制程"],
+            numbers=["3nm", "5nm"],
+        )
+        evidence_pool = [
+            Evidence("E_process", "blog", "关于芯片制程的常见误解", "", entities=["芯片制程"], claims=[process]),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_process", "C_process", ConflictType.DEFINITIONAL_CONFLICT, 0.72),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            '芯片制程中的"3nm"是否代表实际的3纳米物理尺寸？',
+        )
+
+        assert len(filtered.get_conflicts()) == 1
+
+    def test_co2_entity_matches_carbon_emissions_question(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        emissions = Claim(
+            claim_id="C_emissions",
+            claim="2023年全球化石燃料CO2排放量预计达到368亿吨，较2022年增长1.1%，创历史新高",
+            claim_type=ClaimType.FACTUAL,
+            entities=["CO2", "化石燃料"],
+            numbers=["2023年", "368亿", "2022年", "1.1%"],
+        )
+        evidence_pool = [
+            Evidence("E_emissions", "report", "全球碳计划2023年度报告", "", entities=["CO2", "碳排放"], claims=[emissions]),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_emissions",
+                "C_emissions",
+                ConflictType.SCOPE_CONFLICT,
+                0.72,
+                rationale="Claim says global emissions are growing or at a record high",
+            ),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "全球碳排放已经在下降了，对吗？",
+        )
+
+        assert len(filtered.get_conflicts()) == 1
+
+    def test_contrast_entity_does_not_satisfy_question_focus(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        us_law = Claim(
+            claim_id="C_us_law",
+            claim="与欧盟AI法案不同，美国目前尚未通过联邦层面的综合性AI立法",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案", "美国", "AI"],
+        )
+        evidence_pool = [
+            Evidence("E_us", "official", "美国AI行政命令", "", entities=["欧盟AI法案", "美国", "AI"], claims=[us_law]),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_us_law", "C_us_law", ConflictType.DEFINITIONAL_CONFLICT, 0.72),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "欧盟AI法案目前处于什么状态？是否已经通过？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_assertion_question_year_is_not_used_as_strict_filter(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        reported = Claim(
+            claim_id="C_reported",
+            claim="星辰科技于2010年成立",
+            claim_type=ClaimType.FACTUAL,
+            entities=["星辰科技"],
+            numbers=["2010年"],
+            time_expressions=["2010"],
+            source_span="reported_claim",
+        )
+        corrected = Claim(
+            claim_id="C_corrected",
+            claim="星辰科技由李明远博士于2012年在北京创立",
+            claim_type=ClaimType.FACTUAL,
+            entities=["星辰科技"],
+            numbers=["2012年"],
+            time_expressions=["2012"],
+        )
+        evidence_pool = [
+            Evidence("E_reported", "news", "不实报道", "", claims=[reported], relevance_score=0.8),
+            Evidence("E_wiki", "wiki", "公司介绍", "", claims=[corrected], relevance_score=0.9),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_reported", "C_corrected", ConflictType.TEMPORAL_CONFLICT, 0.7),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "星辰科技2010年成立，对吗？",
+        )
+
+        assert len(filtered.get_conflicts()) == 1
+
+    def test_question_focus_requires_at_least_one_question_entity_match(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        relevant = Claim(
+            claim_id="C_relevant",
+            claim="谷歌称量子霸权计算需要10000年",
+            claim_type=ClaimType.FACTUAL,
+            entities=["谷歌", "量子霸权"],
+            numbers=["10000年"],
+        )
+        relevant_other = Claim(
+            claim_id="C_relevant_other",
+            claim="IBM认为该任务可在2.5天内完成",
+            claim_type=ClaimType.FACTUAL,
+            entities=["IBM", "量子霸权"],
+            numbers=["2.5"],
+        )
+        unrelated = Claim(
+            claim_id="C_unrelated",
+            claim="3nm命名不代表实际栅极长度",
+            claim_type=ClaimType.FACTUAL,
+            entities=["芯片制程"],
+            numbers=["3"],
+        )
+        unrelated_other = Claim(
+            claim_id="C_unrelated_other",
+            claim="3nm工艺实际栅极长度约20nm",
+            claim_type=ClaimType.FACTUAL,
+            entities=["芯片制程"],
+            numbers=["20"],
+        )
+        evidence_pool = [
+            Evidence("E_quantum", "paper", "量子霸权", "", claims=[relevant, relevant_other]),
+            Evidence("E_chip", "blog", "芯片制程", "", claims=[unrelated, unrelated_other]),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_relevant", "C_relevant_other", ConflictType.NUMERIC_CONFLICT, 0.9),
+            ConflictEdge("C_unrelated", "C_unrelated_other", ConflictType.NUMERIC_CONFLICT, 0.9),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "谷歌2019年宣称实现量子霸权，IBM对此有何不同看法？",
+        )
+
+        assert [(edge.source_id, edge.target_id) for edge in filtered.get_conflicts()] == [
+            ("C_relevant", "C_relevant_other")
+        ]
+
+    def test_question_focus_uses_evidence_entities_without_broad_substring_leak(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        focused = Claim(
+            claim_id="C_focused",
+            claim="3nm命名不代表实际3纳米尺寸",
+            claim_type=ClaimType.FACTUAL,
+            entities=["芯片制程", "纳米"],
+        )
+        focused_other = Claim(
+            claim_id="C_focused_other",
+            claim="3nm工艺实际栅极长度约20nm",
+            claim_type=ClaimType.FACTUAL,
+            entities=["芯片制程", "纳米"],
+        )
+        broad = Claim(
+            claim_id="C_broad",
+            claim="中芯国际已量产14nm工艺",
+            claim_type=ClaimType.FACTUAL,
+            entities=["中国芯片", "中芯国际"],
+        )
+        evidence_pool = [
+            Evidence("E_focused", "blog", "芯片制程", "", entities=["芯片制程"], claims=[focused, focused_other]),
+            Evidence("E_broad", "report", "中国芯片", "", entities=["中国芯片"], claims=[broad]),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge("C_focused", "C_focused_other", ConflictType.NUMERIC_CONFLICT, 0.9),
+            ConflictEdge("C_focused", "C_broad", ConflictType.NUMERIC_CONFLICT, 0.9),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            '芯片制程中的"3nm"是否代表实际的3纳米物理尺寸？',
+        )
+
+        assert [(edge.source_id, edge.target_id) for edge in filtered.get_conflicts()] == [
+            ("C_focused", "C_focused_other")
+        ]
+
+    def test_answerability_guard_abstains_on_exact_question_with_approximate_evidence(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                "D040_c0",
+                "report",
+                "2023年中国新能源汽车市场年终报告",
+                "2023年中国新能源汽车销量949.5万辆。其中纯电动汽车销量667.6万辆，"
+                "插电式混合动力销量268.6万辆，燃料电池汽车销量约6000辆。",
+                relevance_score=0.95,
+            ),
+            Evidence(
+                "D043_c0",
+                "report",
+                "比亚迪vs特斯拉：2023年全球销量对比",
+                "比亚迪全球销售约302.4万辆新能源汽车，特斯拉全球交付约181万辆纯电动汽车。",
+                relevance_score=0.4,
+            ),
+        ]
+
+        answer, claims, steps, guard = pipeline._apply_answerability_guard(
+            "2023年中国氢燃料电池汽车的具体销量是多少？",
+            "2023年中国氢燃料电池汽车的具体销量约为6000辆。",
+            [],
+            [],
+            evidence,
+        )
+
+        assert guard == {"action": "exact_value_gap_abstain"}
+        assert answer.startswith("无法给出精确数字")
+        assert "约6000辆" in answer
+        assert "D040_c0" in answer
+        assert claims[0].supporting_evidence[0] == "D040_c0"
+        assert steps[0].evidence_ids[0] == "D040_c0"
+
+    def test_answerability_guard_turns_assertion_abstention_into_premise_correction(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+
+        answer, claims, steps, guard = pipeline._apply_answerability_guard(
+            "既然IPCC说全球升温会在2020年代达到1.5度，那巴黎协定的目标是不是已经失败了？",
+            "根据现有证据无法回答此问题。证据中提及IPCC报告指出全球升温将在2020年代达到1.5°C，"
+            "但并未明确说明巴黎协定目标是否因此失败。",
+            [],
+            [],
+            [],
+        )
+
+        assert guard == {"action": "premise_abstention_corrected"}
+        assert answer.startswith("该说法不准确")
+        assert "不能根据现有证据断定" in answer
+        assert "巴黎协定的目标" in answer
+        assert "无法回答此问题" not in answer
+        assert claims[0].claim == "问题中的断言缺乏充分证据支持"
+        assert steps[0].description.startswith("识别到这是前提/断言验证问题")
+
     def test_full_pipeline_run(self, pipeline_config):
         """Test that the full pipeline runs end-to-end with mock LLM."""
         pipeline = _create_pipeline(pipeline_config)

@@ -14,8 +14,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy project
 COPY . .
 
-# Install editable
-RUN pip install --no-cache-dir -e ".[all]"
+# Install package and prepare writable runtime data directory
+RUN pip install --no-cache-dir . && \
+    groupadd --system verarag && \
+    useradd --system --gid verarag --home-dir /app --shell /usr/sbin/nologin verarag && \
+    mkdir -p /app/data && \
+    chown -R verarag:verarag /app
 
 # Default port
 EXPOSE 8000
@@ -23,4 +27,9 @@ EXPOSE 8000
 # Data volume
 VOLUME /app/data
 
-CMD ["python", "-m", "uvicorn", "web.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+USER verarag
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/status', timeout=2).read()" || exit 1
+
+CMD ["verarag-web", "--host", "0.0.0.0", "--port", "8000"]

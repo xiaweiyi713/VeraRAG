@@ -55,7 +55,7 @@ class ReasoningAgent(BaseAgent):
         evidence_context = self._prepare_evidence_context(evidence)
 
         # Prepare conflict context
-        conflict_context = self._prepare_conflict_context(conflict_graph)
+        conflict_context = self._prepare_conflict_context(conflict_graph, evidence)
 
         prompt = f"""请基于下列证据回答问题。用简体中文作答。
 
@@ -102,7 +102,7 @@ class ReasoningAgent(BaseAgent):
 
 要求：
 1. 仅依据上面提供的证据作答，不要使用证据之外的知识
-2. 拒答(A)、纠正前提(B)、标注冲突(C) 三种情形必须严格按上述措辞明确表达，不要含糊带过
+2. 拒答(A)、纠正前提(B)、标注冲突(C) 三种情形必须严格按上述措辞明确表达，不要含糊带过；只要“证据中检测到的冲突”不是 No significant conflicts detected，answer 必须包含“冲突”“不一致”“错误”或“不准确”等明确字样
 3. supporting_evidence/evidence_ids 使用证据条目方括号内的编号（如 D001_c0）
 4. confidence 依据证据强度赋值；拒答时各论断 confidence 应较低
 5. 每个 answer_claim 标注：claim_type（factual 直接来自证据 / inference 推断得出 / prediction 前瞻预测）、verifiable（能否对照证据核验）、support_type（direct 证据明确陈述 / indirect 需推断 / none 无支撑）
@@ -142,6 +142,13 @@ class ReasoningAgent(BaseAgent):
                 for i, r in enumerate(data.get("reasoning_chain", []))
             ]
 
+            answer, claims, reasoning = self._ensure_conflict_acknowledged(
+                answer,
+                claims,
+                reasoning,
+                conflict_graph,
+                evidence,
+            )
             return answer, claims, reasoning
 
         except (json.JSONDecodeError, KeyError):
@@ -159,21 +166,107 @@ class ReasoningAgent(BaseAgent):
 
         return "\n".join(contexts)
 
-    def _prepare_conflict_context(self, conflict_graph: EvidenceConflictGraph) -> str:
+    def _prepare_conflict_context(
+        self,
+        conflict_graph: EvidenceConflictGraph,
+        evidence: list[Evidence],
+    ) -> str:
         """Prepare conflict context for the prompt."""
         conflicts = conflict_graph.get_conflicts()
 
         if not conflicts:
             return "No significant conflicts detected."
 
+        claim_lookup = self._claim_lookup(evidence, conflict_graph)
         contexts = []
         for c in conflicts[:10]:
             contexts.append(
-                f"- {c.conflict_type.value}: {c.source_id} ↔ {c.target_id} "
-                f"(confidence: {c.confidence:.2f})"
+                f"- {c.conflict_type.value} (confidence: {c.confidence:.2f}): "
+                f"{self._format_conflict_side(c.source_id, claim_lookup)} vs "
+                f"{self._format_conflict_side(c.target_id, claim_lookup)}"
             )
 
         return "\n".join(contexts)
+
+    @staticmethod
+    def _claim_lookup(
+        evidence: list[Evidence],
+        conflict_graph: EvidenceConflictGraph,
+    ) -> dict[str, dict[str, str]]:
+        lookup = {}
+        for ev in evidence:
+            for claim in ev.claims:
+                lookup[claim.claim_id] = {
+                    "evidence_id": ev.evidence_id,
+                    "title": ev.title,
+                    "claim": claim.claim,
+                }
+        for node_id, node in conflict_graph.nodes.items():
+            if node_id not in lookup:
+                lookup[node_id] = {
+                    "evidence_id": node.evidence_ids[0] if node.evidence_ids else node_id,
+                    "title": "",
+                    "claim": node.content,
+                }
+        return lookup
+
+    @staticmethod
+    def _format_conflict_side(claim_id: str, claim_lookup: dict[str, dict[str, str]]) -> str:
+        item = claim_lookup.get(claim_id)
+        if not item:
+            return claim_id
+        title = f" {item['title']}" if item["title"] else ""
+        claim = item["claim"][:160]
+        return f"[{item['evidence_id']}]{title}: {claim}"
+
+    def _ensure_conflict_acknowledged(
+        self,
+        answer: str,
+        claims: list[AnswerClaim],
+        reasoning: list[ReasoningStep],
+        conflict_graph: EvidenceConflictGraph,
+        evidence: list[Evidence],
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep]]:
+        conflicts = conflict_graph.get_conflicts()
+        if not conflicts:
+            return answer, claims, reasoning
+
+        acknowledgement_keywords = ("冲突", "矛盾", "不一致", "争议", "错误", "不准确", "不实")
+        if any(keyword in answer for keyword in acknowledgement_keywords):
+            return answer, claims, reasoning
+
+        claim_lookup = self._claim_lookup(evidence, conflict_graph)
+        first = conflicts[0]
+        source = claim_lookup.get(first.source_id, {})
+        target = claim_lookup.get(first.target_id, {})
+        source_ev = source.get("evidence_id", first.source_id)
+        target_ev = target.get("evidence_id", first.target_id)
+        source_claim = source.get("claim", first.source_id)[:80]
+        target_claim = target.get("claim", first.target_id)[:80]
+        note = (
+            f"证据存在冲突：{source_ev} 提到“{source_claim}”，"
+            f"而 {target_ev} 提到“{target_claim}”。"
+        )
+        answer = f"{note}综合判断，{answer}"
+
+        conflict_evidence = list(dict.fromkeys([source_ev, target_ev]))
+        for claim in claims:
+            claim.conflicting_evidence = list(dict.fromkeys([
+                *claim.conflicting_evidence,
+                *conflict_evidence,
+            ]))
+        reasoning.insert(
+            0,
+            ReasoningStep(
+                step=1,
+                description="先检查证据冲突并在回答中显式标注不一致信息。",
+                evidence_ids=conflict_evidence,
+                confidence=first.confidence,
+            ),
+        )
+        for index, step in enumerate(reasoning, start=1):
+            step.step = index
+        return answer, claims, reasoning
 
     def _fallback_answer(
         self,

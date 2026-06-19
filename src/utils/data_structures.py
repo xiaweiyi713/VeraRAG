@@ -186,7 +186,7 @@ class EvidenceConflictGraph:
     - Source disagreements
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.nodes: dict[str, ConflictGraphNode] = {}
         self.edges: list[ConflictEdge] = []
 

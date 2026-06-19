@@ -21,6 +21,20 @@ class BaseRetriever(ABC):
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
 
+    def _validate_top_k(self, top_k: int) -> int:
+        """Validate a retrieval limit shared by all retrievers."""
+        if isinstance(top_k, bool) or not isinstance(top_k, int):
+            raise TypeError("top_k must be an integer")
+        if top_k < 0:
+            raise ValueError("top_k must be non-negative")
+        return top_k
+
+    def _validate_query(self, query: str) -> str:
+        """Validate a query string shared by all retrievers."""
+        if not isinstance(query, str):
+            raise TypeError("query must be a string")
+        return query
+
     @abstractmethod
     def retrieve(
         self,
@@ -39,7 +53,7 @@ class BaseRetriever(ABC):
         Returns:
             List of retrieval results
         """
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def index_documents(
@@ -52,7 +66,7 @@ class BaseRetriever(ABC):
         Args:
             documents: List of documents with 'id' and 'text' fields
         """
-        pass
+        raise NotImplementedError
 
     def batch_retrieve(
         self,
@@ -71,6 +85,11 @@ class BaseRetriever(ABC):
         Returns:
             List of retrieval result lists
         """
+        if not isinstance(queries, list):
+            raise TypeError("queries must be a list of strings")
+        for query in queries:
+            self._validate_query(query)
+        top_k = self._validate_top_k(top_k)
         return [self.retrieve(q, top_k, **kwargs) for q in queries]
 
     def save_index(self, path: str) -> None:

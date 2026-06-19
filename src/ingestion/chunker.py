@@ -36,6 +36,19 @@ class TextChunker:
         strategy: str = "fixed",
         min_chunk_size: int = 50,
     ):
+        strategies = {"fixed", "sentence", "paragraph", "heading"}
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be greater than 0")
+        if chunk_overlap < 0:
+            raise ValueError("chunk_overlap must be greater than or equal to 0")
+        if chunk_overlap >= chunk_size:
+            raise ValueError("chunk_overlap must be smaller than chunk_size")
+        if min_chunk_size < 0:
+            raise ValueError("min_chunk_size must be greater than or equal to 0")
+        if strategy not in strategies:
+            allowed = ", ".join(sorted(strategies))
+            raise ValueError(f"Unknown chunking strategy: {strategy}. Expected one of: {allowed}")
+
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.strategy = strategy
@@ -65,23 +78,47 @@ class TextChunker:
         text_chunks = chunker(doc.content)
 
         chunks: list[Chunk] = []
-        for i, text in enumerate(text_chunks):
+        pending_small: list[str] = []
+        for text in text_chunks:
             text = text.strip()
             if len(text) < self.min_chunk_size:
                 if chunks:
                     chunks[-1].text += "\n" + text
+                else:
+                    pending_small.append(text)
                 continue
+            if pending_small:
+                text = "\n".join([*pending_small, text])
+                pending_small = []
+            chunk_index = len(chunks)
             chunks.append(Chunk(
-                chunk_id=f"{doc.doc_id}_c{i}",
+                chunk_id=f"{doc.doc_id}_c{chunk_index}",
                 doc_id=doc.doc_id,
                 text=text,
                 title=doc.title,
                 metadata={
                     "source": doc.source,
-                    "chunk_index": i,
+                    "chunk_index": chunk_index,
                     **doc.metadata,
                 },
             ))
+
+        if pending_small:
+            text = "\n".join(pending_small).strip()
+            if chunks:
+                chunks[-1].text += "\n" + text
+            elif text:
+                chunks.append(Chunk(
+                    chunk_id=f"{doc.doc_id}_c0",
+                    doc_id=doc.doc_id,
+                    text=text,
+                    title=doc.title,
+                    metadata={
+                        "source": doc.source,
+                        "chunk_index": 0,
+                        **doc.metadata,
+                    },
+                ))
 
         return chunks
 
@@ -112,7 +149,13 @@ class TextChunker:
 
     def _heading_chunk(self, text: str) -> list[str]:
         sections = re.split(r'\n(?=#{1,4}\s)', text)
-        return [s.strip() for s in sections if s.strip()]
+        chunks: list[str] = []
+        for section in sections:
+            section = section.strip()
+            if not section:
+                continue
+            chunks.extend(self._split_oversized_text(section))
+        return chunks
 
     def _split_sentences(self, text: str) -> list[str]:
         # Split on Chinese and English sentence endings
@@ -126,19 +169,31 @@ class TextChunker:
 
         for sent in sentences:
             sent_len = len(sent)
-            if current_len + sent_len > self.chunk_size and current:
+            if sent_len > self.chunk_size:
+                if current:
+                    chunks.append(" ".join(current))
+                    current = []
+                    current_len = 0
+                chunks.extend(self._fixed_chunk(sent))
+                continue
+
+            separator_len = 1 if current else 0
+            if current_len + separator_len + sent_len > self.chunk_size and current:
                 chunks.append(" ".join(current))
                 # Keep overlap
                 overlap_sents: list[str] = []
                 overlap_len = 0
                 for s in reversed(current):
-                    if overlap_len + len(s) > self.chunk_overlap:
+                    next_len = overlap_len + (1 if overlap_sents else 0) + len(s)
+                    if next_len > self.chunk_overlap:
                         break
                     overlap_sents.insert(0, s)
-                    overlap_len += len(s)
+                    overlap_len = next_len
                 current = overlap_sents
                 current_len = overlap_len
 
+            if current:
+                current_len += 1
             current.append(sent)
             current_len += sent_len
 
@@ -154,15 +209,35 @@ class TextChunker:
 
         for para in paragraphs:
             para_len = len(para)
-            if current_len + para_len > self.chunk_size and current:
+            if para_len > self.chunk_size:
+                if current:
+                    chunks.append("\n\n".join(current))
+                    current = []
+                    current_len = 0
+                chunks.extend(self._split_oversized_text(para))
+                continue
+
+            separator_len = 2 if current else 0
+            if current_len + separator_len + para_len > self.chunk_size and current:
                 chunks.append("\n\n".join(current))
                 current = [para]
                 current_len = para_len
             else:
                 current.append(para)
-                current_len += para_len
+                current_len += separator_len + para_len
 
         if current:
             chunks.append("\n\n".join(current))
 
         return chunks
+
+    def _split_oversized_text(self, text: str) -> list[str]:
+        text = text.strip()
+        if len(text) <= self.chunk_size:
+            return [text] if text else []
+
+        sentences = self._split_sentences(text)
+        if len(sentences) > 1:
+            return self._merge_sentences(sentences)
+
+        return self._fixed_chunk(text)

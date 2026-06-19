@@ -51,12 +51,17 @@ class ConfidenceCalibrator:
         Returns:
             Optimal temperature value
         """
+        predictions = np.asarray(predictions, dtype=float)
+        labels = np.asarray(labels, dtype=float)
+        self._validate_temperature_inputs(predictions, labels, max_iter, lr)
+
         # Initialize temperature
         temperature = 1.0
 
         # Convert to probabilities if needed
-        if predictions.max() <= 1.0:
-            logits = np.log(predictions / (1 - predictions + 1e-10))
+        if np.all((predictions >= 0.0) & (predictions <= 1.0)):
+            clipped = np.clip(predictions, 1e-6, 1.0 - 1e-6)
+            logits = np.log(clipped / (1.0 - clipped))
         else:
             logits = predictions
 
@@ -126,7 +131,11 @@ class ConfidenceCalibrator:
             Dictionary with calibration metrics
         """
         if not confidences:
+            if correct:
+                raise ValueError("confidences and correct must have the same length")
             return {"ece": 0.0, "brier_score": 0.0}
+
+        self._validate_metric_inputs(confidences, correct)
 
         # Expected Calibration Error (ECE)
         ece = self._compute_ece(confidences, correct)
@@ -151,11 +160,19 @@ class ConfidenceCalibrator:
         bin_uppers = bin_boundaries[1:]
 
         ece = 0.0
-        for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):  # noqa: B905
-            in_bin = [
-                (c, r) for c, r in zip(confidences, correct)  # noqa: B905
-                if bin_lower <= c < bin_upper
-            ]
+        for index, (bin_lower, bin_upper) in enumerate(
+            zip(bin_lowers, bin_uppers, strict=True)
+        ):
+            if index == n_bins - 1:
+                in_bin = [
+                    (c, r) for c, r in zip(confidences, correct, strict=True)
+                    if bin_lower <= c <= bin_upper
+                ]
+            else:
+                in_bin = [
+                    (c, r) for c, r in zip(confidences, correct, strict=True)
+                    if bin_lower <= c < bin_upper
+                ]
 
             if not in_bin:
                 continue
@@ -179,3 +196,41 @@ class ConfidenceCalibrator:
         brier = sum((c - l) ** 2 for c, l in zip(confidences, labels)) / len(confidences)  # noqa: E741, B905
 
         return brier
+
+    @staticmethod
+    def _validate_temperature_inputs(
+        predictions: np.ndarray,
+        labels: np.ndarray,
+        max_iter: int,
+        lr: float,
+    ) -> None:
+        """Validate inputs before numeric temperature optimization."""
+        if predictions.shape != labels.shape:
+            raise ValueError("predictions and labels must have the same shape")
+        if predictions.size == 0:
+            raise ValueError("temperature calibration requires at least one sample")
+        if max_iter < 0:
+            raise ValueError("max_iter must be non-negative")
+        if lr <= 0:
+            raise ValueError("lr must be positive")
+        if not np.all(np.isfinite(predictions)):
+            raise ValueError("predictions must be finite")
+        if not np.all(np.isfinite(labels)):
+            raise ValueError("labels must be finite")
+        if not np.all((labels == 0.0) | (labels == 1.0)):
+            raise ValueError("labels must be binary 0/1 values")
+
+    @staticmethod
+    def _validate_metric_inputs(
+        confidences: list[float],
+        correct: list[bool],
+    ) -> None:
+        """Validate confidence/correctness vectors for calibration metrics."""
+        if len(confidences) != len(correct):
+            raise ValueError("confidences and correct must have the same length")
+        for confidence in confidences:
+            if not np.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+                raise ValueError("confidences must be finite values in [0, 1]")
+        for is_correct in correct:
+            if not isinstance(is_correct, bool | np.bool_):
+                raise ValueError("correct values must be booleans")

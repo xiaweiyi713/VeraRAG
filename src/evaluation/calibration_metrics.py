@@ -44,10 +44,12 @@ class CalibrationMetrics:
         ece = 0.0
         total_weight = 0.0
 
-        for bin_lower, bin_upper in zip(bin_lowers, bin_uppers):  # noqa: B905
+        last_bin_index = len(bin_lowers) - 1
+        for idx, (bin_lower, bin_upper) in enumerate(zip(bin_lowers, bin_uppers)):  # noqa: B905
             in_bin = [
                 (c, r) for c, r in zip(confidences, correct)  # noqa: B905
                 if bin_lower <= c < bin_upper
+                or (idx == last_bin_index and bin_lower <= c <= bin_upper)
             ]
 
             if not in_bin:

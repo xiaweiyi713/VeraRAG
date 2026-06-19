@@ -1,5 +1,6 @@
 """Hallucination Metrics for VeraRAG Evaluation."""
 
+import math
 import re
 
 
@@ -32,7 +33,15 @@ class HallucinationMetrics:
         if not answer_claims:
             return 0.0
 
-        unsupported = sum(1 for claim in answer_claims if claim not in supported_claims)
+        normalized_supported = {
+            HallucinationMetrics._normalize_claim(claim)
+            for claim in supported_claims
+        }
+        unsupported = sum(
+            1
+            for claim in answer_claims
+            if HallucinationMetrics._normalize_claim(claim) not in normalized_supported
+        )
         return unsupported / len(answer_claims)
 
     @staticmethod
@@ -73,6 +82,12 @@ class HallucinationMetrics:
         Returns:
             Numerical hallucination rate (0-1)
         """
+        if not math.isfinite(tolerance) or tolerance < 0:
+            raise ValueError("Tolerance must be a non-negative finite value")
+        if not all(math.isfinite(num) for num in answer_numbers):
+            raise ValueError("Answer numbers must be finite values")
+        if not all(math.isfinite(num) for num in evidence_numbers):
+            raise ValueError("Evidence numbers must be finite values")
         if not answer_numbers:
             return 0.0
 
@@ -105,6 +120,13 @@ class HallucinationMetrics:
         Returns:
             Overclaiming rate (0-1)
         """
+        if len(confidences) != len(correct):
+            raise ValueError("Confidences and correctness labels must have same length")
+        if not 0.0 <= confidence_threshold <= 1.0:
+            raise ValueError("Confidence threshold must be between 0 and 1")
+        if not all(math.isfinite(conf) and 0.0 <= conf <= 1.0 for conf in confidences):
+            raise ValueError("Confidences must be finite values between 0 and 1")
+
         high_confidence_count = 0
         overconfident_wrong = 0
 
@@ -118,6 +140,10 @@ class HallucinationMetrics:
             return 0.0
 
         return overconfident_wrong / high_confidence_count
+
+    @staticmethod
+    def _normalize_claim(claim: str) -> str:
+        return re.sub(r"\s+", " ", claim.strip().lower())
 
     @staticmethod
     def extract_entities_from_text(text: str) -> set[str]:
@@ -150,14 +176,15 @@ class HallucinationMetrics:
         Returns:
             List of numerical values
         """
-        # Match percentages first (to avoid overlapping with regular numbers)
-        pattern = r'(\d+(?:,\d{3})*(?:\.\d+)?)%'
+        # Match signed percentages first to avoid overlapping with regular numbers.
+        number_pattern = r'(?<![\w.])[-+]?\d+(?:,\d{3})*(?:\.\d+)?'
+        percent_pattern = rf'({number_pattern})%'
 
         numbers = []
         remaining_text = text
 
         # First extract percentages
-        for match in re.finditer(pattern, text):
+        for match in re.finditer(percent_pattern, text):
             try:
                 clean = match.group(1).replace(',', '')
                 num = float(clean) / 100
@@ -168,7 +195,7 @@ class HallucinationMetrics:
                 pass
 
         # Then extract regular numbers from remaining text
-        for match in re.finditer(r'\d+(?:,\d{3})*(?:\.\d+)?', remaining_text):
+        for match in re.finditer(number_pattern, remaining_text):
             try:
                 clean = match.group(0).replace(',', '')
                 num = float(clean)

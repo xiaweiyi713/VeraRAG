@@ -53,8 +53,13 @@ class HybridRetriever(BaseRetriever):
         if self._dense_available and self.dense_retriever:
             try:
                 self.dense_retriever.index_documents(documents)
-            except ImportError:
+            except Exception as exc:
                 self._dense_available = False
+                import logging
+                logging.getLogger("verarag").warning(
+                    "DenseRetriever indexing failed (%s), using BM25 only",
+                    exc,
+                )
 
     def retrieve(
         self,
@@ -63,6 +68,11 @@ class HybridRetriever(BaseRetriever):
         fetch_k: int = 100,
         **kwargs
     ) -> list[RetrievalResult]:
+        query = self._validate_query(query)
+        top_k = self._validate_top_k(top_k)
+        fetch_k = self._validate_top_k(fetch_k)
+        if top_k == 0 or fetch_k == 0 or not query.strip():
+            return []
         sparse_results = self.sparse_retriever.retrieve(query, top_k=fetch_k)
 
         if not self._dense_available or not self.dense_retriever:
@@ -70,8 +80,13 @@ class HybridRetriever(BaseRetriever):
 
         try:
             dense_results = self.dense_retriever.retrieve(query, top_k=fetch_k)
-        except ImportError:
+        except Exception as exc:
             self._dense_available = False
+            import logging
+            logging.getLogger("verarag").warning(
+                "DenseRetriever retrieval failed (%s), using BM25 only",
+                exc,
+            )
             return sparse_results[:top_k]
 
         # Combine scores using reciprocal rank fusion

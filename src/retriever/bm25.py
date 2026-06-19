@@ -107,6 +107,10 @@ class BM25Retriever(BaseRetriever):
         Returns:
             List of retrieval results sorted by score
         """
+        query = self._validate_query(query)
+        top_k = self._validate_top_k(top_k)
+        if top_k == 0 or not query.strip():
+            return []
         if self.index is None:
             return []
 

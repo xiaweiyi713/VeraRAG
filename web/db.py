@@ -3,6 +3,8 @@
 import json
 import sqlite3
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -55,7 +57,7 @@ class Database:
 
     def _init_db(self):
         """Initialize database schema."""
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connection() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS queries (
@@ -73,10 +75,22 @@ class Database:
                     value TEXT NOT NULL
                 )
             """)
-            conn.commit()
 
     def _get_conn(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
+
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        """Provide a transactional connection that is always closed."""
+        conn = self._get_conn()
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def save_query(
         self,
@@ -89,12 +103,11 @@ class Database:
         query_id = uuid.uuid4().hex[:12]
         json_str = json.dumps(result_json, ensure_ascii=False)
 
-        with self._get_conn() as conn:
+        with self._connection() as conn:
             conn.execute(
                 "INSERT INTO queries (id, question, answer, confidence, result_json) VALUES (?, ?, ?, ?, ?)",
                 (query_id, question, answer, confidence, json_str)
             )
-            conn.commit()
         return query_id
 
     def get_query(self, query_id: str) -> dict[str, Any] | None:
@@ -142,9 +155,8 @@ class Database:
 
     def delete_query(self, query_id: str) -> bool:
         """Delete a query by ID."""
-        with self._get_conn() as conn:
+        with self._connection() as conn:
             cursor = conn.execute("DELETE FROM queries WHERE id = ?", (query_id,))
-            conn.commit()
             return cursor.rowcount > 0
 
     # --- Config operations ---
@@ -164,12 +176,11 @@ class Database:
     def set_config(self, key: str, value: Any) -> None:
         """Set a config value."""
         json_str = json.dumps(value, ensure_ascii=False)
-        with self._get_conn() as conn:
+        with self._connection() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)",
                 (key, json_str)
             )
-            conn.commit()
 
     def get_llm_config(self) -> dict[str, Any]:
         """Get the full LLM configuration."""

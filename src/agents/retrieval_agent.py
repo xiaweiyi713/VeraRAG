@@ -119,8 +119,9 @@ Output ONLY valid JSON, no other text."""
         # If counter-evidence is requested, generate negation queries
         if seek_counter_evidence or subquestion.requires_counter_evidence:
             counter_queries = self._generate_counter_evidence_queries(subquestion.question)
+            counter_top_k = max(1, top_k // 2)
             for cq in counter_queries:
-                c_results = self.retriever.retrieve(cq, top_k=top_k // 2)
+                c_results = self.retriever.retrieve(cq, top_k=counter_top_k)
                 unique_results.extend(c_results)
 
         return unique_results
@@ -158,9 +159,10 @@ Output ONLY valid JSON, no other text."""
             target = self._select_highest_uncertainty_subquestion(unresolved, evidence_pool)
 
             # Retrieve for this sub-question
+            top_k = 10 if target.id == "sq_original" else max(1, min(10, budget_per_round // len(unresolved)))
             results = self.retrieve_for_subquestion(
                 target,
-                top_k=min(10, budget_per_round // len(unresolved))
+                top_k=top_k
             )
 
             # Convert to Evidence objects.
@@ -185,7 +187,10 @@ Output ONLY valid JSON, no other text."""
                 unresolved.remove(target)
             else:
                 # Refine the sub-question
-                target = self._refine_subquestion(target, evidence_pool)
+                refined_target = self._refine_subquestion(target, evidence_pool)
+                if refined_target is not target:
+                    self._replace_subquestion(unresolved, target, refined_target)
+                    self._replace_subquestion(subquestions, target, refined_target)
 
         return evidence_pool
 
@@ -193,6 +198,17 @@ Output ONLY valid JSON, no other text."""
         """Generate multiple query variants for better retrieval."""
         import re
         variants = [question]
+
+        compact_entity_groups = {
+            "中美欧": ("中国", "美国", "欧盟"),
+        }
+        for compact, group_entities in compact_entity_groups.items():
+            if compact not in question:
+                continue
+            variants.extend(
+                question.replace(compact, entity)
+                for entity in group_entities
+            )
 
         words = question.replace("?", "").split()
 
@@ -250,16 +266,16 @@ Output ONLY valid JSON, no other text."""
         for term in challenge_terms_en[:2]:
             queries.append(f"{question} {term}")
 
+        # Path 3: Alternative viewpoint
+        alt_terms_cn = ["不同观点", "反对意见", "替代解释"]
+        queries.append(f"{question} {alt_terms_cn[0]}")
+
         # Path 2: Temporal – seek latest or alternative timeframe versions
         temporal_prefixes_cn = ["最新", "更新", "当前", "截至目前"]
         temporal_prefixes_en = ["latest", "updated", "current", "as of 2024"]
         for prefix in temporal_prefixes_cn[:2]:
             queries.append(f"{prefix} {question}")
         queries.append(f"{question} {temporal_prefixes_en[0]}")
-
-        # Path 3: Alternative viewpoint
-        alt_terms_cn = ["不同观点", "反对意见", "替代解释"]
-        queries.append(f"{question} {alt_terms_cn[0]}")
 
         return queries[:8]
 
@@ -270,6 +286,18 @@ Output ONLY valid JSON, no other text."""
     ) -> SubQuestion:
         """Select the sub-question with least evidence coverage."""
         return min(subquestions, key=lambda sq: sq.coverage_score)
+
+    def _replace_subquestion(
+        self,
+        subquestions: list[SubQuestion],
+        old: SubQuestion,
+        new: SubQuestion,
+    ) -> None:
+        """Replace a sub-question in-place by object identity or stable id."""
+        for index, candidate in enumerate(subquestions):
+            if candidate is old or candidate.id == old.id:
+                subquestions[index] = new
+                return
 
     def _assess_subquestion_coverage(
         self,
@@ -334,7 +362,10 @@ Output ONLY valid JSON, no other text."""
             source=result.metadata.get("source", "unknown"),
             title=result.title,
             text_span=result.content,
+            date=result.metadata.get("date"),
+            author=result.metadata.get("author"),
             url=result.metadata.get("url"),
+            entities=result.metadata.get("entities", []),
             relevance_score=min(1.0, result.score)  # Normalize score
         )
 

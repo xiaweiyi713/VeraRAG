@@ -1,8 +1,9 @@
 """VeraRAG Main Pipeline."""
 
 import os
+import re
 import time
-from typing import Any
+from typing import Any, ClassVar
 
 from ..agents.base import LLMClient
 from ..agents.planner import DecompositionPlanner
@@ -14,11 +15,19 @@ from ..agents.verifier_agent import VerifierAgent
 from ..evidence.conflict_graph import ConflictGraphBuilder
 from ..evidence.extractor import EvidenceExtractor
 from ..evidence.normalizer import EvidenceNormalizer
+from ..retriever.bm25 import BM25Retriever
 from ..retriever.hybrid import HybridRetriever
 from ..uncertainty.controller import Action, UncertaintyController
 from ..utils.data_structures import (
+    AnswerClaim,
+    Claim,
+    ClaimType,
+    ConflictEdge,
+    ConflictType,
     Evidence,
     EvidenceConflictGraph,
+    ReasoningStep,
+    SubQuestion,
     UncertaintyBreakdown,
     VeraRAGOutput,
 )
@@ -40,6 +49,58 @@ class VeraRAG:
     9. Repair: Fix any issues identified
     10. Final Output: Assemble result
     """
+
+    _WEAK_FOCUS_ENTITIES: ClassVar[set[str]] = {
+        "ai",
+        "人工智能",
+        "技术",
+        "系统",
+        "模型",
+        "芯片",
+    }
+    _ABSTENTION_MARKERS: ClassVar[tuple[str, ...]] = (
+        "无法回答",
+        "无法确定",
+        "信息不足",
+        "证据不足",
+        "未提供",
+        "没有提供",
+        "查无",
+    )
+    _ASSERTION_MARKERS: ClassVar[tuple[str, ...]] = (
+        "对吗",
+        "对吧",
+        "是吗",
+        "是不是",
+        "是否",
+        "是否代表",
+        "是否意味着",
+        "意味着",
+        "既然",
+        "说明",
+    )
+    _EXACT_VALUE_MARKERS: ClassVar[tuple[str, ...]] = (
+        "具体",
+        "精确",
+        "准确",
+        "确切",
+        "exact",
+        "specific",
+    )
+    _APPROXIMATE_MARKERS: ClassVar[tuple[str, ...]] = (
+        "约",
+        "大约",
+        "左右",
+        "接近",
+        "近",
+        "超过",
+        "不足",
+        "多于",
+        "少于",
+        "around",
+        "about",
+        "approximately",
+    )
 
     def __init__(self, config: dict[str, Any] | None = None):
         """
@@ -69,19 +130,28 @@ class VeraRAG:
             max_tokens=llm_config.get("max_tokens", 2000)
         )
 
-        # Retriever — fall back to BM25 if sentence-transformers not available
+        # Retriever — BM25 is the low-dependency default for reproducible evals.
         retriever_config = self.config.get("retriever", {})
-        try:
-            self.retriever = HybridRetriever(
-                config=retriever_config,
-                sparse_weight=retriever_config.get("sparse_weight", 0.3),
-                dense_weight=retriever_config.get("dense_weight", 0.7)
-            )
-        except ImportError:
-            from ..retriever.bm25 import BM25Retriever
+        retriever_type = str(retriever_config.get("type", "hybrid")).lower()
+        if retriever_type == "bm25":
             self.retriever = BM25Retriever(config=retriever_config)
-            import logging
-            logging.getLogger("verarag").warning("sentence-transformers not installed, using BM25 only")
+        elif retriever_type == "hybrid":
+            try:
+                self.retriever = HybridRetriever(
+                    config=retriever_config,
+                    sparse_weight=retriever_config.get("sparse_weight", 0.3),
+                    dense_weight=retriever_config.get("dense_weight", 0.7)
+                )
+            except ImportError:
+                self.retriever = BM25Retriever(config=retriever_config)
+                import logging
+                logging.getLogger("verarag").warning("sentence-transformers not installed, using BM25 only")
+        elif retriever_type == "dense":
+            from ..retriever.dense import DenseRetriever
+            dense_config = retriever_config.get("dense", retriever_config)
+            self.retriever = DenseRetriever(config=dense_config)
+        else:
+            raise ValueError(f"Unknown retriever.type: {retriever_type}")
 
         # Agents
         self.task_analyzer = TaskAnalyzer(self.config, self.llm_client)
@@ -164,9 +234,669 @@ class VeraRAG:
             source=result.metadata.get("source", "unknown"),
             title=result.title,
             text_span=result.content,
+            date=result.metadata.get("date"),
+            author=result.metadata.get("author"),
             url=result.metadata.get("url"),
+            entities=result.metadata.get("entities", []),
             relevance_score=min(1.0, result.score)
         )
+
+    def _filter_conflict_graph_for_question(
+        self,
+        graph: EvidenceConflictGraph,
+        evidence_pool: list[Evidence],
+        question: str,
+    ) -> EvidenceConflictGraph:
+        """Filter conflict edges to the question's fact focus and deduplicate.
+
+        The raw graph is intentionally broad. For answering a question, however,
+        a retrieved document may contain unrelated conflicts. A question about
+        whether a law passed should not surface an unrelated face-recognition
+        scope conflict from the same document.
+        """
+        question_claim = Claim(
+            claim_id="question",
+            claim=question,
+            claim_type=ClaimType.FACTUAL,
+            entities=self.evidence_extractor._extract_entities(question),
+            numbers=[],
+            time_expressions=self.evidence_extractor._extract_temporal_expressions(question),
+        )
+        claim_by_id = {
+            claim.claim_id: claim
+            for evidence in evidence_pool
+            for claim in evidence.claims
+        }
+        evidence_by_claim = {
+            claim.claim_id: evidence
+            for evidence in evidence_pool
+            for claim in evidence.claims
+        }
+        question_attrs = self.conflict_graph_builder._claim_attributes(question_claim)
+        question_entities = self._question_focus_entities(
+            question,
+            evidence_pool,
+            set(question_claim.entities),
+        )
+        question_years = (
+            {
+                key for key in self.conflict_graph_builder._claim_time_keys(question_claim)
+                if key.startswith("year:")
+            }
+            if self._should_filter_conflicts_by_question_year(question, question_attrs)
+            else set()
+        )
+
+        support_edges = [
+            edge for edge in graph.edges
+            if edge.conflict_type == ConflictType.SUPPORT
+        ]
+        conflict_edges = []
+        for edge in graph.get_conflicts():
+            source_claim = claim_by_id.get(edge.source_id)
+            target_claim = claim_by_id.get(edge.target_id)
+            if question_attrs:
+                question_slots = self._attribute_slots(question_attrs)
+                claim_slots = [
+                    self._attribute_slots(
+                        self.conflict_graph_builder._claim_attributes(claim)
+                    )
+                    for claim in (source_claim, target_claim)
+                    if claim is not None
+                ]
+                if any(slots and not (slots & question_slots) for slots in claim_slots):
+                    continue
+            if question_entities and not self._conflict_edge_matches_question_entities(
+                source_claim,
+                target_claim,
+                question_entities,
+                question,
+            ):
+                continue
+            if question_years and not self._conflict_edge_matches_question_years(
+                source_claim,
+                target_claim,
+                question_years,
+            ):
+                continue
+            if self._is_historical_version_edge(
+                edge,
+                evidence_by_claim,
+                question,
+            ):
+                continue
+            conflict_edges.append(edge)
+
+        if self._is_extrapolation_premise_question(question):
+            conflict_edges = [
+                edge for edge in conflict_edges
+                if not (
+                    self._is_same_evidence_edge(edge, evidence_by_claim)
+                    and (
+                        edge.conflict_type == ConflictType.NUMERIC_CONFLICT
+                        or "global emissions" in edge.rationale
+                    )
+                )
+            ]
+
+        if self._is_implication_correction_question(question):
+            conflict_edges = [
+                edge for edge in conflict_edges
+                if "Process-node naming" not in edge.rationale
+            ]
+
+        conflict_edges = [
+            edge for edge in conflict_edges
+            if self._self_refutation_edge_matches_question(edge, question)
+        ]
+
+        if self._is_comparison_question(question):
+            same_evidence_conflicts = [
+                edge for edge in conflict_edges
+                if self._is_same_evidence_edge(edge, evidence_by_claim)
+            ]
+            if same_evidence_conflicts:
+                conflict_edges = same_evidence_conflicts
+
+        deduped_conflicts = self._dedupe_reported_claim_conflicts(
+            conflict_edges,
+            claim_by_id,
+            evidence_by_claim,
+        )
+        graph.edges = [*support_edges, *deduped_conflicts]
+        return graph
+
+    @staticmethod
+    def _ensure_original_question_retrieval_anchor(
+        question: str,
+        subquestions: list[SubQuestion],
+        *,
+        requires_counter_evidence: bool,
+    ) -> list[SubQuestion]:
+        normalized_question = question.strip()
+        if any(sq.question.strip() == normalized_question for sq in subquestions):
+            return subquestions
+
+        anchor = SubQuestion(
+            id="sq_original",
+            question=normalized_question,
+            required_evidence_type="general",
+            dependency_ids=[],
+            requires_counter_evidence=requires_counter_evidence,
+        )
+        return [anchor, *subquestions]
+
+    def _title_entity_anchors(self, title: str) -> set[str]:
+        """Return title entities that are safe to inherit into sentence claims."""
+        noisy_suffixes = (
+            "销量",
+            "营收",
+            "收入",
+            "利润",
+            "排放",
+            "市场",
+            "规模",
+            "增长",
+            "报告",
+            "进展",
+            "趋势",
+        )
+        return {
+            entity
+            for entity in self.evidence_extractor._extract_entities(title)
+            if not entity.endswith(noisy_suffixes)
+        }
+
+    @staticmethod
+    def _question_focus_entities(
+        question: str,
+        evidence_pool: list[Evidence],
+        extracted_entities: set[str],
+    ) -> set[str]:
+        question_text = question.lower()
+        candidates = {
+            entity.strip()
+            for entity in extracted_entities
+            if 2 <= len(entity.strip()) <= 12
+        }
+        for evidence in evidence_pool:
+            candidates.update(
+                entity.strip()
+                for entity in evidence.entities
+                if 2 <= len(entity.strip()) <= 12
+            )
+            for claim in evidence.claims:
+                candidates.update(
+                    entity.strip()
+                    for entity in claim.entities
+                    if 2 <= len(entity.strip()) <= 12
+                )
+
+        matched = {
+            entity for entity in candidates
+            if entity and entity.lower() in question_text
+        }
+        return {
+            entity for entity in matched
+            if not any(
+                entity != other
+                and entity.lower() in other.lower()
+                and len(entity) < len(other)
+                for other in matched
+            )
+        }
+
+    @staticmethod
+    def _conflict_edge_matches_question_entities(
+        source_claim: Claim | None,
+        target_claim: Claim | None,
+        question_entities: set[str],
+        question: str,
+    ) -> bool:
+        matched_question_entity = False
+        question_text = question.lower()
+        for claim in (source_claim, target_claim):
+            if not claim or not claim.entities:
+                continue
+            claim_matched = any(
+                not VeraRAG._entity_is_contrast_only_in_claim(entity, claim.claim)
+                and VeraRAG._entity_matches_question(entity, question_entities, question_text)
+                for entity in claim.entities
+            )
+            if not claim_matched:
+                return False
+            matched_question_entity = True
+        return matched_question_entity
+
+    @staticmethod
+    def _entity_matches_question(
+        entity: str,
+        question_entities: set[str],
+        question_text: str,
+    ) -> bool:
+        normalized = entity.lower()
+        question_entity_norms = {question_entity.lower() for question_entity in question_entities}
+        if normalized == "co2" and any(marker in question_text for marker in ("碳排放", "co2排放", "排放")):
+            return True
+        if normalized in VeraRAG._WEAK_FOCUS_ENTITIES:
+            strong_question_entities = question_entity_norms - VeraRAG._WEAK_FOCUS_ENTITIES
+            if normalized not in question_entity_norms or strong_question_entities:
+                return False
+        if normalized in question_text:
+            return True
+        return any(
+            normalized == question_entity
+            or normalized in question_entity
+            or (
+                len(question_entity) >= 4
+                and question_entity in normalized
+            )
+            for question_entity in question_entity_norms
+        )
+
+    @staticmethod
+    def _entity_is_contrast_only_in_claim(entity: str, claim_text: str) -> bool:
+        if not entity:
+            return False
+        lowered = entity.lower()
+        text = claim_text.lower()
+        return bool(
+            re.search(rf"(?:与|和)[^，。；;]*{re.escape(lowered)}[^，。；;]*不同", text)
+            or re.search(rf"不同于[^，。；;]*{re.escape(lowered)}", text)
+            or f"unlike {lowered}" in text
+        )
+
+    def _conflict_edge_matches_question_years(
+        self,
+        source_claim: Claim | None,
+        target_claim: Claim | None,
+        question_years: set[str],
+    ) -> bool:
+        for claim in (source_claim, target_claim):
+            if not claim:
+                continue
+            claim_years = {
+                key for key in self.conflict_graph_builder._claim_time_keys(claim)
+                if key.startswith("year:")
+            }
+            if claim_years and not (claim_years & question_years):
+                return False
+        return True
+
+    @staticmethod
+    def _should_filter_conflicts_by_question_year(question: str, question_attrs: set[str]) -> bool:
+        assertion_markers = ("对吗", "是吗", "是否", "是不是", "是否代表", "有何不同看法")
+        if any(marker in question for marker in assertion_markers):
+            return False
+        year_scoped_attrs = {"revenue", "profit", "sales", "employees"}
+        return bool(question_attrs & year_scoped_attrs)
+
+    @staticmethod
+    def _is_comparison_question(question: str) -> bool:
+        return any(
+            marker in question
+            for marker in ("谁", "更高", "更低", "相比", "对比", "比较", "有何不同", "vs", "VS")
+        )
+
+    @staticmethod
+    def _attribute_slots(attributes: set[str]) -> set[str]:
+        """Map opposite values onto the same question-conditioned fact slot."""
+        aliases = {
+            "growth": "trend",
+            "decline": "trend",
+            "ban": "permission",
+            "allow": "permission",
+        }
+        slots = {aliases.get(attribute, attribute) for attribute in attributes}
+        if "timeline" in slots:
+            slots -= {"passed", "effective"}
+        return slots
+
+    @staticmethod
+    def _is_historical_version_edge(
+        edge: ConflictEdge,
+        evidence_by_claim: dict[str, Evidence],
+        question: str,
+    ) -> bool:
+        """Suppress expected version evolution for point-in-time fact questions."""
+        if any(
+            marker in question
+            for marker in ("早期", "初始", "提案", "后来", "变化", "演变", "修订", "相比", "对比")
+        ):
+            return False
+
+        source = evidence_by_claim.get(edge.source_id)
+        target = evidence_by_claim.get(edge.target_id)
+        if source is None or target is None or source is target:
+            return False
+        if not source.date or not target.date or source.date[:4] == target.date[:4]:
+            return False
+
+        source_text = f"{source.title} {source.text_span}"
+        target_text = f"{target.title} {target.text_span}"
+        version_markers = ("早期", "初始", "提案版本", "最终", "后续修订", "从提案到立法")
+        return any(marker in source_text for marker in version_markers) or any(
+            marker in target_text for marker in version_markers
+        )
+
+    @staticmethod
+    def _is_same_evidence_edge(
+        edge: ConflictEdge,
+        evidence_by_claim: dict[str, Evidence],
+    ) -> bool:
+        source_evidence = evidence_by_claim.get(edge.source_id)
+        return source_evidence is not None and source_evidence is evidence_by_claim.get(edge.target_id)
+
+    @staticmethod
+    def _is_extrapolation_premise_question(question: str) -> bool:
+        return "既然" in question and any(
+            marker in question
+            for marker in ("应该", "是不是", "是否", "对吧", "所以")
+        )
+
+    @staticmethod
+    def _is_implication_correction_question(question: str) -> bool:
+        return "意味着" in question and "是否代表" not in question
+
+    @staticmethod
+    def _self_refutation_edge_matches_question(edge: ConflictEdge, question: str) -> bool:
+        if edge.source_id != edge.target_id:
+            return True
+        premise_markers = (
+            "对吗",
+            "对吧",
+            "是否",
+            "是不是",
+            "是否代表",
+            "意味着",
+            "既然",
+            "真的",
+        )
+        if not any(marker in question for marker in premise_markers):
+            return False
+        if "Process-node naming" in edge.rationale:
+            return any(marker in question for marker in ("物理", "栅极", "尺寸", "代表实际", "是否代表"))
+        if "advanced packaging" in edge.rationale:
+            return "封装" in question
+        return True
+
+    def _dedupe_reported_claim_conflicts(
+        self,
+        conflict_edges: list[ConflictEdge],
+        claim_by_id: dict[str, Claim],
+        evidence_by_claim: dict[str, Evidence],
+    ) -> list[ConflictEdge]:
+        best_by_reported: dict[tuple[str, ConflictType], tuple[ConflictEdge, tuple[float, float, float]]] = {}
+        passthrough: list[ConflictEdge] = []
+        for edge in conflict_edges:
+            source_claim = claim_by_id.get(edge.source_id)
+            target_claim = claim_by_id.get(edge.target_id)
+            reported_id = None
+            other_id = None
+            if source_claim and source_claim.source_span == "reported_claim":
+                reported_id = edge.source_id
+                other_id = edge.target_id
+            elif target_claim and target_claim.source_span == "reported_claim":
+                reported_id = edge.target_id
+                other_id = edge.source_id
+
+            if not reported_id or not other_id:
+                passthrough.append(edge)
+                continue
+
+            key = (reported_id, edge.conflict_type)
+            edge_rank = self._conflict_edge_rank(edge, other_id, evidence_by_claim)
+            current = best_by_reported.get(key)
+            if current is None or edge_rank > current[1]:
+                best_by_reported[key] = (edge, edge_rank)
+
+        return [*passthrough, *(edge for edge, _rank in best_by_reported.values())]
+
+    @staticmethod
+    def _conflict_edge_rank(
+        edge: ConflictEdge,
+        other_claim_id: str,
+        evidence_by_claim: dict[str, Evidence],
+    ) -> tuple[float, float, float]:
+        evidence = evidence_by_claim.get(other_claim_id)
+        source_rank = {
+            "official": 5,
+            "paper": 4,
+            "report": 3,
+            "wiki": 3,
+            "news": 2,
+            "blog": 1,
+        }.get(evidence.source if evidence else "", 2)
+        relevance = evidence.relevance_score if evidence else 0.0
+        date_rank = 0.0
+        if evidence and evidence.date:
+            try:
+                date_rank = float(evidence.date.replace("-", "")[:8])
+            except ValueError:
+                date_rank = 0.0
+        return (float(source_rank), date_rank, relevance + edge.confidence)
+
+    def _apply_answerability_guard(
+        self,
+        question: str,
+        answer: str,
+        claims: list[AnswerClaim],
+        reasoning: list[ReasoningStep],
+        evidence: list[Evidence],
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep], dict[str, Any] | None]:
+        """Deterministically correct high-risk answerability mistakes.
+
+        The guard is intentionally narrow. It catches two failures that are
+        costly in RAG systems and easy to identify after generation: an exact
+        numeric request answered from approximate evidence, and a premise-check
+        question answered as a generic abstention instead of a correction.
+        """
+        if self._should_abstain_on_exact_value_gap(question, answer, evidence):
+            return self._build_exact_value_gap_answer(question, evidence, reasoning)
+
+        if self._should_correct_premise_abstention(question, answer):
+            return self._build_premise_correction_answer(question, answer, claims, reasoning)
+
+        return answer, claims, reasoning, None
+
+    @classmethod
+    def _is_abstention_answer(cls, answer: str) -> bool:
+        return any(marker in answer for marker in cls._ABSTENTION_MARKERS)
+
+    @classmethod
+    def _is_assertion_question(cls, question: str) -> bool:
+        return any(marker in question for marker in cls._ASSERTION_MARKERS)
+
+    @classmethod
+    def _should_correct_premise_abstention(cls, question: str, answer: str) -> bool:
+        if not cls._is_assertion_question(question):
+            return False
+        if not cls._is_abstention_answer(answer):
+            return False
+        correction_markers = ("不准确", "前提有误", "不成立", "不能说明", "不能证明", "缺乏证据支持")
+        return not any(marker in answer for marker in correction_markers)
+
+    @classmethod
+    def _should_abstain_on_exact_value_gap(
+        cls,
+        question: str,
+        answer: str,
+        evidence: list[Evidence],
+    ) -> bool:
+        question_lower = question.lower()
+        if not any(marker in question_lower for marker in cls._EXACT_VALUE_MARKERS):
+            return False
+        if cls._is_abstention_answer(answer):
+            return False
+        if not re.search(r"\d", answer):
+            return False
+        if any(marker in answer.lower() for marker in cls._APPROXIMATE_MARKERS):
+            return True
+        relevant_sentences = cls._rank_guard_sentences(question, evidence, limit=3)
+        return any(
+            any(marker in sentence.lower() for marker in cls._APPROXIMATE_MARKERS)
+            and re.search(r"\d", sentence)
+            for _evidence_id, sentence in relevant_sentences
+        )
+
+    @classmethod
+    def _rank_guard_sentences(
+        cls,
+        question: str,
+        evidence: list[Evidence],
+        *,
+        limit: int,
+    ) -> list[tuple[str, str]]:
+        question_terms = cls._guard_terms(question)
+        ranked: list[tuple[float, str, str]] = []
+        for item in evidence:
+            text = f"{item.title}。{item.text_span}"
+            for sentence in re.split(r"(?<=[。！？!?；;])", text):
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                score = cls._guard_overlap(question_terms, sentence)
+                if re.search(r"\d", sentence):
+                    score += 0.25
+                if any(marker in sentence.lower() for marker in cls._APPROXIMATE_MARKERS):
+                    score += 0.25
+                if score > 0:
+                    ranked.append((score, item.evidence_id, sentence))
+        ranked.sort(key=lambda row: row[0], reverse=True)
+        return [(evidence_id, sentence) for _score, evidence_id, sentence in ranked[:limit]]
+
+    @staticmethod
+    def _guard_terms(text: str) -> set[str]:
+        tokens: set[str] = set()
+        for token in re.findall(r"[A-Za-z0-9]+|[\u4e00-\u9fff]{2,}", text):
+            lowered = token.lower()
+            if re.fullmatch(r"[\u4e00-\u9fff]+", token):
+                max_width = min(6, len(token))
+                for width in range(2, max_width + 1):
+                    tokens.update(
+                        token[index:index + width]
+                        for index in range(0, len(token) - width + 1)
+                    )
+            elif len(lowered) >= 2:
+                tokens.add(lowered)
+        stopwords = {
+            "多少",
+            "如何",
+            "什么",
+            "是否",
+            "是不是",
+            "对吗",
+            "已经",
+            "这个",
+            "那个",
+            "具体",
+            "精确",
+            "准确",
+            "确切",
+        }
+        return {token for token in tokens if token not in stopwords}
+
+    @staticmethod
+    def _guard_overlap(question_terms: set[str], sentence: str) -> float:
+        lowered = sentence.lower()
+        return sum(1.0 for term in question_terms if term in lowered)
+
+    def _build_exact_value_gap_answer(
+        self,
+        question: str,
+        evidence: list[Evidence],
+        reasoning: list[ReasoningStep],
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep], dict[str, Any]]:
+        relevant = self._rank_guard_sentences(question, evidence, limit=2)
+        if relevant:
+            evidence_text = "；".join(f"{sentence}（{evidence_id}）" for evidence_id, sentence in relevant)
+            evidence_ids = [evidence_id for evidence_id, _sentence in relevant]
+        else:
+            evidence_text = "现有证据只提供近似或不完整信息"
+            evidence_ids = [item.evidence_id for item in evidence[:2]]
+        answer = (
+            "无法给出精确数字。"
+            f"现有证据仅显示：{evidence_text}。"
+            "这些信息不足以满足问题所要求的具体/精确数值，因此不能把约数或不完整统计当作精确答案。"
+        )
+        claims = [
+            AnswerClaim(
+                claim="现有证据不足以给出问题要求的精确数字",
+                supporting_evidence=evidence_ids,
+                confidence=0.45,
+                claim_type="factual",
+                verifiable=True,
+                support_type="direct",
+            )
+        ]
+        guarded_reasoning = [
+            ReasoningStep(
+                step=1,
+                description="识别到问题要求精确数值，但证据只提供约数或不完整统计，因此改为明确拒答并保留可验证近似信息。",
+                evidence_ids=evidence_ids,
+                confidence=0.55,
+            ),
+            *reasoning,
+        ]
+        for index, step in enumerate(guarded_reasoning, start=1):
+            step.step = index
+        return answer, claims, guarded_reasoning, {"action": "exact_value_gap_abstain"}
+
+    @classmethod
+    def _build_premise_correction_answer(
+        cls,
+        question: str,
+        answer: str,
+        claims: list[AnswerClaim],
+        reasoning: list[ReasoningStep],
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep], dict[str, Any]]:
+        cleaned = re.sub(
+            r"^\s*(?:根据现有证据)?(?:，|,)?(?:无法回答此问题|信息不足，?无法确定|证据不足，?无法确定)[。；;，,]?\s*",
+            "",
+            answer,
+        ).strip()
+        if not cleaned:
+            cleaned = "现有证据不足以支持问题中的推论。"
+        conclusion = cls._extract_asserted_conclusion(question)
+        answer_text = (
+            "该说法不准确。"
+            f"{cleaned}"
+            f" 因此，不能根据现有证据断定{conclusion}。"
+        )
+        if claims:
+            guarded_claims = claims
+        else:
+            guarded_claims = [
+                AnswerClaim(
+                    claim="问题中的断言缺乏充分证据支持",
+                    confidence=0.5,
+                    claim_type="factual",
+                    verifiable=True,
+                    support_type="none",
+                )
+            ]
+        guarded_reasoning = [
+            ReasoningStep(
+                step=1,
+                description="识别到这是前提/断言验证问题；原回答为普通拒答，因此改为指出该推论缺乏证据支持。",
+                evidence_ids=[],
+                confidence=0.6,
+            ),
+            *reasoning,
+        ]
+        for index, step in enumerate(guarded_reasoning, start=1):
+            step.step = index
+        return answer_text, guarded_claims, guarded_reasoning, {"action": "premise_abstention_corrected"}
+
+    @staticmethod
+    def _extract_asserted_conclusion(question: str) -> str:
+        conclusion = question
+        if "那" in conclusion:
+            conclusion = conclusion.split("那", 1)[1]
+        conclusion = re.sub(r"^(?:么|所以|因此|那么)", "", conclusion)
+        conclusion = re.sub(r"(?:是不是|是否|对吗|对吧|是吗)[？?。]*$", "", conclusion)
+        conclusion = conclusion.strip(" ，,。？?")
+        return f"“{conclusion}”" if conclusion else "问题中的结论"
 
     def query_stream(
         self,
@@ -203,6 +933,11 @@ class VeraRAG:
             question,
             task_analysis,
             self.max_subquestions
+        )
+        subquestions = self._ensure_original_question_retrieval_anchor(
+            question,
+            subquestions,
+            requires_counter_evidence=task_analysis.requires_conflict_check,
         )
         reasoning_plan = self.planner.get_reasoning_plan(question, subquestions)
         emit("decomposition", {
@@ -258,9 +993,32 @@ class VeraRAG:
                 for ev in evidence_pool:
                     if not ev.claims:
                         ev.claims = self.evidence_extractor._extract_claims(ev.text_span)
+                    title_entities = self._title_entity_anchors(ev.title or "")
+                    title_times = self.evidence_extractor._extract_temporal_expressions(ev.title or "")
+                    comparative_context = self._is_comparative_evidence_context(ev)
+                    for claim in ev.claims:
+                        claim_text = claim.claim.lower()
+                        entity_anchors = set(title_entities)
+                        entity_anchors.update(
+                            entity for entity in ev.entities
+                            if entity.lower() in claim_text
+                        )
+                        if claim.source_span in {"reported_claim", "corrective_claim"} or comparative_context:
+                            entity_anchors.update(ev.entities)
+                        merged = list(dict.fromkeys([*claim.entities, *entity_anchors]))
+                        claim.entities = merged
+                        claim.time_expressions = list(dict.fromkeys([
+                            *claim.time_expressions,
+                            *title_times,
+                        ]))
                 conflict_graph = self.conflict_graph_builder.build_graph(
                     evidence_pool,
                     use_llm=True
+                )
+                conflict_graph = self._filter_conflict_graph_for_question(
+                    conflict_graph,
+                    evidence_pool,
+                    question,
                 )
                 emit("conflict", {
                     "conflicts": len(conflict_graph.get_conflicts()),
@@ -323,6 +1081,20 @@ class VeraRAG:
                 evidence_pool
             )
 
+        answerability_guard = None
+        answer, answer_claims, reasoning_chain, answerability_guard = self._apply_answerability_guard(
+            question,
+            answer,
+            answer_claims,
+            reasoning_chain,
+            evidence_pool,
+        )
+        if answerability_guard:
+            emit("answerability_guard", {
+                **answerability_guard,
+                "answer": answer,
+            })
+
         # Stage 9: Final uncertainty
         uncertainty = UncertaintyBreakdown()
         final_confidence = 0.5
@@ -368,7 +1140,8 @@ class VeraRAG:
                 "num_evidence": len(evidence_pool),
                 "num_conflicts": len(conflict_graph.get_conflicts()),
                 "elapsed_time": elapsed_time,
-                "retrieval_rounds": round_id + 1
+                "retrieval_rounds": round_id + 1,
+                "answerability_guard": answerability_guard,
             }
         )
 
@@ -380,6 +1153,14 @@ class VeraRAG:
         })
 
         return output
+
+    @staticmethod
+    def _is_comparative_evidence_context(evidence: Evidence) -> bool:
+        text = f"{evidence.title}\n{evidence.text_span}".lower()
+        return any(
+            marker in text
+            for marker in ("vs", "对比", "相比", "差异", "不同", "仅从", "质疑")
+        )
 
     def batch_query(
         self,

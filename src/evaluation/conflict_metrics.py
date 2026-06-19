@@ -78,15 +78,11 @@ class ConflictMetrics:
         gold_map = {tuple(sorted(pair)): ct for (pair, ct) in gold_types}
 
         correct = 0
-        total = 0
-
         for pair, gold_type in gold_map.items():
-            if pair in pred_map:
-                total += 1
-                if pred_map[pair] == gold_type:
-                    correct += 1
+            if pair in pred_map and pred_map[pair] == gold_type:
+                correct += 1
 
-        return correct / total if total > 0 else 0.0
+        return correct / len(gold_map)
 
     @staticmethod
     def conflict_resolution_accuracy(

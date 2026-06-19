@@ -3,6 +3,9 @@
 import sys
 from pathlib import Path
 
+import numpy as np
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -123,6 +126,104 @@ class TestConfidenceCalibrator:
         metrics = cal.compute_calibration_metrics(confidences=[], correct=[])
         assert metrics["ece"] == 0
 
+    def test_ece_includes_confidence_one_in_final_bin(self):
+        from src.uncertainty.calibrator import ConfidenceCalibrator
+
+        cal = ConfidenceCalibrator()
+
+        perfect = cal.compute_calibration_metrics(
+            confidences=[1.0],
+            correct=[True],
+        )
+        overconfident = cal.compute_calibration_metrics(
+            confidences=[1.0],
+            correct=[False],
+        )
+
+        assert perfect["ece"] == 0.0
+        assert overconfident["ece"] == 1.0
+
+    def test_temperature_calibration_handles_probability_boundaries(self):
+        from src.uncertainty.calibrator import ConfidenceCalibrator
+
+        cal = ConfidenceCalibrator()
+
+        temperature = cal.calibrate_temperature(
+            predictions=np.array([0.0, 1.0, 0.8]),
+            labels=np.array([0, 1, 1]),
+            max_iter=5,
+        )
+
+        assert np.isfinite(temperature)
+        assert 0.1 <= temperature <= 10.0
+
+    def test_temperature_calibration_accepts_logits(self):
+        from src.uncertainty.calibrator import ConfidenceCalibrator
+
+        cal = ConfidenceCalibrator()
+
+        temperature = cal.calibrate_temperature(
+            predictions=np.array([-2.0, 0.0, 3.0]),
+            labels=np.array([0, 0, 1]),
+            max_iter=3,
+        )
+
+        assert np.isfinite(temperature)
+
+    @pytest.mark.parametrize(
+        ("predictions", "labels", "message"),
+        [
+            (np.array([]), np.array([]), "at least one sample"),
+            (np.array([0.1, 0.2]), np.array([1]), "same shape"),
+            (np.array([np.nan]), np.array([1]), "finite"),
+            (np.array([0.8]), np.array([0.5]), "binary"),
+        ],
+    )
+    def test_temperature_calibration_rejects_invalid_inputs(
+        self, predictions, labels, message
+    ):
+        from src.uncertainty.calibrator import ConfidenceCalibrator
+
+        cal = ConfidenceCalibrator()
+
+        with pytest.raises(ValueError, match=message):
+            cal.calibrate_temperature(predictions, labels)
+
+    def test_temperature_calibration_rejects_invalid_optimizer_settings(self):
+        from src.uncertainty.calibrator import ConfidenceCalibrator
+
+        cal = ConfidenceCalibrator()
+
+        with pytest.raises(ValueError, match="max_iter"):
+            cal.calibrate_temperature(
+                np.array([0.8]), np.array([1]), max_iter=-1
+            )
+
+        with pytest.raises(ValueError, match="lr"):
+            cal.calibrate_temperature(
+                np.array([0.8]), np.array([1]), lr=0
+            )
+
+    def test_calibration_metrics_reject_invalid_inputs(self):
+        from src.uncertainty.calibrator import ConfidenceCalibrator
+
+        cal = ConfidenceCalibrator()
+
+        with pytest.raises(ValueError, match="same length"):
+            cal.compute_calibration_metrics([0.9], [])
+
+        with pytest.raises(ValueError, match="same length"):
+            cal.compute_calibration_metrics([], [True])
+
+        with pytest.raises(ValueError, match=r"\[0, 1\]"):
+            cal.compute_calibration_metrics([1.2], [True])
+
+        with pytest.raises(ValueError, match="booleans"):
+            cal.compute_calibration_metrics([0.8], [1])
+
+        with pytest.raises(ValueError, match="finite"):
+            cal.calibrate_temperature(np.array([0.8]), np.array([np.nan]))
+
 
 # --- UncertaintyController Tests ---
 
@@ -137,6 +238,20 @@ class TestUncertaintyController:
                         text_span=f"证据{i}", credibility_score=0.8)
                 for i in range(count)]
 
+    class _FakeEstimator:
+        def __init__(self, breakdown):
+            self.breakdown = breakdown
+
+        def estimate(self, *args, **kwargs):
+            return self.breakdown
+
+    def _controller_with_breakdown(self, breakdown, config=None):
+        from src.uncertainty.controller import UncertaintyController
+
+        ctrl = UncertaintyController(config=config)
+        ctrl.estimator = self._FakeEstimator(breakdown)
+        return ctrl
+
     def test_assess_proceed_with_good_evidence(self):
         from src.uncertainty.controller import Action, UncertaintyController
         ctrl = UncertaintyController()
@@ -148,6 +263,143 @@ class TestUncertaintyController:
         )
         assert isinstance(decision.action, Action)
         assert decision.confidence >= 0
+
+    def test_assess_abstains_when_overall_uncertainty_exceeds_threshold(self):
+        from src.uncertainty.controller import Action
+
+        ctrl = self._controller_with_breakdown(
+            UncertaintyBreakdown(
+                retrieval_uncertainty=1.0,
+                evidence_conflict=1.0,
+                reasoning_gap=1.0,
+                source_reliability=1.0,
+                verification_uncertainty=1.0,
+            )
+        )
+
+        decision = ctrl.assess(
+            subquestions=self._make_subquestions(),
+            evidence_pool=self._make_evidence(),
+            conflict_graph=EvidenceConflictGraph(),
+        )
+
+        assert decision.action == Action.ABSTAIN
+        assert decision.should_stop is True
+
+    def test_assess_lowers_confidence_when_max_rounds_exhausted_with_high_uncertainty(self):
+        from src.uncertainty.controller import Action
+
+        ctrl = self._controller_with_breakdown(
+            UncertaintyBreakdown(
+                retrieval_uncertainty=0.5,
+                evidence_conflict=0.5,
+                reasoning_gap=0.5,
+                source_reliability=0.5,
+                verification_uncertainty=0.5,
+            ),
+            config={"high_threshold": 0.4, "abstain_threshold": 0.9},
+        )
+
+        decision = ctrl.assess(
+            subquestions=self._make_subquestions(),
+            evidence_pool=self._make_evidence(),
+            conflict_graph=EvidenceConflictGraph(),
+            current_round=2,
+            max_rounds=2,
+        )
+
+        assert decision.action == Action.LOWER_CONFIDENCE
+        assert decision.should_stop is True
+
+    def test_assess_proceeds_when_max_rounds_exhausted_with_acceptable_uncertainty(self):
+        from src.uncertainty.controller import Action
+
+        ctrl = self._controller_with_breakdown(
+            UncertaintyBreakdown(
+                retrieval_uncertainty=0.1,
+                evidence_conflict=0.1,
+                reasoning_gap=0.1,
+                source_reliability=0.1,
+                verification_uncertainty=0.1,
+            )
+        )
+
+        decision = ctrl.assess(
+            subquestions=self._make_subquestions(),
+            evidence_pool=self._make_evidence(),
+            conflict_graph=EvidenceConflictGraph(),
+            current_round=3,
+            max_rounds=3,
+        )
+
+        assert decision.action == Action.PROCEED
+        assert decision.should_stop is True
+
+    def test_assess_resolves_conflicts_before_more_retrieval(self):
+        from src.uncertainty.controller import Action
+
+        ctrl = self._controller_with_breakdown(
+            UncertaintyBreakdown(
+                retrieval_uncertainty=0.9,
+                evidence_conflict=0.8,
+                reasoning_gap=0.0,
+                source_reliability=0.0,
+                verification_uncertainty=0.0,
+            )
+        )
+
+        decision = ctrl.assess(
+            subquestions=self._make_subquestions(),
+            evidence_pool=self._make_evidence(),
+            conflict_graph=EvidenceConflictGraph(),
+        )
+
+        assert decision.action == Action.RESOLVE_CONFLICTS
+
+    def test_assess_continues_retrieval_for_moderate_overall_uncertainty(self):
+        from src.uncertainty.controller import Action
+
+        ctrl = self._controller_with_breakdown(
+            UncertaintyBreakdown(
+                retrieval_uncertainty=0.4,
+                evidence_conflict=0.4,
+                reasoning_gap=0.4,
+                source_reliability=0.4,
+                verification_uncertainty=0.4,
+            ),
+            config={"high_threshold": 0.8, "abstain_threshold": 0.9},
+        )
+
+        decision = ctrl.assess(
+            subquestions=self._make_subquestions(),
+            evidence_pool=self._make_evidence(),
+            conflict_graph=EvidenceConflictGraph(),
+        )
+
+        assert decision.action == Action.CONTINUE_RETRIEVAL
+        assert decision.should_stop is False
+
+    def test_assess_uses_high_conflict_threshold_as_legacy_high_threshold(self):
+        from src.uncertainty.controller import Action
+
+        ctrl = self._controller_with_breakdown(
+            UncertaintyBreakdown(
+                retrieval_uncertainty=0.0,
+                evidence_conflict=0.55,
+                reasoning_gap=0.0,
+                source_reliability=0.0,
+                verification_uncertainty=0.0,
+            ),
+            config={"high_conflict_threshold": 0.5},
+        )
+
+        decision = ctrl.assess(
+            subquestions=self._make_subquestions(),
+            evidence_pool=self._make_evidence(),
+            conflict_graph=EvidenceConflictGraph(),
+        )
+
+        assert decision.action == Action.RESOLVE_CONFLICTS
 
     def test_assess_continue_with_low_coverage(self):
         from src.uncertainty.controller import Action, UncertaintyController
@@ -169,6 +421,105 @@ class TestUncertaintyController:
             verification_uncertainty=0.6, has_unsupported_claims=True, has_ignored_conflicts=False,
         )
         assert decision.action == Action.REPAIR_ANSWER
+
+    def test_assess_for_repair_prioritizes_ignored_conflicts(self):
+        from src.uncertainty.controller import Action, UncertaintyController
+
+        ctrl = UncertaintyController()
+
+        decision = ctrl.assess_for_repair(
+            verification_uncertainty=0.1,
+            has_unsupported_claims=True,
+            has_ignored_conflicts=True,
+        )
+
+        assert decision.action == Action.REPAIR_ANSWER
+        assert "Conflicts" in decision.reason
+        assert decision.confidence == 0.5
+
+    def test_assess_for_repair_lowers_confidence_on_high_verification_uncertainty(self):
+        from src.uncertainty.controller import Action, UncertaintyController
+
+        ctrl = UncertaintyController()
+
+        decision = ctrl.assess_for_repair(
+            verification_uncertainty=0.8,
+            has_unsupported_claims=False,
+            has_ignored_conflicts=False,
+        )
+
+        assert decision.action == Action.LOWER_CONFIDENCE
+        assert decision.should_stop is True
+
+    def test_assess_for_repair_proceeds_when_verification_uncertainty_is_low(self):
+        from src.uncertainty.controller import Action, UncertaintyController
+
+        ctrl = UncertaintyController()
+
+        decision = ctrl.assess_for_repair(
+            verification_uncertainty=0.2,
+            has_unsupported_claims=False,
+            has_ignored_conflicts=False,
+        )
+
+        assert decision.action == Action.PROCEED
+        assert decision.should_stop is True
+
+    @pytest.mark.parametrize(
+        "config",
+        [
+            {"acceptable_threshold": -0.1},
+            {"high_threshold": 1.2},
+            {"abstain_threshold": "0.7"},
+            {"acceptable_threshold": 0.8, "high_threshold": 0.6},
+            {"high_threshold": 0.8, "abstain_threshold": 0.7},
+        ],
+    )
+    def test_controller_rejects_invalid_threshold_config(self, config):
+        from src.uncertainty.controller import UncertaintyController
+
+        with pytest.raises(ValueError):
+            UncertaintyController(config=config)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"reasoning_completeness": 1.2},
+            {"reasoning_completeness": True},
+            {"current_round": -1},
+            {"max_rounds": -1},
+            {"current_round": 1.5},
+            {"max_rounds": 1.5},
+        ],
+    )
+    def test_assess_rejects_invalid_public_inputs(self, kwargs):
+        from src.uncertainty.controller import UncertaintyController
+
+        ctrl = UncertaintyController()
+        params = {
+            "subquestions": self._make_subquestions(),
+            "evidence_pool": self._make_evidence(),
+            "conflict_graph": EvidenceConflictGraph(),
+        }
+        params.update(kwargs)
+
+        with pytest.raises(ValueError):
+            ctrl.assess(**params)
+
+    @pytest.mark.parametrize("verification_uncertainty", [1.1, "0.1"])
+    def test_assess_for_repair_rejects_invalid_verification_uncertainty(
+        self, verification_uncertainty
+    ):
+        from src.uncertainty.controller import UncertaintyController
+
+        ctrl = UncertaintyController()
+
+        with pytest.raises(ValueError, match="verification_uncertainty"):
+            ctrl.assess_for_repair(
+                verification_uncertainty=verification_uncertainty,
+                has_unsupported_claims=False,
+                has_ignored_conflicts=False,
+            )
 
     def test_get_uncertainty_breakdown(self):
         from src.uncertainty.controller import UncertaintyController

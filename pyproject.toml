@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Verifiable Agentic Retrieval-Augmented Reasoning"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "VeraRAG Team"},
 ]
@@ -16,7 +16,7 @@ keywords = ["rag", "nlp", "verification", "reasoning"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -36,13 +36,30 @@ dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "jinja2>=3.1.0",
+    "python-multipart>=0.0.9",
     "sse-starlette>=1.8.0",
     "httpx>=0.25.0",
     "pydantic>=2.0.0",
+    "cryptography>=42.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/xiaweiyi713/VeraRAG"
+Repository = "https://github.com/xiaweiyi713/VeraRAG"
+Documentation = "https://github.com/xiaweiyi713/VeraRAG#readme"
+Issues = "https://github.com/xiaweiyi713/VeraRAG/issues"
+Changelog = "https://github.com/xiaweiyi713/VeraRAG/blob/main/CHANGELOG.md"
+Security = "https://github.com/xiaweiyi713/VeraRAG/security/policy"
+Citation = "https://github.com/xiaweiyi713/VeraRAG/blob/main/CITATION.cff"
 
 [project.optional-dependencies]
 dense = ["sentence-transformers>=2.2.0", "faiss-cpu>=1.7.0"]
+train = [
+  "sentence-transformers>=2.2.0",
+  "torch>=2.0.0",
+  "datasets>=2.14.0",
+  "accelerate>=1.1.0",
+]
 ollama = ["ollama>=0.1.0"]
 pdf = ["pymupdf>=1.23.0"]
 eval = ["matplotlib>=3.5.0", "seaborn>=0.12.0"]
@@ -52,15 +69,46 @@ dev = [
     "ruff>=0.4.0",
     "mypy>=1.0.0",
     "build>=1.0.0",
+    "pre-commit>=3.5.0",
 ]
-all = ["verarag[dense,ollama,pdf,eval,dev]"]
+all = ["verarag[dense,train,ollama,pdf,eval,dev]"]
 
 [project.scripts]
 verarag-web = "web.app:main"
+verarag-doctor = "experiments.doctor:main"
 verarag-benchmark = "experiments.run_verabench:main"
 verarag-analyze = "experiments.analyze_verabench_results:main"
 verarag-calibration = "experiments.calibration_curve:main"
 verarag-leaderboard = "experiments.build_verabench_leaderboard:main"
+verarag-build-conflict-data = "experiments.build_conflict_training_data:main"
+verarag-train-conflict = "experiments.train_conflict_cross_encoder:main"
+verarag-compare-conflicts = "experiments.compare_conflict_detectors:main"
+verarag-audit-conflict-model = "experiments.audit_conflict_model:main"
+verarag-conflict-ablation = "experiments.run_conflict_ablation:main"
+verarag-validate-benchmark = "experiments.validate_verabench:main"
+verarag-audit-contamination = "experiments.audit_verabench_contamination:main"
+verarag-build-external-annotation-packet = "experiments.build_external_annotation_packet:main"
+verarag-compile-external-annotations = "experiments.compile_external_annotations:main"
+verarag-validate-external-conflicts = "experiments.validate_external_conflict_set:main"
+verarag-rescore = "experiments.rescore_verabench:main"
+verarag-merge-reports = "experiments.merge_verabench_reports:main"
+verarag-compare-reports = "experiments.compare_verabench_reports:main"
+verarag-scan-secrets = "experiments.scan_secrets:main"
+verarag-generate-sbom = "experiments.generate_sbom:main"
+verarag-release-checksums = "experiments.generate_release_checksums:main"
+verarag-validate-version = "experiments.validate_version_identity:main"
+verarag-validate-python = "experiments.validate_python_support:main"
+verarag-validate-configs = "experiments.validate_configs:main"
+verarag-validate-docs = "experiments.validate_docs:main"
+verarag-validate-results = "experiments.validate_results:main"
+verarag-validate-examples = "experiments.validate_examples:main"
+verarag-validate-deployment = "experiments.validate_deployment:main"
+verarag-validate-precommit = "experiments.validate_precommit:main"
+verarag-validate-deps = "experiments.validate_dependency_metadata:main"
+verarag-validate-metadata = "experiments.validate_project_metadata:main"
+verarag-validate-package = "experiments.validate_package_contents:main"
+verarag-validate-install = "experiments.validate_installed_wheel:main"
+verarag-release-health = "experiments.validate_release_health:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -73,9 +121,25 @@ include = ["verarag*", "src*", "web*", "configs*", "experiments*"]
 "web" = ["templates/*.html", "static/*"]
 "configs" = ["*.yaml"]
 
+[tool.setuptools.data-files]
+"share/doc/verarag" = [
+    "docs/API.md",
+    "docs/ARCHITECTURE.md",
+    "docs/EVALUATION.md",
+    "docs/GPU_TRAINING.md",
+    "docs/RELEASING.md",
+    "docs/RESULTS.md",
+    "docs/VERABENCH_CARD.md",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+filterwarnings = [
+    # Third-party deprecations from current FastAPI/Starlette and jieba stacks.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated.*:starlette.exceptions.StarletteDeprecationWarning",
+    "ignore:pkg_resources is deprecated as an API.*:UserWarning:jieba\\._compat",
+]
 
 [tool.mypy]
 python_version = "3.10"

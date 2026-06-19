@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from src.agents.retrieval_agent import DynamicRetrievalAgent
+from src.retriever.base import RetrievalResult
 from src.utils.data_structures import Evidence, SubQuestion
 
 
@@ -47,6 +48,62 @@ class TestQueryVariants(unittest.TestCase):
         entity_variants = [v for v in variants if "Einstein" in v or "Newton" in v]
         self.assertGreater(len(entity_variants), 0)
 
+    def test_result_to_evidence_preserves_temporal_metadata(self):
+        result = RetrievalResult(
+            doc_id="D011_c0",
+            content="截至2023年末，公司员工总数增至41,000人。",
+            title="星辰科技2023年度财务报告",
+            score=0.9,
+            metadata={
+                "source": "report",
+                "date": "2024-03-28",
+                "author": "星辰科技投资者关系部",
+                "url": "https://startech.com/ir/2023",
+            },
+        )
+
+        evidence = self.agent._result_to_evidence(result, "D011_c0")
+
+        self.assertEqual(evidence.date, "2024-03-28")
+        self.assertEqual(evidence.author, "星辰科技投资者关系部")
+
+    def test_counter_evidence_uses_at_least_one_result_for_small_top_k(self):
+        class RecordingRetriever:
+            def __init__(self):
+                self.calls = []
+
+            def retrieve(self, query, top_k=10):
+                self.calls.append((query, top_k))
+                return []
+
+        retriever = RecordingRetriever()
+        agent = DynamicRetrievalAgent(retriever=retriever)
+
+        agent.retrieve_for_subquestion(
+            SubQuestion(
+                id="sq0",
+                question="Claim X is true",
+                requires_counter_evidence=True,
+            ),
+            top_k=1,
+        )
+
+        counter_calls = [
+            (query, top_k)
+            for query, top_k in retriever.calls
+            if "不实" in query or "false" in query or "最新" in query
+        ]
+        self.assertGreater(len(counter_calls), 0)
+        self.assertTrue(all(top_k == 1 for _, top_k in counter_calls))
+
+    def test_counter_evidence_query_generation_covers_challenge_temporal_and_alternative_paths(self):
+        queries = self.agent._generate_counter_evidence_queries("欧盟AI法案已经通过了吗？")
+
+        self.assertEqual(len(queries), 8)
+        self.assertTrue(any("不实" in query for query in queries))
+        self.assertTrue(any(query.startswith("最新 ") for query in queries))
+        self.assertTrue(any("不同观点" in query for query in queries))
+
 
 class TestSubquestionRefinement(unittest.TestCase):
     """Test subquestion refinement."""
@@ -85,6 +142,130 @@ class TestSubquestionRefinement(unittest.TestCase):
 
         refined = self.agent._refine_subquestion(sq, evidence)
         self.assertEqual(refined.dependency_ids, ["sq0"])
+
+    def test_refine_returns_same_object_when_no_content_words(self):
+        sq = SubQuestion(id="sq0", question="is it?", coverage_score=0.1)
+
+        refined = self.agent._refine_subquestion(sq, [])
+
+        self.assertIs(refined, sq)
+
+    def test_refine_returns_same_object_when_all_content_words_are_covered(self):
+        sq = SubQuestion(id="sq0", question="alpha beta", coverage_score=0.4)
+        evidence = [
+            Evidence(
+                evidence_id="E1",
+                source="test",
+                title="alpha",
+                text_span="beta",
+            )
+        ]
+
+        refined = self.agent._refine_subquestion(sq, evidence)
+
+        self.assertIs(refined, sq)
+
+
+class TestDynamicRetrieve(unittest.TestCase):
+    class RecordingRetriever:
+        def __init__(self):
+            self.calls = []
+
+        def retrieve(self, query, top_k=10):
+            self.calls.append((query, top_k))
+            return [
+                RetrievalResult(
+                    doc_id="",
+                    content="alpha evidence only",
+                    title="alpha source",
+                    score=0.7,
+                    metadata={"source": "fixture"},
+                )
+            ]
+
+    class CoveringRetriever:
+        def __init__(self):
+            self.calls = []
+
+        def retrieve(self, query, top_k=10):
+            self.calls.append((query, top_k))
+            token = "beta" if "beta" in query else "alpha"
+            return [
+                RetrievalResult(
+                    doc_id=f"{token}-{index}",
+                    content=f"{token} supporting evidence",
+                    title=f"{token} source",
+                    score=1.0 - (index * 0.01),
+                    metadata={"source": "fixture"},
+                )
+                for index in range(3)
+            ]
+
+    def test_dynamic_retrieve_writes_refined_subquestion_back_for_next_round(self):
+        retriever = self.RecordingRetriever()
+        agent = DynamicRetrievalAgent(retriever=retriever)
+        subquestions = [
+            SubQuestion(id="sq0", question="alpha beta", coverage_score=0.1)
+        ]
+
+        evidence = agent.dynamic_retrieve(
+            subquestions,
+            [],
+            max_rounds=2,
+            budget_per_round=1,
+        )
+
+        self.assertTrue(
+            any(
+                query.startswith("Find specific information about beta")
+                for query, _top_k in retriever.calls
+            )
+        )
+        self.assertNotEqual(subquestions[0].question, "alpha beta")
+        self.assertIn("beta", subquestions[0].question)
+        self.assertTrue(evidence[0].evidence_id.startswith("E"))
+        self.assertGreaterEqual(min(top_k for _query, top_k in retriever.calls), 1)
+
+    def test_dynamic_retrieve_returns_existing_pool_when_all_resolved(self):
+        agent = DynamicRetrievalAgent(retriever=self.RecordingRetriever())
+        pool = [
+            Evidence(evidence_id="E1", source="test", title="done", text_span="done")
+        ]
+
+        result = agent.dynamic_retrieve(
+            [SubQuestion(id="sq0", question="done", status="resolved")],
+            pool,
+        )
+
+        self.assertIs(result, pool)
+
+    def test_dynamic_retrieve_resolves_questions_and_breaks_when_done(self):
+        retriever = self.CoveringRetriever()
+        agent = DynamicRetrievalAgent(retriever=retriever)
+        subquestions = [
+            SubQuestion(id="sq0", question="alpha", coverage_score=0.1),
+            SubQuestion(id="sq1", question="beta", coverage_score=0.2),
+        ]
+
+        result = agent.dynamic_retrieve(
+            subquestions,
+            [],
+            max_rounds=3,
+            budget_per_round=6,
+        )
+
+        self.assertEqual([sq.status for sq in subquestions], ["resolved", "resolved"])
+        self.assertEqual([sq.coverage_score for sq in subquestions], [1.0, 1.0])
+        self.assertEqual(len(result), 6)
+
+    def test_run_delegates_to_dynamic_retrieve(self):
+        agent = DynamicRetrievalAgent(retriever=self.CoveringRetriever())
+        subquestion = SubQuestion(id="sq0", question="alpha", coverage_score=0.1)
+
+        result = agent.run([subquestion], [], max_rounds=1, budget_per_round=3)
+
+        self.assertEqual(subquestion.status, "resolved")
+        self.assertEqual(len(result), 3)
 
 
 if __name__ == "__main__":

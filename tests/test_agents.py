@@ -10,6 +10,7 @@ from src.utils.data_structures import (
     AnswerClaim,
     Claim,
     ClaimType,
+    Complexity,
     ConflictEdge,
     ConflictGraphNode,
     ConflictType,
@@ -17,6 +18,7 @@ from src.utils.data_structures import (
     EvidenceConflictGraph,
     SubQuestion,
     TaskAnalysis,
+    TaskType,
     VerificationReport,
     VerificationStatus,
 )
@@ -29,6 +31,83 @@ class MockLLM:
 
     def generate(self, prompt: str, **kwargs) -> str:
         return self.response
+
+
+class TestDynamicRetrievalAgent:
+    class RecordingRetriever:
+        def __init__(self):
+            self.top_k_calls = []
+
+        def retrieve(self, query, top_k=10, **kwargs):
+            from src.retriever.base import RetrievalResult
+
+            self.top_k_calls.append(top_k)
+            return [
+                RetrievalResult(
+                    doc_id="D001_c0",
+                    content="欧盟AI法案已通过。",
+                    title="欧盟AI法案",
+                    score=1.0,
+                    metadata={"entities": ["欧盟AI法案"]},
+                )
+            ]
+
+    def test_result_to_evidence_preserves_entity_metadata(self):
+        from src.agents.retrieval_agent import DynamicRetrievalAgent
+        from src.retriever.base import RetrievalResult
+
+        agent = DynamicRetrievalAgent(retriever=None)  # type: ignore[arg-type]
+        result = RetrievalResult(
+            doc_id="D043_c0",
+            content="比亚迪销量302.4万辆，特斯拉交付181万辆。",
+            title="比亚迪vs特斯拉：2023年全球销量对比",
+            score=1.0,
+            metadata={
+                "source": "report",
+                "entities": ["比亚迪", "特斯拉", "销量"],
+                "date": "2024-01-01",
+                "author": "analyst",
+            },
+        )
+
+        evidence = agent._result_to_evidence(result, result.doc_id)
+
+        assert evidence.entities == ["比亚迪", "特斯拉", "销量"]
+        assert evidence.date == "2024-01-01"
+        assert evidence.author == "analyst"
+
+    def test_original_question_anchor_keeps_full_retrieval_depth(self):
+        from src.agents.retrieval_agent import DynamicRetrievalAgent
+
+        retriever = self.RecordingRetriever()
+        agent = DynamicRetrievalAgent(retriever=retriever)  # type: ignore[arg-type]
+        subquestions = [
+            SubQuestion(id="sq_original", question="原始问题", requires_counter_evidence=False),
+            *[
+                SubQuestion(id=f"sq{i}", question=f"子问题{i}", requires_counter_evidence=False)
+                for i in range(10)
+            ],
+        ]
+
+        agent.dynamic_retrieve(subquestions, [], max_rounds=1, budget_per_round=50)
+
+        assert retriever.top_k_calls[0] == 10
+
+    def test_compact_entity_group_expands_retrieval_queries(self):
+        from src.agents.retrieval_agent import DynamicRetrievalAgent
+
+        agent = DynamicRetrievalAgent(retriever=self.RecordingRetriever())  # type: ignore[arg-type]
+
+        variants = agent._generate_query_variants(
+            "中美欧在AI监管方面分别采取了什么模式？各有什么特点？"
+        )
+
+        assert variants[:4] == [
+            "中美欧在AI监管方面分别采取了什么模式？各有什么特点？",
+            "中国在AI监管方面分别采取了什么模式？各有什么特点？",
+            "美国在AI监管方面分别采取了什么模式？各有什么特点？",
+            "欧盟在AI监管方面分别采取了什么模式？各有什么特点？",
+        ]
 
 
 # --- TaskAnalyzer Tests ---
@@ -68,6 +147,112 @@ class TestTaskAnalyzer:
         analyzer = TaskAnalyzer(llm_client=MockLLM())
         result = analyzer.analyze("")
         assert isinstance(result, TaskAnalysis)
+
+    def test_simple_question_stays_low_without_llm(self):
+        from src.agents.task_analyzer import TaskAnalyzer
+
+        analyzer = TaskAnalyzer()
+
+        result = analyzer.analyze("What is VeraRAG?")
+
+        assert result.complexity == Complexity.LOW
+        assert result.estimated_hops == 1
+
+    def test_complex_question_without_llm_falls_back_to_rules(self):
+        from src.agents.task_analyzer import TaskAnalyzer
+
+        analyzer = TaskAnalyzer()
+
+        result = analyzer.analyze("Compare revenue in 2023 and 2024 and explain the trend")
+
+        assert result.task_type == TaskType.COMPARATIVE_ANALYSIS
+        assert result.complexity in {Complexity.MEDIUM, Complexity.HIGH}
+        assert result.requires_conflict_check is True
+
+    def test_llm_analysis_normalizes_common_json_shapes(self):
+        from src.agents.task_analyzer import TaskAnalyzer
+
+        response = """{
+            "task_type": "multi_hop_qa",
+            "complexity": "HIGH",
+            "requires_retrieval": "false",
+            "requires_conflict_check": "yes",
+            "requires_numerical_reasoning": "1",
+            "requires_temporal_reasoning": "0",
+            "estimated_hops": "10",
+            "keywords": ["Revenue", " revenue ", "", 123, "Market"]
+        }"""
+        analyzer = TaskAnalyzer(llm_client=MockLLM(response))
+
+        result = analyzer.analyze("Compare revenue in 2023 and 2024 and explain the trend")
+
+        assert result.task_type == TaskType.MULTI_HOP_QA
+        assert result.complexity == Complexity.HIGH
+        assert result.requires_retrieval is False
+        assert result.requires_conflict_check is True
+        assert result.requires_numerical_reasoning is True
+        assert result.requires_temporal_reasoning is False
+        assert result.estimated_hops == 5
+        assert result.keywords == ["Revenue", "Market"]
+
+    def test_llm_analysis_splits_keyword_string_and_clamps_low_hops(self):
+        from src.agents.task_analyzer import TaskAnalyzer
+
+        response = """{
+            "task_type": "fact verification",
+            "complexity": "medium",
+            "estimated_hops": 0,
+            "keywords": "EU AI Act, facial recognition; 2024"
+        }"""
+        analyzer = TaskAnalyzer(llm_client=MockLLM(response))
+
+        result = analyzer.analyze("Is the claim about the EU AI Act in 2024 accurate?")
+
+        assert result.task_type == TaskType.FACT_VERIFICATION
+        assert result.estimated_hops == 1
+        assert result.keywords == ["EU AI Act", "facial recognition", "2024"]
+
+    def test_llm_analysis_non_object_response_falls_back_to_rules(self):
+        from src.agents.task_analyzer import TaskAnalyzer
+
+        analyzer = TaskAnalyzer(llm_client=MockLLM('["not", "an", "object"]'))
+
+        result = analyzer.analyze("Compare revenue in 2023 and 2024")
+
+        assert result.task_type == TaskType.COMPARATIVE_ANALYSIS
+        assert result.requires_conflict_check is True
+
+    def test_task_analyzer_coercion_helpers_cover_defaults_and_limits(self):
+        from src.agents.task_analyzer import TaskAnalyzer
+
+        assert TaskAnalyzer._coerce_task_type(
+            TaskType.SCIENTIFIC_REVIEW,
+            TaskType.MULTI_HOP_QA,
+        ) == TaskType.SCIENTIFIC_REVIEW
+        assert TaskAnalyzer._coerce_task_type(
+            "temporal_reasoning",
+            TaskType.MULTI_HOP_QA,
+        ) == TaskType.TEMPORAL_REASONING
+        assert TaskAnalyzer._coerce_task_type("unknown", TaskType.MULTI_HOP_QA) == TaskType.MULTI_HOP_QA
+        assert TaskAnalyzer._coerce_task_type(None, TaskType.FACT_VERIFICATION) == TaskType.FACT_VERIFICATION
+
+        assert TaskAnalyzer._coerce_complexity(Complexity.HIGH, Complexity.LOW) == Complexity.HIGH
+        assert TaskAnalyzer._coerce_complexity("bad", Complexity.MEDIUM) == Complexity.MEDIUM
+        assert TaskAnalyzer._coerce_complexity(None, Complexity.LOW) == Complexity.LOW
+
+        assert TaskAnalyzer._coerce_bool(True, False) is True
+        assert TaskAnalyzer._coerce_bool("maybe", True) is True
+        assert TaskAnalyzer._coerce_estimated_hops(True, 3) == 3
+        assert TaskAnalyzer._coerce_estimated_hops("bad", 2) == 2
+        assert TaskAnalyzer._coerce_keywords(None) == []
+        assert TaskAnalyzer._coerce_keywords([str(i) for i in range(12)]) == [str(i) for i in range(10)]
+
+    def test_run_delegates_to_analyze(self):
+        from src.agents.task_analyzer import TaskAnalyzer
+
+        result = TaskAnalyzer().run("What is VeraRAG?")
+
+        assert result.complexity == Complexity.LOW
 
 
 # --- ReasoningAgent Tests ---
@@ -123,6 +308,74 @@ class TestReasoningAgent:
             reasoning_plan=[],
         )
         assert isinstance(answer, str)
+
+    def test_reason_acknowledges_detected_conflicts(self):
+        from src.agents.reasoning_agent import ReasoningAgent
+
+        ev1 = Evidence(
+            evidence_id="D014_c0",
+            source="news",
+            title="不实报道",
+            text_span="近日有消息称星辰科技2023年营收突破800亿元。",
+            claims=[
+                Claim(
+                    claim_id="C_bad",
+                    claim="星辰科技2023年营收突破800亿元",
+                    claim_type=ClaimType.FACTUAL,
+                    entities=["星辰科技"],
+                )
+            ],
+        )
+        ev2 = Evidence(
+            evidence_id="D011_c0",
+            source="report",
+            title="2023财报",
+            text_span="星辰科技2023财年全年营收达到612亿元人民币。",
+            claims=[
+                Claim(
+                    claim_id="C_good",
+                    claim="星辰科技2023财年全年营收达到612亿元人民币",
+                    claim_type=ClaimType.FACTUAL,
+                    entities=["星辰科技"],
+                )
+            ],
+        )
+        graph = EvidenceConflictGraph()
+        graph.add_node(ConflictGraphNode("C_bad", ev1.claims[0].claim, "claim", ["D014_c0"]))
+        graph.add_node(ConflictGraphNode("C_good", ev2.claims[0].claim, "claim", ["D011_c0"]))
+        graph.add_edge(ConflictEdge("C_bad", "C_good", ConflictType.NUMERIC_CONFLICT, 0.9))
+        json_response = '''{
+            "answer": "星辰科技2023财年全年营收为612亿元人民币。",
+            "answer_claims": [
+                {
+                    "claim": "星辰科技2023年营收为612亿元",
+                    "supporting_evidence": ["D011_c0"],
+                    "conflicting_evidence": [],
+                    "confidence": 0.8,
+                    "claim_type": "factual",
+                    "verifiable": true,
+                    "support_type": "direct"
+                }
+            ],
+            "reasoning_chain": [
+                {"step": 1, "description": "读取财报", "evidence_ids": ["D011_c0"], "confidence": 0.8}
+            ]
+        }'''
+        agent = ReasoningAgent(llm_client=MockLLM(json_response))
+
+        answer, claims, steps = agent.reason(
+            question="星辰科技2023年的营收是多少？",
+            subquestions=self._make_subquestions(),
+            evidence=[ev1, ev2],
+            conflict_graph=graph,
+            reasoning_plan=["分析证据"],
+        )
+
+        assert "冲突" in answer
+        assert "D014_c0" in answer
+        assert "D011_c0" in answer
+        assert claims[0].conflicting_evidence == ["D014_c0", "D011_c0"]
+        assert steps[0].evidence_ids == ["D014_c0", "D011_c0"]
 
 
 # --- VerifierAgent Tests ---
@@ -204,6 +457,314 @@ class TestVerifierAgent:
         from src.agents.verifier_agent import VerifierAgent
         agent = VerifierAgent(llm_client=MockLLM(), use_nli=False)
         assert agent.use_nli is False
+
+    def test_nli_uses_evidence_as_premise_and_interprets_logits(self):
+        from types import SimpleNamespace
+
+        from src.agents.verifier_agent import VerifierAgent
+
+        calls = []
+
+        class FakeNLI:
+            model = SimpleNamespace(
+                config=SimpleNamespace(
+                    id2label={0: "contradiction", 1: "entailment", 2: "neutral"},
+                )
+            )
+
+            def predict(self, pairs, show_progress_bar=False):
+                calls.extend(pairs)
+                return [[0.0, 4.0, 0.0] for _ in pairs]
+
+        agent = VerifierAgent(
+            config={"verification": {"nli_threshold": 0.7}},
+            llm_client=MockLLM(),
+        )
+        agent.nli_model = FakeNLI()
+
+        result = agent._nli_verify("声明", ["证据文本"])
+
+        assert calls == [("证据文本", "声明")]
+        assert result is not None
+        assert result["status"] == "SUPPORTED"
+        assert result["confidence"] > 0.9
+
+    def test_verify_claim_prefers_nli_when_available(self):
+        from types import SimpleNamespace
+
+        from src.agents.verifier_agent import VerifierAgent
+
+        class FakeNLI:
+            model = SimpleNamespace(
+                config=SimpleNamespace(
+                    id2label={0: "contradiction", 1: "entailment", 2: "neutral"},
+                )
+            )
+
+            @staticmethod
+            def predict(pairs, show_progress_bar=False):
+                assert pairs == [("T: 内容", "声明1")]
+                return [[0.0, 4.0, 0.0]]
+
+        agent = VerifierAgent(llm_client=MockLLM("not json"))
+        agent.nli_model = FakeNLI()
+
+        verification = agent._verify_claim(
+            self._make_claims()[0],
+            {"E1": self._make_evidence()[0]},
+            EvidenceConflictGraph(),
+        )
+
+        assert verification["status"] == "SUPPORTED"
+        assert verification["method"] == "nli"
+
+    def test_nli_refuted_neutral_invalid_and_exception_paths(self):
+        from types import SimpleNamespace
+
+        from src.agents.verifier_agent import VerifierAgent
+
+        class FakeNLI:
+            model = SimpleNamespace(
+                config=SimpleNamespace(
+                    id2label={0: "contradiction", 1: "entailment", 2: "neutral"},
+                )
+            )
+
+            def __init__(self, scores):
+                self.scores = scores
+
+            def predict(self, pairs, show_progress_bar=False):
+                return self.scores
+
+        agent = VerifierAgent(
+            config={"verification": {"nli_threshold": 0.7}},
+            llm_client=MockLLM(),
+        )
+
+        agent.nli_model = FakeNLI([[4.0, 0.0, 0.0]])
+        refuted = agent._nli_verify("声明", ["证据"])
+        assert refuted is not None
+        assert refuted["status"] == "REFUTED"
+
+        agent.nli_model = FakeNLI([[0.0, 0.0, 4.0]])
+        neutral = agent._nli_verify("声明", ["证据"])
+        assert neutral is not None
+        assert neutral["status"] == "NOT_ENOUGH_INFO"
+
+        agent.nli_model = FakeNLI([[1.0, 2.0]])
+        assert agent._nli_verify("声明", ["证据"]) is None
+
+        class RaisingNLI:
+            def predict(self, pairs, show_progress_bar=False):
+                raise RuntimeError("boom")
+
+        agent.nli_model = RaisingNLI()
+        assert agent._nli_verify("声明", ["证据"]) is None
+
+        assert agent._nli_probabilities([1.0, 2.0]) is None
+        assert agent._nli_probabilities([[1.0, 2.0]]) is None
+
+    def test_nli_returns_none_when_model_cannot_load(self, monkeypatch):
+        from src.agents.verifier_agent import VerifierAgent
+
+        agent = VerifierAgent(llm_client=MockLLM())
+        monkeypatch.setattr(agent, "_load_nli_model", lambda: None)
+
+        assert agent._nli_verify("声明", ["证据"]) is None
+
+    def test_failed_nli_load_is_cached_across_agents(self, monkeypatch):
+        import sys
+        from types import ModuleType
+
+        from src.agents.verifier_agent import VerifierAgent
+        from src.utils.model_cache import clear_optional_model_cache
+
+        clear_optional_model_cache()
+        calls = []
+
+        class FailingCrossEncoder:
+            def __init__(self, model_name, **kwargs):
+                calls.append((model_name, kwargs))
+                raise OSError("model unavailable")
+
+        fake_module = ModuleType("sentence_transformers")
+        fake_module.CrossEncoder = FailingCrossEncoder
+        monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+        config = {
+            "verification": {
+                "nli_model": "missing/nli",
+                "nli_local_files_only": True,
+            }
+        }
+
+        assert VerifierAgent(config=config)._load_nli_model() is None
+        assert VerifierAgent(config=config)._load_nli_model() is None
+        assert calls == [("missing/nli", {"local_files_only": True})]
+        clear_optional_model_cache()
+
+    def test_nli_load_without_local_files_flag_uses_plain_cross_encoder(self, monkeypatch):
+        import sys
+        from types import ModuleType
+
+        from src.agents.verifier_agent import VerifierAgent
+        from src.utils.model_cache import clear_optional_model_cache
+
+        clear_optional_model_cache()
+        calls = []
+        fake_model = object()
+
+        class FakeCrossEncoder:
+            def __new__(cls, model_name, **kwargs):
+                calls.append((model_name, kwargs))
+                return fake_model
+
+        fake_module = ModuleType("sentence_transformers")
+        fake_module.CrossEncoder = FakeCrossEncoder
+        monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+
+        agent = VerifierAgent(
+            config={"verification": {"nli_model": "available/nli"}},
+            llm_client=MockLLM(),
+        )
+
+        assert agent._load_nli_model() is fake_model
+        assert calls == [("available/nli", {})]
+        clear_optional_model_cache()
+
+    def test_llm_verification_normalizes_status_and_confidence(self):
+        from src.agents.verifier_agent import VerifierAgent
+
+        agent = VerifierAgent(
+            llm_client=MockLLM(
+                '{"status": "unknown", "confidence": "high", "rationale": "bad fields"}'
+            ),
+            use_nli=False,
+        )
+
+        verification = agent._llm_verify_claim("声明", ["证据"], [])
+
+        assert verification["status"] == "NOT_ENOUGH_INFO"
+        assert verification["confidence"] == 0.0
+        assert verification["method"] == "llm"
+
+    def test_verification_normalizers_cover_enum_bad_status_and_nonfinite_confidence(self):
+        from src.agents.verifier_agent import VerifierAgent
+
+        agent = VerifierAgent(llm_client=MockLLM(), use_nli=False)
+
+        normalized = agent._normalize_verification(
+            {
+                "status": VerificationStatus.REFUTED,
+                "confidence": float("nan"),
+            },
+            "声明",
+        )
+
+        assert normalized["claim"] == "声明"
+        assert normalized["status"] == "REFUTED"
+        assert normalized["confidence"] == 0.0
+        assert agent._normalize_status(object()) == "NOT_ENOUGH_INFO"
+        probabilities = agent._nli_probabilities([0.0, 1.0, 0.0])
+        assert probabilities is not None
+        assert probabilities.shape == (1, 3)
+
+    def test_verify_answer_tracks_overconfident_refuted_and_missing_claims(self):
+        from src.agents.verifier_agent import VerifierAgent
+
+        class SequentialLLM:
+            def __init__(self):
+                self.responses = iter([
+                    '{"status": "supported", "confidence": 0.4}',
+                    '{"status": "refuted", "confidence": 0.9}',
+                    '{"status": "not enough info", "confidence": 0.7}',
+                ])
+
+            def generate(self, prompt: str, **kwargs) -> str:
+                return next(self.responses)
+
+        claims = [
+            AnswerClaim(claim="低置信支持", supporting_evidence=["E1"], confidence=0.9),
+            AnswerClaim(claim="被反驳", supporting_evidence=["E1"], confidence=0.9),
+            AnswerClaim(claim="证据不足", supporting_evidence=["E1"], confidence=0.9),
+        ]
+        agent = VerifierAgent(llm_client=SequentialLLM(), use_nli=False)
+
+        report = agent.verify_answer(
+            answer="答案",
+            claims=claims,
+            evidence=self._make_evidence(),
+            conflict_graph=EvidenceConflictGraph(),
+        )
+
+        assert report.overall_status is VerificationStatus.REFUTED
+        assert report.overconfident_claims == ["低置信支持"]
+        assert report.missing_evidence_for == ["证据不足"]
+        assert report.issues == [
+            {
+                "type": "unsupported_claim",
+                "description": "1 claims lack sufficient evidence",
+            }
+        ]
+
+    def test_verify_answer_supported_and_fallback_paths(self):
+        from src.agents.verifier_agent import VerifierAgent
+
+        supported_agent = VerifierAgent(
+            llm_client=MockLLM('{"status": "SUPPORTED", "confidence": 1.5}'),
+            use_nli=False,
+        )
+        supported = supported_agent.verify_answer(
+            answer="答案",
+            claims=[AnswerClaim(claim="声明", supporting_evidence=["E1"])],
+            evidence=self._make_evidence(),
+            conflict_graph=EvidenceConflictGraph(),
+        )
+        assert supported.overall_status is VerificationStatus.SUPPORTED
+        assert supported.claim_verifications[0]["confidence"] == 1.0
+
+        fallback_agent = VerifierAgent(llm_client=MockLLM("not json"), use_nli=False)
+        fallback = fallback_agent._llm_verify_claim("声明", [], [])
+        assert fallback == {
+            "claim": "声明",
+            "status": "NOT_ENOUGH_INFO",
+            "confidence": 0.3,
+            "method": "fallback",
+        }
+
+    def test_acknowledged_conflicts_are_not_reported_as_ignored(self):
+        from src.agents.verifier_agent import VerifierAgent
+
+        graph = EvidenceConflictGraph()
+        graph.add_node(ConflictGraphNode(node_id="E1", content="证据A", node_type="evidence"))
+        graph.add_node(ConflictGraphNode(node_id="E2", content="证据B", node_type="evidence"))
+        graph.add_edge(ConflictEdge(
+            source_id="E1", target_id="E2",
+            conflict_type=ConflictType.NUMERIC_CONFLICT,
+            confidence=0.8,
+        ))
+        claims = [
+            AnswerClaim(claim="承认冲突", supporting_evidence=["E1"], conflicting_evidence=["E2"])
+        ]
+        agent = VerifierAgent(llm_client=MockLLM(), use_nli=False)
+
+        assert agent._check_ignored_conflicts(claims, graph) == []
+
+    def test_run_delegates_to_verify_answer(self):
+        from src.agents.verifier_agent import VerifierAgent
+
+        agent = VerifierAgent(
+            llm_client=MockLLM('{"status": "SUPPORTED", "confidence": 0.9}'),
+            use_nli=False,
+        )
+
+        report = agent.run(
+            "答案",
+            [AnswerClaim(claim="声明", supporting_evidence=["E1"])],
+            self._make_evidence(),
+            EvidenceConflictGraph(),
+        )
+
+        assert report.overall_status is VerificationStatus.SUPPORTED
 
 
 # --- ConflictGraphBuilder Tests (Three-Layer Architecture) ---
@@ -329,15 +890,57 @@ class TestConflictGraphBuilder:
         # Returns None since model can't load
         assert result is None
 
+    def test_nli_uses_model_label_mapping(self):
+        """Conflict NLI must not assume a fixed three-class label order."""
+        from types import SimpleNamespace
+
+        import numpy as np
+
+        from src.evidence.conflict_graph import ConflictGraphBuilder
+
+        class DummyNLI:
+            model = SimpleNamespace(
+                config=SimpleNamespace(
+                    id2label={0: "entailment", 1: "neutral", 2: "contradiction"},
+                ),
+            )
+
+            @staticmethod
+            def predict(pairs, show_progress_bar=False):
+                assert pairs == [("声明A", "声明B")]
+                assert show_progress_bar is False
+                return np.asarray([[8.0, 0.0, -4.0]])
+
+        builder = ConflictGraphBuilder(
+            llm_client=None,
+            config={"conflict_graph": {"enable_nli": True, "nli_threshold": 0.7}},
+        )
+        builder._nli_available = True
+        builder._nli_model = DummyNLI()
+
+        edge = builder._nli_detect(
+            self._make_claim("声明A"),
+            self._make_claim("声明B"),
+        )
+
+        assert edge is not None
+        assert edge.conflict_type == ConflictType.SUPPORT
+        assert edge.confidence > 0.99
+
     def test_three_layer_fallback_to_llm(self):
         """When rule-based and NLI miss, LLM should be called."""
         from src.evidence.conflict_graph import ConflictGraphBuilder
 
         llm = MockLLM('{"relationship": "REFUTE", "confidence": 0.85, "rationale": "contradicts", "conflict_type": "none"}')
-        builder = ConflictGraphBuilder(llm_client=llm, config={"conflict_graph": {"enable_nli": False}})
+        builder = ConflictGraphBuilder(llm_client=llm, config={
+            "conflict_graph": {
+                "enable_nli": False,
+                "enable_llm_adjudication": True,
+            }
+        })
 
-        c1 = self._make_claim("苹果公司的总部在加利福尼亚")
-        c2 = self._make_claim("苹果公司的总部在纽约")
+        c1 = self._make_claim("苹果公司的总部在加利福尼亚", entities=["苹果公司"])
+        c2 = self._make_claim("苹果公司的总部在纽约", entities=["苹果公司"])
 
         ev1 = self._make_evidence([c1])
         ev2 = self._make_evidence([c2])
@@ -350,6 +953,30 @@ class TestConflictGraphBuilder:
 # --- RepairAgent Tests ---
 
 class TestRepairAgent:
+    def _make_agent(self):
+        from src.agents.repair_agent import RepairAgent
+
+        return RepairAgent(llm_client=MockLLM())
+
+    def _make_claim(self, text="c1", confidence=0.8):
+        return AnswerClaim(
+            claim=text,
+            supporting_evidence=["E1"],
+            conflicting_evidence=["E2"],
+            confidence=confidence,
+            verification_status=VerificationStatus.SUPPORTED,
+        )
+
+    def _make_report(self, verifications):
+        return VerificationReport(
+            claim_verifications=verifications,
+            overall_status=VerificationStatus.NOT_ENOUGH_INFO,
+            issues=[{"type": "verification_issue"}],
+            missing_evidence_for=[],
+            overconfident_claims=[],
+            ignored_conflicts=[],
+        )
+
     def test_no_repair_when_no_critical_issues(self):
         from src.agents.repair_agent import RepairAgent
         agent = RepairAgent(llm_client=MockLLM())
@@ -389,3 +1016,140 @@ class TestRepairAgent:
         )
         # Should return some answer (may be original or repaired)
         assert isinstance(answer, str)
+
+    def test_repair_skips_verification_entries_without_matching_claim(self):
+        agent = self._make_agent()
+        report = self._make_report([
+            {"claim": "unknown", "status": "refuted", "confidence": 0.9}
+        ])
+
+        answer, claims = agent.repair_answer(
+            answer="原答案",
+            claims=[self._make_claim("c1")],
+            verification_report=report,
+            evidence=[],
+        )
+
+        assert answer == "原答案"
+        assert claims == []
+
+    def test_repair_claim_refuted_status_is_downgraded_and_enum_normalized(self):
+        agent = self._make_agent()
+        claim = self._make_claim("太阳从西边升起", confidence=0.9)
+
+        repaired = agent._repair_claim(
+            claim,
+            {"claim": claim.claim, "status": "REFUTED", "confidence": 0.8},
+            evidence=[],
+        )
+
+        assert "存在反证" in repaired.claim
+        assert repaired.confidence == 0.8 * 0.3
+        assert repaired.verification_status is VerificationStatus.REFUTED
+
+    def test_repair_claim_not_enough_info_accepts_wire_value_and_adds_hedge(self):
+        agent = self._make_agent()
+        claim = self._make_claim("证据不足的结论", confidence=0.5)
+
+        repaired = agent._repair_claim(
+            claim,
+            {"claim": claim.claim, "status": "not_enough_info"},
+            evidence=[],
+        )
+
+        assert repaired.claim.startswith("现有证据有限，")
+        assert repaired.confidence == 0.5 * 0.6
+        assert repaired.verification_status is VerificationStatus.NOT_ENOUGH_INFO
+
+    def test_repair_claim_supported_preserves_claim_and_clamps_confidence(self):
+        agent = self._make_agent()
+        claim = self._make_claim("受证据支持的结论", confidence=0.4)
+
+        repaired = agent._repair_claim(
+            claim,
+            {"claim": claim.claim, "status": VerificationStatus.SUPPORTED, "confidence": 2.0},
+            evidence=[],
+        )
+
+        assert repaired.claim == claim.claim
+        assert repaired.confidence == 1.0
+        assert repaired.verification_status is VerificationStatus.SUPPORTED
+
+    def test_repair_helpers_are_idempotent(self):
+        agent = self._make_agent()
+
+        downgraded = agent._downgrade_claim("结论（注：该说法证据不足，甚至存在反证）")
+        hedged = agent._add_uncertainty_hedge("现有证据有限，结论")
+
+        assert downgraded == "结论（注：该说法证据不足，甚至存在反证）"
+        assert hedged == "现有证据有限，结论"
+
+    def test_generate_repaired_answer_falls_back_for_empty_answer(self):
+        agent = self._make_agent()
+
+        repaired = agent._generate_repaired_answer(
+            "",
+            repaired_claims=[],
+            verification_report=self._make_report([]),
+        )
+
+        assert repaired == "根据现有证据，信息不足，无法给出可靠回答。"
+
+    def test_generate_repaired_answer_appends_caveat_once_for_refuted_claims(self):
+        agent = self._make_agent()
+        caveat = "（注：上述部分论断证据有限，请谨慎对待。）"
+        repaired_claims = [
+            AnswerClaim(
+                claim="c1",
+                verification_status=VerificationStatus.REFUTED,
+            )
+        ]
+
+        repaired = agent._generate_repaired_answer(
+            f"原答案\n{caveat}",
+            repaired_claims=repaired_claims,
+            verification_report=self._make_report([]),
+        )
+
+        assert repaired.count(caveat) == 1
+
+    def test_run_delegates_to_repair_answer(self):
+        agent = self._make_agent()
+        report = VerificationReport(overall_status=VerificationStatus.SUPPORTED)
+
+        answer, claims = agent.run(
+            "原答案",
+            [self._make_claim("c1")],
+            report,
+            [],
+        )
+
+        assert answer == "原答案"
+        assert len(claims) == 1
+
+    def test_repair_rejects_unknown_status_and_invalid_confidence(self):
+        agent = self._make_agent()
+        claim = self._make_claim("c1")
+
+        import pytest
+
+        with pytest.raises(ValueError, match="VerificationStatus or string"):
+            agent._repair_claim(
+                claim,
+                {"claim": claim.claim, "status": object()},
+                evidence=[],
+            )
+
+        with pytest.raises(ValueError, match="Unknown verification status"):
+            agent._repair_claim(
+                claim,
+                {"claim": claim.claim, "status": "maybe"},
+                evidence=[],
+            )
+
+        with pytest.raises(ValueError, match="confidence"):
+            agent._repair_claim(
+                claim,
+                {"claim": claim.claim, "status": "supported", "confidence": "high"},
+                evidence=[],
+            )

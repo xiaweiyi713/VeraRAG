@@ -16,12 +16,8 @@ import argparse
 import hashlib
 import json
 import os
-import sys
 import urllib.request
-import gzip
-import io
 from pathlib import Path
-
 
 DATASETS = {
     "hotpotqa": {
@@ -103,19 +99,21 @@ def create_sample_ckt_conflict(output_dir: str):
     questions_path = project_root / "data" / "verabench" / "questions.jsonl"
     samples = []
     if questions_path.exists():
-        with open(questions_path, "r", encoding="utf-8") as f:
+        with open(questions_path, encoding="utf-8") as f:
             for line in f:
                 q = json.loads(line.strip())
                 if q.get("type") == "conflict":
-                    samples.append({
-                        "id": q["id"],
-                        "question": q["question"],
-                        "answer": q.get("ground_truth_answer", ""),
-                        "conflicting_evidence": [
-                            {"source": c.get("doc_id", ""), "target": c.get("doc_id", "")}
-                            for c in q.get("evidence", [])[:2]
-                        ],
-                    })
+                    samples.append(
+                        {
+                            "id": q["id"],
+                            "question": q["question"],
+                            "answer": q.get("ground_truth_answer", ""),
+                            "conflicting_evidence": [
+                                {"source": c.get("doc_id", ""), "target": c.get("doc_id", "")}
+                                for c in q.get("evidence", [])[:2]
+                            ],
+                        }
+                    )
 
     if samples:
         with open(output_path, "w", encoding="utf-8") as f:
@@ -127,12 +125,14 @@ def create_sample_ckt_conflict(output_dir: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Download benchmark datasets")
-    parser.add_argument("--datasets", nargs="+",
-                        choices=list(DATASETS.keys()) + ["ckt_conflict", "all"],
-                        default=["all"],
-                        help="Datasets to download")
-    parser.add_argument("--output", type=str, default="data/raw",
-                        help="Output directory")
+    parser.add_argument(
+        "--datasets",
+        nargs="+",
+        choices=[*list(DATASETS.keys()), "ckt_conflict", "all"],
+        default=["all"],
+        help="Datasets to download",
+    )
+    parser.add_argument("--output", type=str, default="data/raw", help="Output directory")
     args = parser.parse_args()
 
     project_root = Path(__file__).resolve().parent.parent
@@ -140,7 +140,7 @@ def main():
 
     datasets = args.datasets
     if "all" in datasets:
-        datasets = list(DATASETS.keys()) + ["ckt_conflict"]
+        datasets = [*list(DATASETS.keys()), "ckt_conflict"]
 
     print(f"Downloading datasets to {output_dir}\n")
 

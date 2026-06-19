@@ -1,20 +1,23 @@
-"""
-VeraRAG Demo - 展示系统功能
+"""VeraRAG Demo - 展示系统功能
 
 这个演示展示了 VeraRAG 的核心功能，无需外部 API。
 """
 
-import sys
-sys.path.insert(0, 'src')
-
-from src.utils.data_structures import *
 from src.agents.task_analyzer import TaskAnalyzer
+from src.evaluation.answer_metrics import AnswerMetrics
+from src.evaluation.conflict_metrics import ConflictMetrics
+from src.evaluation.evidence_metrics import EvidenceMetrics
 from src.evidence.conflict_graph import ConflictGraphBuilder
 from src.evidence.evidence_scorer import EvidenceScorer
-from src.uncertainty.controller import UncertaintyController, Action
-from src.evaluation.answer_metrics import AnswerMetrics
-from src.evaluation.evidence_metrics import EvidenceMetrics
-from src.evaluation.conflict_metrics import ConflictMetrics
+from src.uncertainty.controller import UncertaintyController
+from src.utils.data_structures import (
+    Claim,
+    ClaimType,
+    Evidence,
+    EvidenceConflictGraph,
+    SubQuestion,
+    UncertaintyBreakdown,
+)
 
 
 def print_section(title: str):
@@ -34,7 +37,7 @@ def demo_data_structures():
         claim="RAG 通过外部知识增强 LLM 的能力",
         claim_type=ClaimType.FACTUAL,
         entities=["RAG", "LLM"],
-        confidence=0.9
+        confidence=0.9,
     )
     print(f"✓ Claim: {claim.claim}")
     print(f"  类型: {claim.claim_type.value}, 置信度: {claim.confidence}")
@@ -47,18 +50,16 @@ def demo_data_structures():
         text_span="RAG 通过检索相关文档并将其作为上下文来增强生成能力...",
         credibility_score=0.9,
         recency_score=0.8,
-        relevance_score=0.85
+        relevance_score=0.85,
     )
     print(f"\n✓ Evidence: {evidence.title}")
     print(f"  综合得分: {evidence.combined_score:.2f}")
 
     # 创建 UncertaintyBreakdown
     uncertainty = UncertaintyBreakdown(
-        retrieval_uncertainty=0.15,
-        evidence_conflict=0.25,
-        reasoning_gap=0.10
+        retrieval_uncertainty=0.15, evidence_conflict=0.25, reasoning_gap=0.10
     )
-    print(f"\n✓ Uncertainty Breakdown:")
+    print("\n✓ Uncertainty Breakdown:")
     print(f"  总体不确定性: {uncertainty.overall:.2f}")
     print(f"  可接受: {uncertainty.is_acceptable(threshold=0.3)}")
 
@@ -72,7 +73,7 @@ def demo_task_analyzer():
     questions = [
         "什么是 RAG？",
         "RAG 是否比微调更适合减少法律领域的幻觉？",
-        "2023 年苹果和谷歌哪个公司的收入更高？这种增长是否可持续？"
+        "2023 年苹果和谷歌哪个公司的收入更高？这种增长是否可持续？",
     ]
 
     for q in questions:
@@ -96,22 +97,22 @@ def demo_conflict_graph():
             source="paper",
             title="RAG 的优势",
             text_span="RAG 能够显著减少 LLM 的幻觉问题",
-            credibility_score=0.9
+            credibility_score=0.9,
         ),
         Evidence(
             evidence_id="E2",
             source="blog",
             title="RAG 的局限性",
             text_span="RAG 无法完全消除幻觉，只能减少约 50%",
-            credibility_score=0.7
+            credibility_score=0.7,
         ),
         Evidence(
             evidence_id="E3",
             source="paper",
             title="RAG 评估研究",
             text_span="实验表明 RAG 将错误率从 20% 降低到 8%",
-            credibility_score=0.85
-        )
+            credibility_score=0.85,
+        ),
     ]
 
     print(f"创建 {len(evidences)} 条证据")
@@ -131,7 +132,7 @@ def demo_conflict_graph():
     graph = ConflictGraphBuilder()
     conflict_graph = graph.build_graph(evidences, use_llm=False)
 
-    print(f"\n✓ 冲突图构建完成:")
+    print("\n✓ 冲突图构建完成:")
     print(f"  节点数: {len(conflict_graph.nodes)}")
     print(f"  边数: {len(conflict_graph.edges)}")
     print(f"  冲突分数: {conflict_graph.get_conflict_score():.2f}")
@@ -140,7 +141,7 @@ def demo_conflict_graph():
     scorer = EvidenceScorer()
     ranked = scorer.rank_evidence(evidences, conflict_graph)
 
-    print(f"\n✓ 证据质量排序:")
+    print("\n✓ 证据质量排序:")
     for ev, score in ranked:
         print(f"  {ev.evidence_id}: {score:.2f} - {ev.title}")
 
@@ -155,11 +156,17 @@ def demo_uncertainty_controller():
     subquestions = [
         SubQuestion(id="sq1", question="RAG 的原理是什么？", coverage_score=0.9),
         SubQuestion(id="sq2", question="RAG 的局限性有哪些？", coverage_score=0.5),
-        SubQuestion(id="sq3", question="RAG 与微调的比较？", coverage_score=0.3)
+        SubQuestion(id="sq3", question="RAG 与微调的比较？", coverage_score=0.3),
     ]
 
     evidence = [
-        Evidence(evidence_id="E1", source="paper", title="RAG 原理", text_span="...", credibility_score=0.9)
+        Evidence(
+            evidence_id="E1",
+            source="paper",
+            title="RAG 原理",
+            text_span="...",
+            credibility_score=0.9,
+        )
     ]
 
     # 创建空冲突图
@@ -167,7 +174,9 @@ def demo_uncertainty_controller():
 
     # 评估第一轮
     print("第一轮检索后评估:")
-    decision = controller.assess(subquestions, evidence, conflict_graph, current_round=0, max_rounds=3)
+    decision = controller.assess(
+        subquestions, evidence, conflict_graph, current_round=0, max_rounds=3
+    )
 
     print(f"  建议操作: {decision.action.value}")
     print(f"  原因: {decision.reason}")
@@ -186,7 +195,7 @@ def demo_evaluation_metrics():
     em = AnswerMetrics.exact_match(predicted, reference)
     f1 = AnswerMetrics.f1_score(predicted, reference)
 
-    print(f"✓ 答案质量指标:")
+    print("✓ 答案质量指标:")
     print(f"  预测: {predicted}")
     print(f"  参考: {reference}")
     print(f"  Exact Match: {em:.2f}")
@@ -200,7 +209,7 @@ def demo_evaluation_metrics():
     rec = EvidenceMetrics.evidence_recall(retrieved, relevant)
     f1_ev = EvidenceMetrics.evidence_f1(retrieved, relevant)
 
-    print(f"\n✓ 证据质量指标:")
+    print("\n✓ 证据质量指标:")
     print(f"  检索到的证据: {retrieved}")
     print(f"  相关的证据: {relevant}")
     print(f"  Precision: {prec:.2f}")
@@ -213,7 +222,7 @@ def demo_evaluation_metrics():
 
     f1_conf = ConflictMetrics.conflict_detection_f1(pred_conflicts, gold_conflicts)
 
-    print(f"\n✓ 冲突检测指标:")
+    print("\n✓ 冲突检测指标:")
     print(f"  预测的冲突: {pred_conflicts}")
     print(f"  真实的冲突: {gold_conflicts}")
     print(f"  F1 Score: {f1_conf:.2f}")
@@ -230,39 +239,51 @@ def demo_complete_workflow():
     # 1. 任务分析
     analyzer = TaskAnalyzer()
     task = analyzer._rule_based_analyze(question)
-    print(f"\n[1] 任务分析:")
+    print("\n[1] 任务分析:")
     print(f"  类型: {task.task_type.value}, 复杂度: {task.complexity.value}")
 
     # 2. 问题分解
     subquestions = [
         SubQuestion(id="sq1", question="法律领域的幻觉问题有哪些？"),
         SubQuestion(id="sq2", question="RAG 如何缓解这些幻觉？"),
-        SubQuestion(id="sq3", question="RAG 完全消除幻觉了吗？")
+        SubQuestion(id="sq3", question="RAG 完全消除幻觉了吗？"),
     ]
-    print(f"\n[2] 问题分解:")
+    print("\n[2] 问题分解:")
     for sq in subquestions:
         print(f"  - {sq.question}")
 
     # 3. 模拟检索
     evidences = [
-        Evidence(evidence_id="E1", source="paper", title="RAG 在法律领域的应用",
-                text_span="RAG 可以显著减少但不能完全消除幻觉", credibility_score=0.9),
-        Evidence(evidence_id="E2", source="study", title="法律 AI 的可靠性",
-                text_span="研究表明 RAG 系统仍存在约 15% 的错误率", credibility_score=0.8)
+        Evidence(
+            evidence_id="E1",
+            source="paper",
+            title="RAG 在法律领域的应用",
+            text_span="RAG 可以显著减少但不能完全消除幻觉",
+            credibility_score=0.9,
+        ),
+        Evidence(
+            evidence_id="E2",
+            source="study",
+            title="法律 AI 的可靠性",
+            text_span="研究表明 RAG 系统仍存在约 15% 的错误率",
+            credibility_score=0.8,
+        ),
     ]
-    print(f"\n[3] 检索结果:")
+    print("\n[3] 检索结果:")
     for ev in evidences:
         print(f"  - {ev.title}")
 
     # 4. 不确定性评估
     controller = UncertaintyController()
-    decision = controller.assess(subquestions, evidences, EvidenceConflictGraph(), current_round=0, max_rounds=2)
-    print(f"\n[4] 不确定性评估:")
+    decision = controller.assess(
+        subquestions, evidences, EvidenceConflictGraph(), current_round=0, max_rounds=2
+    )
+    print("\n[4] 不确定性评估:")
     print(f"  操作: {decision.action.value}")
     print(f"  置信度: {decision.confidence:.2f}")
 
     # 5. 最终输出
-    print(f"\n[5] 最终答案:")
+    print("\n[5] 最终答案:")
     answer = f"根据现有证据 ({decision.confidence:.0%} 置信度):"
     answer += "\n  RAG 能够显著减少但不能完全消除法律领域的幻觉问题。"
     answer += "\n  研究显示 RAG 系统仍有约 15% 的错误率，"

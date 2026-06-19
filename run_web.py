@@ -2,8 +2,10 @@
 """VeraRAG Web UI launcher."""
 
 import argparse
-import sys
 import os
+import sys
+
+import uvicorn
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -17,7 +19,7 @@ def main():
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload (dev mode)")
     args = parser.parse_args()
 
-    print(f"\n  VeraRAG Web UI")
+    print("\n  VeraRAG Web UI")
     print(f"  http://{args.host}:{args.port}\n")
 
     if args.reload:
@@ -27,11 +29,11 @@ def main():
             port=args.port,
             reload=True,
             factory=True,
-            log_level="info"
+            log_level="info",
         )
     else:
-        import uvicorn
         from web.app import create_app
+
         app = create_app(config_path=args.config, db_path=args.db)
         uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 

@@ -1,6 +1,9 @@
 include README.md
 include LICENSE
 include CHANGELOG.md
+include Dockerfile
+include .dockerignore
+include .pre-commit-config.yaml
 include CITATION.cff
 include CODE_OF_CONDUCT.md
 include CONTRIBUTING.md
@@ -18,9 +21,14 @@ recursive-include configs *.yaml
 include docs/EVALUATION.md
 include docs/API.md
 include docs/ARCHITECTURE.md
+include docs/GPU_TRAINING.md
+include docs/VERABENCH_CARD.md
 include docs/RESULTS.md
 include docs/RELEASING.md
+include .github/CODEOWNERS
 recursive-include examples *.py
+recursive-include scripts *.sh *.py
 prune docs/superpowers
 recursive-include data/verabench *.jsonl
+recursive-include data/external *.json *.jsonl
 recursive-include .github *.yml *.md

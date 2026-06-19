@@ -2,7 +2,7 @@
 
 import json
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 from ..utils.data_structures import Complexity, TaskAnalysis, TaskType
 from .base import BaseAgent
@@ -19,6 +19,17 @@ class TaskAnalyzer(BaseAgent):
     - Estimated number of reasoning hops
     - Key keywords for retrieval
     """
+
+    _TASK_TYPE_ALIASES: ClassVar[dict[str, TaskType]] = {
+        "multi_hop_qa": TaskType.MULTI_HOP_QA,
+        "multihop_qa": TaskType.MULTI_HOP_QA,
+        "multi-hop qa": TaskType.MULTI_HOP_QA,
+        "fact verification": TaskType.FACT_VERIFICATION,
+        "comparative analysis": TaskType.COMPARATIVE_ANALYSIS,
+        "temporal reasoning": TaskType.TEMPORAL_REASONING,
+        "financial reasoning": TaskType.FINANCIAL_REASONING,
+        "scientific review": TaskType.SCIENTIFIC_REVIEW,
+    }
 
     def __init__(self, config: dict[str, Any] | None = None, llm_client: Any | None = None):
         super().__init__(config, llm_client)
@@ -56,6 +67,7 @@ Output ONLY valid JSON, no other text."""
         requires_conflict_check = False
         requires_numerical_reasoning = False
         requires_temporal_reasoning = False
+        has_multi_hop_indicator = False
 
         # Check for multi-hop indicators
         multi_hop_patterns = [
@@ -69,6 +81,7 @@ Output ONLY valid JSON, no other text."""
         for pattern in multi_hop_patterns:
             if re.search(pattern, q_lower):
                 task_type = TaskType.MULTI_HOP_QA
+                has_multi_hop_indicator = True
                 break
 
         # Check for verification indicators
@@ -113,7 +126,7 @@ Output ONLY valid JSON, no other text."""
             r'(how many|how much|percentage|rate|ratio|proportion)',
             r'(calculate|compute|sum|total|average|median)',
             r'(more than|less than|greater|fewer|increase|decrease)',
-            r'(percent|%,|$|€|£|\d+(?:,\d{3})*(?:\.\d+)?)'
+            r'(percent|%,|\$|€|£|\d+(?:,\d{3})*(?:\.\d+)?)'
         ]
 
         for pattern in numerical_patterns:
@@ -123,7 +136,7 @@ Output ONLY valid JSON, no other text."""
 
         # Determine complexity
         complexity_indicators = sum([
-            task_type == TaskType.MULTI_HOP_QA,
+            has_multi_hop_indicator,
             task_type == TaskType.COMPARATIVE_ANALYSIS,
             requires_temporal_reasoning,
             requires_numerical_reasoning,
@@ -186,24 +199,104 @@ Consider:
 - What are the key entities/concepts?
 """
 
-        response = self._call_llm(prompt, system_prompt=self.system_prompt, response_format="json")
-
         try:
+            response = self._call_llm(prompt, system_prompt=self.system_prompt, response_format="json")
             data = json.loads(response)
+            if not isinstance(data, dict):
+                raise ValueError("Task analysis response must be a JSON object")
 
             return TaskAnalysis(
-                task_type=TaskType(data.get("task_type", "multi-hop_qa")),
-                complexity=Complexity(data.get("complexity", "medium")),
-                requires_retrieval=data.get("requires_retrieval", True),
-                requires_conflict_check=data.get("requires_conflict_check", False),
-                requires_numerical_reasoning=data.get("requires_numerical_reasoning", False),
-                requires_temporal_reasoning=data.get("requires_temporal_reasoning", False),
-                estimated_hops=data.get("estimated_hops", 2),
-                keywords=data.get("keywords", [])
+                task_type=self._coerce_task_type(data.get("task_type"), TaskType.MULTI_HOP_QA),
+                complexity=self._coerce_complexity(data.get("complexity"), Complexity.MEDIUM),
+                requires_retrieval=self._coerce_bool(data.get("requires_retrieval"), True),
+                requires_conflict_check=self._coerce_bool(data.get("requires_conflict_check"), False),
+                requires_numerical_reasoning=self._coerce_bool(
+                    data.get("requires_numerical_reasoning"),
+                    False,
+                ),
+                requires_temporal_reasoning=self._coerce_bool(
+                    data.get("requires_temporal_reasoning"),
+                    False,
+                ),
+                estimated_hops=self._coerce_estimated_hops(data.get("estimated_hops"), 2),
+                keywords=self._coerce_keywords(data.get("keywords")),
             )
-        except (json.JSONDecodeError, KeyError, ValueError):
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             # Fallback to rule-based
             return self._rule_based_analyze(question)
+
+    @classmethod
+    def _coerce_task_type(cls, value: Any, default: TaskType) -> TaskType:
+        if isinstance(value, TaskType):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in cls._TASK_TYPE_ALIASES:
+                return cls._TASK_TYPE_ALIASES[normalized]
+            try:
+                return TaskType(normalized)
+            except ValueError:
+                return default
+        return default
+
+    @staticmethod
+    def _coerce_complexity(value: Any, default: Complexity) -> Complexity:
+        if isinstance(value, Complexity):
+            return value
+        if isinstance(value, str):
+            try:
+                return Complexity(value.strip().lower())
+            except ValueError:
+                return default
+        return default
+
+    @staticmethod
+    def _coerce_bool(value: Any, default: bool) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"true", "yes", "1"}:
+                return True
+            if normalized in {"false", "no", "0"}:
+                return False
+        return default
+
+    @staticmethod
+    def _coerce_estimated_hops(value: Any, default: int) -> int:
+        if isinstance(value, bool):
+            return default
+        try:
+            hops = int(value)
+        except (TypeError, ValueError):
+            return default
+        return min(5, max(1, hops))
+
+    @staticmethod
+    def _coerce_keywords(value: Any) -> list[str]:
+        if isinstance(value, str):
+            raw_keywords: list[Any] = re.split(r"[,，;；\n]+", value)
+        elif isinstance(value, list):
+            raw_keywords = value
+        else:
+            return []
+
+        keywords: list[str] = []
+        seen: set[str] = set()
+        for item in raw_keywords:
+            if not isinstance(item, str):
+                continue
+            keyword = item.strip()
+            if not keyword:
+                continue
+            normalized = keyword.casefold()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            keywords.append(keyword)
+            if len(keywords) >= 10:
+                break
+        return keywords
 
     def _extract_keywords(self, question: str) -> list[str]:
         """Extract key entities and concepts from the question."""

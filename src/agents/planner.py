@@ -41,6 +41,7 @@ Output ONLY valid JSON, no other text."""
         Returns:
             List of SubQuestion objects
         """
+        max_subquestions = self._coerce_max_subquestions(max_subquestions)
         # For simple questions, no decomposition needed
         if task_analysis.complexity.value == "low" or task_analysis.estimated_hops == 1:
             return [
@@ -103,9 +104,13 @@ Limit to {max_subquestions} sub-questions.
 
         try:
             data = json.loads(response)
+            if not isinstance(data, dict):
+                raise ValueError("LLM decomposition response must be a JSON object")
             subquestions = []
 
             for i, sq_data in enumerate(data.get("subquestions", [])):
+                if not isinstance(sq_data, dict):
+                    continue
                 sq = SubQuestion(
                     id=f"sq{i}",
                     question=sq_data.get("question", ""),
@@ -116,16 +121,22 @@ Limit to {max_subquestions} sub-questions.
                 )
                 subquestions.append(sq)
 
-            return subquestions
+            return self._normalize_subquestions(
+                subquestions,
+                fallback_question=question,
+                requires_counter_evidence=task_analysis.requires_conflict_check,
+                max_subquestions=max_subquestions,
+            )
 
-        except (json.JSONDecodeError, KeyError):
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             # Fallback: create simple decomposition
-            return self._fallback_decompose(question, task_analysis)
+            return self._fallback_decompose(question, task_analysis, max_subquestions)
 
     def _fallback_decompose(
         self,
         question: str,
-        task_analysis: TaskAnalysis
+        task_analysis: TaskAnalysis,
+        max_subquestions: int = 10,
     ) -> list[SubQuestion]:
         """Fallback decomposition strategy."""
         # Simple approach: create sub-questions for each keyword pair
@@ -151,7 +162,74 @@ Limit to {max_subquestions} sub-questions.
             requires_counter_evidence=False
         ))
 
-        return subquestions
+        return self._normalize_subquestions(
+            subquestions,
+            fallback_question=question,
+            requires_counter_evidence=task_analysis.requires_conflict_check,
+            max_subquestions=max_subquestions,
+        )
+
+    def _normalize_subquestions(
+        self,
+        subquestions: list[SubQuestion],
+        fallback_question: str,
+        requires_counter_evidence: bool,
+        max_subquestions: int,
+    ) -> list[SubQuestion]:
+        """Normalize planner output so downstream retrieval sees a valid plan."""
+        max_subquestions = self._coerce_max_subquestions(max_subquestions)
+        normalized: list[SubQuestion] = []
+        id_map: dict[str, str] = {}
+
+        for sq in subquestions:
+            question = sq.question.strip()
+            if not question:
+                continue
+            new_id = f"sq{len(normalized)}"
+            id_map[sq.id] = new_id
+            normalized.append(SubQuestion(
+                id=new_id,
+                question=question,
+                required_evidence_type=sq.required_evidence_type or "general",
+                dependency_ids=list(sq.dependency_ids),
+                requires_counter_evidence=bool(sq.requires_counter_evidence),
+                status=sq.status,
+                coverage_score=sq.coverage_score,
+            ))
+            if len(normalized) >= max_subquestions:
+                break
+
+        if not normalized:
+            fallback_question = (
+                fallback_question.strip()
+                or "Gather enough evidence to answer the original question"
+            )
+            normalized.append(SubQuestion(
+                id="sq0",
+                question=fallback_question,
+                required_evidence_type="general",
+                dependency_ids=[],
+                requires_counter_evidence=requires_counter_evidence,
+            ))
+
+        valid_ids: set[str] = set()
+        for sq in normalized:
+            remapped_dependencies = []
+            for dep_id in sq.dependency_ids:
+                mapped = id_map.get(dep_id, dep_id)
+                if mapped in valid_ids and mapped not in remapped_dependencies:
+                    remapped_dependencies.append(mapped)
+            sq.dependency_ids = remapped_dependencies
+            valid_ids.add(sq.id)
+
+        return normalized[:max_subquestions]
+
+    def _coerce_max_subquestions(self, value: Any) -> int:
+        """Return a positive sub-question limit from user/config input."""
+        try:
+            return max(1, int(value))
+        except (TypeError, ValueError):
+            return 10
 
     def get_reasoning_plan(
         self,
@@ -192,7 +270,13 @@ Output a JSON array of reasoning steps:
                 response_format="json"
             )
             data = json.loads(response)
-            return list(data.get("reasoning_plan", []))
+            plan = data.get("reasoning_plan", [])
+            if not isinstance(plan, list):
+                raise ValueError("reasoning_plan must be a list")
+            steps = [str(step).strip() for step in plan if str(step).strip()]
+            if not steps:
+                raise ValueError("reasoning_plan is empty")
+            return steps
         except Exception:
             # Fallback reasoning plan
             return [
@@ -223,9 +307,16 @@ Output a JSON array of reasoning steps:
             "uncertainty", UncertaintyBreakdown()
         )
         conflicts = uncertainty_report.get("conflicts", [])
-        max_sq = uncertainty_report.get("max_subquestions", 10)
+        max_sq = self._coerce_max_subquestions(
+            uncertainty_report.get("max_subquestions", 10)
+        )
 
-        refined = list(subquestions)
+        refined = self._normalize_subquestions(
+            list(subquestions),
+            fallback_question="Gather enough evidence to answer the original question",
+            requires_counter_evidence=False,
+            max_subquestions=max_sq,
+        )
 
         # Mark high-coverage questions as resolved
         for sq in refined:
@@ -272,7 +363,12 @@ Output a JSON array of reasoning steps:
             )
             refined.append(source_sq)
 
-        return refined[:max_sq]
+        return self._normalize_subquestions(
+            refined,
+            fallback_question="Gather enough evidence to answer the original question",
+            requires_counter_evidence=False,
+            max_subquestions=max_sq,
+        )
 
     def run(
         self,

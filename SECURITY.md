@@ -20,4 +20,12 @@ Include:
 - Do not commit `.verarag_key`, SQLite databases, environment files, API keys, or raw private corpora.
 - Web UI API keys are encrypted locally, but this is not a hosted multi-tenant security boundary.
 - Demo and benchmark outputs may include model responses and document excerpts; review them before publishing.
-
+- Run `make security` before commits and `make security-local` on local
+  workstations when ignored `.env.local` files may exist. For CI systems that
+  ingest code-scanning reports, use `verarag-scan-secrets --sarif`. The GitHub
+  Actions workflow preserves a `secret-scan.sarif` artifact even when the hard
+  secret gate fails, so maintainers can inspect redacted locations.
+- If a real key is pasted into chat, committed, pushed, or written to logs,
+  treat it as compromised: revoke or rotate it in the provider console, remove
+  it from the source location, rerun `verarag-scan-secrets --include-ignored`,
+  and avoid reusing the old value in future evaluations.

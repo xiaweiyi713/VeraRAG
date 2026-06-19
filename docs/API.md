@@ -29,6 +29,7 @@ pip install "verarag[all]"     # all optional dependencies plus dev tools
 ```python
 from verarag import VeraRAG, VeraRAGOutput, create_verarag
 from verarag import VeraBenchEvaluator, VeraBenchLoader, load_verabench
+from verarag import build_conflict_pair_examples
 ```
 
 Submodules are also stable:
@@ -172,6 +173,7 @@ Expected bundled data in version `0.1.0`:
 - 152 benchmark questions.
 - 6 question types: single evidence, multi evidence, conflict, temporal,
   unanswerable, and misleading.
+- VeraBench ontology version 1.1.2 distribution: 27 / 26 / 11 / 25 / 26 / 37.
 
 ### `VeraBenchEvaluator`
 
@@ -188,7 +190,20 @@ print(report.to_dict())
 
 Without a `pipeline_factory`, evaluation runs in demo mode by scoring ground
 truth against itself. This is useful for validating loader, metrics, and report
-plumbing; it is not a model quality score.
+plumbing; it is not a model quality score. The demo identity check fills gold
+answers, evidence, conflicts, behaviors, and confidence, so all supervised
+metrics are internally consistent instead of looking like retrieval failures.
+
+The `verarag-benchmark` CLI is stricter than direct evaluator construction:
+exactly one of `--demo` or `--config` is required. A requested real run exits
+non-zero if its configuration or pipeline cannot be loaded and never falls back
+to demo mode.
+
+Serialized reports include both question-type-stratified
+`confidence_intervals` and shared-evidence-cluster
+`dependency_robust_confidence_intervals`. Sparse conditional metrics also
+report `effective_resamples_by_metric`, because bootstrap replicates without a
+defined denominator are excluded for that metric.
 
 For real evaluation:
 
@@ -208,11 +223,66 @@ Installed packages expose:
 
 ```bash
 verarag-web --port 8000
+verarag-doctor --json
 verarag-benchmark --demo
 verarag-analyze results/verabench_full.json
-verarag-calibration --input results/verabench_full.json --output results/calibration_curve.svg
+verarag-rescore results/verabench_full.json --output results/verabench_rescored.json
+verarag-merge-reports results/part-a.json results/part-b.json --output results/full.json
+verarag-calibration --input results/verabench_full.json --correctness-field correct --output results/calibration_curve.svg
 verarag-leaderboard results/verabench_full_v3.json --output docs/RESULTS.md
+verarag-compare-reports results/baseline.json results/candidate.json --output results/comparison.md
+verarag-audit-contamination --reference /path/to/local/corpus --containment-threshold 0.85 --output results/contamination_audit.json
+verarag-scan-secrets
+verarag-scan-secrets --include-ignored
+verarag-scan-secrets --sarif > secret-scan.sarif
+verarag-validate-version
+verarag-validate-python
+verarag-validate-configs --json
+verarag-validate-docs
+verarag-validate-results
+verarag-validate-examples
+verarag-validate-deployment
+verarag-validate-precommit
+verarag-validate-deps
+verarag-validate-metadata
+verarag-validate-package --dist-dir dist
+verarag-validate-install --dist-dir dist
+verarag-release-health
+verarag-generate-sbom --output build/sbom/verarag-sbom.cdx.json --check
+verarag-release-checksums --output build/release-checksums.json --check
+verarag-build-conflict-data --output-dir outputs/conflict_pairs_v112_leakfree
+verarag-train-conflict --train outputs/conflict_pairs_v112_leakfree/train.jsonl --val outputs/conflict_pairs_v112_leakfree/val.jsonl --dry-run
+verarag-compare-conflicts --split test --learned-model-path outputs/conflict_cross_encoder_v112_leakfree_seed13
+verarag-audit-conflict-model --help
+verarag-build-external-annotation-packet --data-dir data/external/conflict_mini_v1 --output-dir outputs/conflict_mini_packet --annotator ann_a --annotator ann_b
+verarag-compile-external-annotations --packet-dir outputs/conflict_mini_packet --output-dir outputs/conflict_mini_compiled
+verarag-validate-external-conflicts --data-dir data/external/conflict_mini_v1 --min-questions 6
+verarag-conflict-ablation --learned-model-path outputs/conflict_cross_encoder_expanded_balanced_seed13 --plan-only
 ```
+
+`verarag-rescore` verifies the source benchmark version and corpus/question
+fingerprints by default. Cross-version and metadata-free legacy inputs require
+the explicit diagnostic overrides `--allow-benchmark-mismatch` and
+`--allow-unverified`, respectively.
+
+`verarag-calibration` defaults to the boolean `correct` row field, which tracks
+VeraBench behavior correctness. Use `--correctness-field` to inspect another
+boolean outcome such as `premise_refutation_correct`. The command rejects empty
+reports, missing fields, non-boolean correctness values, and out-of-range
+confidence scores instead of drawing a misleading reliability diagram.
+
+`verarag-doctor` summarizes local readiness without exposing secrets. It checks
+the supported Python floor, required runtime modules, optional feature
+dependencies, core VeraBench files, and whether known LLM provider environment
+variables are set. Missing optional feature dependencies and absent API keys are
+warnings by default; use `--fail-on-warnings` for stricter workstation or CI
+audits.
+
+`verarag-validate-configs` validates the default YAML configuration surface. It
+parses `configs/*.yaml`, checks runtime and dataset section shapes, enforces
+probability thresholds in `[0, 1]`, requires positive integer budget fields,
+verifies boolean feature flags, and rejects literal `llm.api_key` values that
+are not environment-variable placeholders.
 
 ## Compatibility Policy
 

@@ -51,9 +51,21 @@ class UncertaintyController:
         self.calibrator = ConfidenceCalibrator(config)
 
         # Thresholds
-        self.acceptable_threshold = self.config.get("acceptable_threshold", 0.3)
-        self.high_threshold = self.config.get("high_threshold", 0.6)
-        self.abstain_threshold = self.config.get("abstain_threshold", 0.7)
+        self.acceptable_threshold = self._read_probability_threshold(
+            "acceptable_threshold", 0.3
+        )
+        self.high_threshold = self._read_probability_threshold(
+            "high_threshold",
+            self.config.get("high_conflict_threshold", 0.6),
+        )
+        self.abstain_threshold = self._read_probability_threshold(
+            "abstain_threshold", 0.7
+        )
+        if not self.acceptable_threshold <= self.high_threshold <= self.abstain_threshold:
+            raise ValueError(
+                "uncertainty thresholds must satisfy "
+                "acceptable_threshold <= high_threshold <= abstain_threshold"
+            )
 
     def assess(
         self,
@@ -78,6 +90,12 @@ class UncertaintyController:
         Returns:
             ControlDecision with recommended action
         """
+        self._validate_assess_inputs(
+            reasoning_completeness=reasoning_completeness,
+            max_rounds=max_rounds,
+            current_round=current_round,
+        )
+
         # Estimate uncertainty
         uncertainty = self.estimator.estimate(
             subquestions, evidence_pool, conflict_graph, reasoning_completeness
@@ -169,6 +187,10 @@ class UncertaintyController:
         Returns:
             ControlDecision with recommended action
         """
+        self._validate_probability(
+            "verification_uncertainty", verification_uncertainty
+        )
+
         if has_ignored_conflicts:
             return ControlDecision(
                 action=Action.REPAIR_ANSWER,
@@ -208,3 +230,37 @@ class UncertaintyController:
     ) -> UncertaintyBreakdown:
         """Get detailed uncertainty breakdown."""
         return self.estimator.estimate(subquestions, evidence_pool, conflict_graph)
+
+    def _read_probability_threshold(self, key: str, default: float) -> float:
+        """Read a config threshold and require a probability value."""
+        value = self.config.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise ValueError(f"{key} must be a number in [0, 1]")
+        value = float(value)
+        self._validate_probability(key, value)
+        return value
+
+    @staticmethod
+    def _validate_probability(name: str, value: float) -> None:
+        """Validate that a value is a probability."""
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise ValueError(f"{name} must be a number in [0, 1]")
+        if not 0.0 <= float(value) <= 1.0:
+            raise ValueError(f"{name} must be in [0, 1]")
+
+    def _validate_assess_inputs(
+        self,
+        reasoning_completeness: float,
+        max_rounds: int,
+        current_round: int,
+    ) -> None:
+        """Validate public controller inputs before making a decision."""
+        self._validate_probability("reasoning_completeness", reasoning_completeness)
+        if isinstance(max_rounds, bool) or not isinstance(max_rounds, int):
+            raise ValueError("max_rounds must be a non-negative integer")
+        if isinstance(current_round, bool) or not isinstance(current_round, int):
+            raise ValueError("current_round must be a non-negative integer")
+        if max_rounds < 0:
+            raise ValueError("max_rounds must be a non-negative integer")
+        if current_round < 0:
+            raise ValueError("current_round must be a non-negative integer")

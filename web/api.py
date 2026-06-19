@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 import sys
 import threading
 import uuid
@@ -19,7 +18,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.responses import HTMLResponse, JSONResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 # Ensure project root is on sys.path for src.* imports
@@ -30,7 +29,9 @@ if _project_root not in sys.path:
 # --- Thread-safe BM25 cache ---
 _bm25_retriever = None
 _bm25_chunks: dict = {}
-_bm25_lock = threading.Lock()
+_bm25_lock = threading.RLock()
+_MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+_MAX_EXTRACTED_CHARS = 2_000_000
 
 
 def _get_bm25():
@@ -44,8 +45,20 @@ def _get_bm25():
         if _bm25_retriever is not None:
             return _bm25_retriever, _bm25_chunks
 
-        corpus_path = os.path.join(_project_root, "data", "verabench", "corpus.jsonl")
-        if not os.path.exists(corpus_path):
+        corpus_candidates = (
+            Path(_project_root) / "data" / "verabench" / "corpus.jsonl",
+            Path(_project_root)
+            / "src"
+            / "benchmark"
+            / "data"
+            / "verabench"
+            / "corpus.jsonl",
+        )
+        corpus_path = next(
+            (path for path in corpus_candidates if path.exists()),
+            None,
+        )
+        if corpus_path is None:
             return None, []
 
         import json as _json
@@ -53,11 +66,21 @@ def _get_bm25():
         from src.retriever.bm25 import BM25Retriever
 
         documents = []
-        with open(corpus_path, encoding="utf-8") as f:
+        with corpus_path.open(encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line:
-                    documents.append(_json.loads(line))
+                    raw = _json.loads(line)
+                    documents.append({
+                        "id": raw.get("id") or raw.get("doc_id"),
+                        "text": raw.get("text") or raw.get("content", ""),
+                        "title": raw.get("title", ""),
+                        **{
+                            key: value
+                            for key, value in raw.items()
+                            if key not in {"id", "doc_id", "text", "content", "title"}
+                        },
+                    })
 
         retriever = BM25Retriever()
         retriever.index_documents(documents)
@@ -70,7 +93,7 @@ class QueryRequest(BaseModel):
     """Request body for query endpoint."""
     question: str
     max_rounds: int = 5
-    config_overrides: dict[str, Any] = {}
+    config_overrides: dict[str, Any] = Field(default_factory=dict)
 
 
 class ConfigRequest(BaseModel):
@@ -88,6 +111,16 @@ def _import_verarag():
     """Lazy import to avoid pulling heavy deps at module load."""
     from src.pipeline.verarag import VeraRAG
     return VeraRAG
+
+
+def _build_indexed_pipeline(factory, config: dict[str, Any]):
+    """Create a pipeline backed by the Web UI's shared mutable BM25 index."""
+    pipeline = factory(config)
+    retriever, _chunks = _get_bm25()
+    if retriever is not None:
+        pipeline.retriever = retriever
+        pipeline.retrieval_agent.retriever = retriever
+    return pipeline
 
 
 def create_router(templates, db, config):
@@ -177,7 +210,7 @@ def create_router(templates, db, config):
                 pipeline_config["llm"]["base_url"] = llm_cfg["base_url"]
 
         event_queue = asyncio.Queue()
-        loop_ref = asyncio.get_event_loop()
+        loop_ref = asyncio.get_running_loop()
 
         def callback(event_type: str, data: dict):
             loop_ref.call_soon_threadsafe(event_queue.put_nowait, (event_type, data))
@@ -185,7 +218,7 @@ def create_router(templates, db, config):
         async def event_generator():
             def run_pipeline():
                 try:
-                    pipeline = VeraRAG(pipeline_config)
+                    pipeline = _build_indexed_pipeline(VeraRAG, pipeline_config)
                     output = pipeline.query_stream(
                         question=request.question,
                         max_rounds=request.max_rounds,
@@ -197,11 +230,11 @@ def create_router(templates, db, config):
                         confidence=output.confidence,
                         result_json=output.to_dict()
                     )
-                    event_queue.put_nowait(("saved", {"result_id": query_id}))
+                    callback("saved", {"result_id": query_id})
                 except Exception as e:
-                    event_queue.put_nowait(("error", {"error": str(e)}))
+                    callback("error", {"error": str(e)})
                 finally:
-                    event_queue.put_nowait(("_done", {}))
+                    callback("_done", {})
 
             future = loop_ref.run_in_executor(None, run_pipeline)
 
@@ -351,7 +384,9 @@ def create_router(templates, db, config):
         if suffix not in (".pdf", ".txt", ".md"):
             raise HTTPException(status_code=400, detail="仅支持 PDF、TXT、MD 文件")
 
-        raw_bytes = await file.read()
+        raw_bytes = await file.read(_MAX_UPLOAD_BYTES + 1)
+        if len(raw_bytes) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="文件大小不能超过20MB")
 
         # Extract text
         try:
@@ -367,6 +402,8 @@ def create_router(templates, db, config):
 
         if not text.strip():
             raise HTTPException(status_code=422, detail="文件内容为空")
+        if len(text) > _MAX_EXTRACTED_CHARS:
+            raise HTTPException(status_code=413, detail="解析后的文本内容过大")
 
         # Chunk text (~500 chars per chunk, overlap 50)
         chunk_size = 500
@@ -489,14 +526,14 @@ def create_router(templates, db, config):
                         pipeline_config["llm"]["api_key"] = llm_cfg["api_key"]
 
                 event_queue = asyncio.Queue()
-                loop_ref = asyncio.get_event_loop()
+                loop_ref = asyncio.get_running_loop()
 
                 def callback(event_type: str, d: dict):
                     loop_ref.call_soon_threadsafe(event_queue.put_nowait, (event_type, d))
 
                 def run_pipeline():
                     try:
-                        pipeline = VeraRAG(pipeline_config)
+                        pipeline = _build_indexed_pipeline(VeraRAG, pipeline_config)
                         output = pipeline.query_stream(
                             question=question, max_rounds=5, callback=callback
                         )
@@ -504,11 +541,11 @@ def create_router(templates, db, config):
                             question=output.question, answer=output.answer,
                             confidence=output.confidence, result_json=output.to_dict()
                         )
-                        event_queue.put_nowait(("saved", {"result_id": query_id}))
+                        callback("saved", {"result_id": query_id})
                     except Exception as e:
-                        event_queue.put_nowait(("error", {"error": str(e)}))
+                        callback("error", {"error": str(e)})
                     finally:
-                        event_queue.put_nowait(("_done", {}))
+                        callback("_done", {})
 
                 future = loop_ref.run_in_executor(None, run_pipeline)
 
