@@ -261,6 +261,7 @@ class TestDenseRetriever:
         assert retriever.model_name == "configured-model"
         assert retriever.device == "cpu"
         assert retriever.batch_size == 4
+        assert DenseRetriever(config={"local_files_only": True}).local_files_only is True
 
         with pytest.raises(ValueError, match="batch_size"):
             DenseRetriever(config={"batch_size": 0})
@@ -312,6 +313,7 @@ class TestDenseRetriever:
         results = restored.retrieve("alpha", top_k=1)
 
         assert restored.model_name == "fake-model"
+        assert restored.local_files_only is False
         assert results[0].doc_id == "D1"
         assert results[0].metadata["source"] == "fixture"
 

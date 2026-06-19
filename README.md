@@ -332,7 +332,7 @@ python experiments/evaluate_retrieval.py \
     --output outputs/retrieval_eval_bm25_top10.json
 # 或 verarag-evaluate-retrieval --retriever bm25 --top-k 10 --output outputs/retrieval_eval_bm25_top10.json
 
-# 离线检索消融矩阵（不调用 LLM；dense/hybrid 需要本机可用的 sentence-transformers 模型）
+# 离线检索消融矩阵（不调用 LLM；dense/hybrid 默认只使用本机缓存模型）
 python experiments/evaluate_retrieval.py \
     --matrix \
     --matrix-retrievers bm25 hybrid dense \
@@ -340,11 +340,12 @@ python experiments/evaluate_retrieval.py \
     --matrix-policies fixed precision_cap complexity_adaptive \
     --output outputs/retrieval_matrix_v112.json
 
-# 离线 top-k 策略前沿：precision_cap 当前 macro P/R/F1 = 0.3044/0.9546/0.4492；
-# complexity_adaptive 当前 macro P/R/F1 = 0.3500/0.9456/0.4977。
+# 离线 top-k 策略前沿：BM25 top-3 + complexity_adaptive 当前 macro P/R/F1 =
+# 0.4365/0.9138/0.5771；BM25 top-10 + complexity_adaptive 为
+# 0.3500/0.9456/0.4977。
 python experiments/evaluate_retrieval.py \
     --retriever bm25 \
-    --top-k 10 \
+    --top-k 3 \
     --top-k-policy complexity_adaptive
 
 # 端到端 pipeline 中可通过 retriever.top_k_policy 显式启用；

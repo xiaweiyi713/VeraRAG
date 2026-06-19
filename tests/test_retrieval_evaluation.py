@@ -124,6 +124,9 @@ def test_complexity_adaptive_policy_records_selected_top_k(sample_bench_dir):
 
 def test_dense_retriever_variant_can_be_evaluated(sample_bench_dir, monkeypatch):
     class FakeDenseRetriever:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
         def index_documents(self, documents):
             self.documents = documents
 
@@ -152,6 +155,8 @@ def test_dense_retriever_variant_can_be_evaluated(sample_bench_dir, monkeypatch)
     assert report["retriever"] == "dense"
     assert report["evaluated_questions"] == 2
     assert report["summary"]["hit_rate"] == 1.0
+    assert report["dense_model_name"] == "BAAI/bge-base-en-v1.5"
+    assert report["dense_local_files_only"] is True
 
 
 def test_build_matrix_report_compares_retriever_policy_grid(sample_bench_dir):

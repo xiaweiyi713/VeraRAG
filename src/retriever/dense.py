@@ -22,13 +22,17 @@ class DenseRetriever(BaseRetriever):
         config: dict[str, Any] | None = None,
         model_name: str = "BAAI/bge-base-en-v1.5",
         device: str = "cpu",
-        batch_size: int = 32
+        batch_size: int = 32,
+        local_files_only: bool = False,
     ):
         super().__init__(config)
         config = config or {}
         self.model_name = str(config.get("model_name", model_name))
         self.device = str(config.get("device", device))
         self.batch_size = int(config.get("batch_size", batch_size))
+        self.local_files_only = bool(
+            config.get("local_files_only", local_files_only)
+        )
         if self.batch_size <= 0:
             raise ValueError("batch_size must be greater than 0")
         self.model: Any = None
@@ -43,7 +47,8 @@ class DenseRetriever(BaseRetriever):
             from sentence_transformers import SentenceTransformer
             self.model = SentenceTransformer(
                 self.model_name,
-                device=self.device
+                device=self.device,
+                local_files_only=self.local_files_only,
             )
 
     def _encode_texts(self, texts: list[str]) -> np.ndarray:
@@ -195,7 +200,8 @@ class DenseRetriever(BaseRetriever):
             'doc_ids': self.doc_ids,
             'doc_texts': self.doc_texts,
             'doc_metadata': self.doc_metadata,
-            'model_name': self.model_name
+            'model_name': self.model_name,
+            'local_files_only': self.local_files_only,
         }
 
         with open(save_path, 'wb') as f:
@@ -211,6 +217,7 @@ class DenseRetriever(BaseRetriever):
         self.doc_texts = [str(text) for text in data['doc_texts']]
         self.doc_metadata = [dict(metadata) for metadata in data['doc_metadata']]
         self.model_name = str(data['model_name'])
+        self.local_files_only = bool(data.get('local_files_only', self.local_files_only))
         self._validate_index_state()
 
 

@@ -52,6 +52,9 @@ All notable changes to VeraRAG are recorded here.
 - Add an offline retrieval ablation matrix to `verarag-evaluate-retrieval`,
   covering retriever variants, retrieval depths, and top-k selection policies
   without running an LLM.
+- Make offline dense/hybrid retrieval evaluation use locally cached
+  SentenceTransformer files by default, with `--dense-allow-download` as an
+  explicit opt-in for model downloads.
 
 ### Added
 

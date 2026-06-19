@@ -40,7 +40,10 @@ class HybridRetriever(BaseRetriever):
         try:
             self.dense_retriever = DenseRetriever(
                 config=dense_config,
-                **{k: v for k, v in kwargs.items() if k in ['model_name', 'device', 'batch_size']}
+                **{
+                    k: v for k, v in kwargs.items()
+                    if k in ['model_name', 'device', 'batch_size', 'local_files_only']
+                }
             )
         except ImportError:
             self._dense_available = False

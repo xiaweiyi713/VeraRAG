@@ -409,11 +409,22 @@ python experiments/evaluate_retrieval.py \
 
 The single-report mode supports `--retriever bm25`, `--retriever dense`, and
 `--retriever hybrid`. Matrix mode defaults to BM25 only so a fresh checkout does
-not accidentally download dense models; pass `--matrix-retrievers` explicitly
-for full Stage-3 ablations. Dense and hybrid variants require locally available
-`sentence-transformers` models. In matrix mode unavailable dense variants are
-recorded as `status: error` and the remaining variants continue unless
-`--fail-fast` is set.
+not accidentally load dense models; pass `--matrix-retrievers` explicitly for
+full Stage-3 ablations. Dense and hybrid variants use locally cached
+`sentence-transformers` files by default; pass `--dense-allow-download` when an
+intentional online model download is acceptable. In matrix mode unavailable
+dense variants are recorded as `status: error` and the remaining variants
+continue unless `--fail-fast` is set.
+
+Current full offline matrix over BM25, Dense (`BAAI/bge-base-en-v1.5`,
+local-files-only), and Hybrid at top-k `3/5/10` shows BM25 still dominates this
+Chinese benchmark. The best variant is BM25 top-3 with
+`complexity_adaptive`, scoring macro precision `0.4365`, recall `0.9138`, and
+F1 `0.5771`. Hybrid top-3 with `complexity_adaptive` scores
+`0.3889/0.8039/0.5113`; Dense top-3 with `complexity_adaptive` scores
+`0.3141/0.6576/0.4147`. These numbers make dense retrieval a model-selection
+problem rather than an automatic win; Chinese/multilingual dense checkpoints
+should be tested before replacing BM25 in the canonical run.
 
 Current bundled VeraBench v1.1.2 BM25 top-10 baseline evaluates 147 rows and
 scores macro precision `0.1293`, macro recall `0.9830`, macro F1 `0.2244`,

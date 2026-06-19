@@ -46,13 +46,27 @@ def _documents_for_index(benchmark: Any) -> list[dict[str, Any]]:
     ]
 
 
-def _make_retriever(name: str) -> BaseRetriever:
+def _make_retriever(
+    name: str,
+    *,
+    dense_model_name: str = "BAAI/bge-base-en-v1.5",
+    dense_device: str = "cpu",
+    dense_local_files_only: bool = True,
+) -> BaseRetriever:
     if name == "bm25":
         return BM25Retriever()
     if name == "dense":
-        return DenseRetriever()
+        return DenseRetriever(
+            model_name=dense_model_name,
+            device=dense_device,
+            local_files_only=dense_local_files_only,
+        )
     if name == "hybrid":
-        return HybridRetriever()
+        return HybridRetriever(
+            model_name=dense_model_name,
+            device=dense_device,
+            local_files_only=dense_local_files_only,
+        )
     raise ValueError(f"Unsupported retriever: {name}")
 
 
@@ -228,11 +242,19 @@ def build_report(
     question_ids: list[str] | None = None,
     max_questions: int | None = None,
     include_no_gold: bool = False,
+    dense_model_name: str = "BAAI/bge-base-en-v1.5",
+    dense_device: str = "cpu",
+    dense_local_files_only: bool = True,
 ) -> dict[str, Any]:
     loader = VeraBenchLoader(data_dir)
     benchmark = loader.load()
     documents = _documents_for_index(benchmark)
-    retriever = _make_retriever(retriever_name)
+    retriever = _make_retriever(
+        retriever_name,
+        dense_model_name=dense_model_name,
+        dense_device=dense_device,
+        dense_local_files_only=dense_local_files_only,
+    )
     retriever.index_documents(documents)
 
     questions = benchmark.questions
@@ -278,6 +300,10 @@ def build_report(
         "retriever": retriever_name,
         "top_k": top_k,
         "top_k_policy": top_k_policy,
+        "dense_model_name": dense_model_name if retriever_name in {"dense", "hybrid"} else "",
+        "dense_local_files_only": (
+            dense_local_files_only if retriever_name in {"dense", "hybrid"} else None
+        ),
         "include_no_gold": include_no_gold,
         "benchmark": {
             "version": benchmark.version,
@@ -337,6 +363,9 @@ def build_matrix_report(
     question_ids: list[str] | None = None,
     max_questions: int | None = None,
     include_no_gold: bool = False,
+    dense_model_name: str = "BAAI/bge-base-en-v1.5",
+    dense_device: str = "cpu",
+    dense_local_files_only: bool = True,
     continue_on_error: bool = True,
 ) -> dict[str, Any]:
     loader = VeraBenchLoader(data_dir)
@@ -351,7 +380,12 @@ def build_matrix_report(
     variants: list[dict[str, Any]] = []
     for retriever_name in retriever_names:
         try:
-            retriever = _make_retriever(retriever_name)
+            retriever = _make_retriever(
+                retriever_name,
+                dense_model_name=dense_model_name,
+                dense_device=dense_device,
+                dense_local_files_only=dense_local_files_only,
+            )
             retriever.index_documents(documents)
         except Exception as exc:
             if not continue_on_error:
@@ -414,6 +448,8 @@ def build_matrix_report(
         "retrievers": retriever_names,
         "top_k_values": top_k_values,
         "top_k_policies": top_k_policies,
+        "dense_model_name": dense_model_name,
+        "dense_local_files_only": dense_local_files_only,
         "include_no_gold": include_no_gold,
         "benchmark": {
             "version": benchmark.version,
@@ -475,6 +511,24 @@ def main() -> None:
     )
     parser.add_argument("--top-k", type=int, default=10)
     parser.add_argument(
+        "--dense-model-name",
+        default="BAAI/bge-base-en-v1.5",
+        help="SentenceTransformer model for dense/hybrid retrieval.",
+    )
+    parser.add_argument(
+        "--dense-device",
+        default="cpu",
+        help="Device for dense/hybrid SentenceTransformer retrieval.",
+    )
+    parser.add_argument(
+        "--dense-allow-download",
+        action="store_true",
+        help=(
+            "Allow dense/hybrid retrieval to download missing models. By default "
+            "offline evaluation uses local cached model files only."
+        ),
+    )
+    parser.add_argument(
         "--top-k-policy",
         choices=TOP_K_POLICIES,
         default="fixed",
@@ -511,6 +565,9 @@ def main() -> None:
             question_ids=args.ids,
             max_questions=args.max_questions,
             include_no_gold=args.include_no_gold,
+            dense_model_name=args.dense_model_name,
+            dense_device=args.dense_device,
+            dense_local_files_only=not args.dense_allow_download,
             continue_on_error=not args.fail_fast,
         )
     else:
@@ -524,6 +581,9 @@ def main() -> None:
             question_ids=args.ids,
             max_questions=args.max_questions,
             include_no_gold=args.include_no_gold,
+            dense_model_name=args.dense_model_name,
+            dense_device=args.dense_device,
+            dense_local_files_only=not args.dense_allow_download,
         )
     payload = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     if args.output:

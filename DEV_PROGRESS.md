@@ -8,21 +8,28 @@
    评估 retriever（BM25/Dense/Hybrid）、retrieval depth 和 top-k policy 组合；
    默认只跑 BM25，避免 fresh checkout 意外下载 dense 模型，显式传
    `--matrix-retrievers bm25 hybrid dense` 后用于 Stage-3 检索消融。
-2. **Citation parser 扩展**：`EvidenceMetrics.extract_citations` 现在支持
+   本机完整矩阵已跑通：BM25 top-3 + `complexity_adaptive` 当前最优，
+   macro P/R/F1 = **0.4365/0.9138/0.5771**；Hybrid top-3 adaptive 为
+   **0.3889/0.8039/0.5113**；Dense top-3 adaptive 为
+   **0.3141/0.6576/0.4147**。
+2. **Dense 离线加载**：`DenseRetriever` 支持 `local_files_only`；离线检索评估
+   默认只用本机缓存的 SentenceTransformer 文件，需下载时显式传
+   `--dense-allow-download`。
+3. **Citation parser 扩展**：`EvidenceMetrics.extract_citations` 现在支持
    `[E1]`、`[D001_c0]` 和包含连字符/下划线的证据 ID，保留重复引用顺序用于
    precision 统计。
-3. **VeraBench report 指标化**：`QuestionResult` 与 `BenchmarkReport` 新增
+4. **VeraBench report 指标化**：`QuestionResult` 与 `BenchmarkReport` 新增
    `citation_*`、`supporting_fact_*` 字段，以及 `citation_summary` 和
    `supporting_fact_summary`，同时输出 macro 与 micro TP/FP/FN。
-4. **pipeline ID 对齐**：evaluator 会把答案引用、retrieved evidence、冲突边和
+5. **pipeline ID 对齐**：evaluator 会把答案引用、retrieved evidence、冲突边和
    `answer_claims[].supporting_evidence` 中的 pipeline chunk ID 映射回
    question-local gold evidence ID，减少 `[D001_c0]` vs `E1` 的假阴性。
-5. **离线重评分兼容**：`rescore_results` 会重算 citation 指标，并把 gold
+6. **离线重评分兼容**：`rescore_results` 会重算 citation 指标，并把 gold
    supporting fact IDs 写回 diagnostics，历史报告可通过重评分升级到新指标口径。
-6. **测试覆盖**：新增 parser 与 pipeline report 聚合测试；focused 验证为
+7. **测试覆盖**：新增 parser 与 pipeline report 聚合测试；focused 验证为
    `tests/test_evaluation_metrics.py` + `tests/test_benchmark.py` 共 100 项通过，
    Ruff 通过。
-7. **配对比较接入**：`verarag-compare-reports` 的 paired bootstrap 与
+8. **配对比较接入**：`verarag-compare-reports` 的 paired bootstrap 与
    evidence-cluster sensitivity 会在新报告字段存在时自动比较
    citation/supporting-fact precision、recall 和 F1；旧报告缺字段时不会被误填为
    0。
