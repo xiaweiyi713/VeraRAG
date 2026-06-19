@@ -16,12 +16,33 @@ DEFAULT_RESAMPLES = 2000
 DEFAULT_SEED = 1729
 
 _LOWER_IS_BETTER = {"ece", "brier_score"}
+_MEAN_FIELD_METRICS = {
+    "answer_f1": "answer_f1",
+    "evidence_recall": "evidence_recall",
+    "evidence_precision": "evidence_precision",
+    "citation_precision": "citation_precision",
+    "citation_recall": "citation_recall",
+    "citation_f1": "citation_f1",
+    "supporting_fact_precision": "supporting_fact_precision",
+    "supporting_fact_recall": "supporting_fact_recall",
+    "supporting_fact_f1": "supporting_fact_f1",
+}
 
 
 def _get(row: Any, name: str, default: Any = None) -> Any:
     if isinstance(row, Mapping):
         return row.get(name, default)
     return getattr(row, name, default)
+
+
+def _has_field(row: Any, name: str) -> bool:
+    if isinstance(row, Mapping):
+        return name in row
+    return hasattr(row, name)
+
+
+def _has_any_field(rows: Sequence[Any], name: str) -> bool:
+    return any(_has_field(row, name) for row in rows)
 
 
 def _mean(values: Sequence[float]) -> float:
@@ -93,18 +114,6 @@ def metric_estimates(rows: Sequence[Any]) -> dict[str, float]:
     )
 
     estimates = {
-        "answer_f1": _mean([
-            float(_get(row, "answer_f1", 0.0))
-            for row in rows
-        ]),
-        "evidence_recall": _mean([
-            float(_get(row, "evidence_recall", 0.0))
-            for row in rows
-        ]),
-        "evidence_precision": _mean([
-            float(_get(row, "evidence_precision", 0.0))
-            for row in rows
-        ]),
         "behavior_accuracy": _mean([
             1.0
             if _get(row, "actual_behavior", "") == _get(row, "expected_behavior", "")
@@ -124,6 +133,12 @@ def metric_estimates(rows: Sequence[Any]) -> dict[str, float]:
             for row in rows
         ]),
     }
+    for metric, field in _MEAN_FIELD_METRICS.items():
+        if _has_any_field(rows, field):
+            estimates[metric] = _mean([
+                float(_get(row, field, 0.0))
+                for row in rows
+            ])
     if conflict_tp + conflict_fp + conflict_fn:
         estimates["conflict_micro_f1"] = _binary_f1(
             conflict_tp,
@@ -423,19 +438,13 @@ def _paired_outcomes(
             confidence = float(_get(row, "confidence", 0.0))
             label = 1.0 if bool(_get(row, "correct", False)) else 0.0
             return (confidence - label) ** 2
-        field = {
-            "answer_f1": "answer_f1",
-            "evidence_recall": "evidence_recall",
-            "evidence_precision": "evidence_precision",
-        }.get(metric)
+        field = _MEAN_FIELD_METRICS.get(metric)
         if field is None:
             return 0.0
         return float(_get(row, field, 0.0))
 
     if metric not in {
-        "answer_f1",
-        "evidence_recall",
-        "evidence_precision",
+        *_MEAN_FIELD_METRICS,
         "behavior_accuracy",
         "correctness_accuracy",
         "brier_score",

@@ -33,6 +33,8 @@ All notable changes to VeraRAG are recorded here.
 - Add `verarag-compare-reports` for strict paired report comparison, including
   delta intervals, probability of improvement, wins/ties/losses, and an exact
   McNemar behavior test, plus paired evidence-cluster sensitivity intervals.
+- Include citation and supporting-fact precision/recall/F1 in paired report
+  comparisons when both reports expose those current VeraBench fields.
 - Fix ECE binning so confidence values exactly equal to 1.0 are included in the
   final calibration bin.
 - Make VeraBench checkpoint resume validate saved rows against the current

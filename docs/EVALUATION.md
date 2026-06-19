@@ -231,9 +231,10 @@ documented fallbacks because their calibration splits are sparse or single
 class. These numbers are diagnostic only; the canonical v1.1.2 run must be
 calibrated and validated before updating the public results table.
 
-Intervals are reported for answer F1, evidence recall/precision, behavior and
-correctness accuracy, conflict micro-F1, premise-refutation F1, ECE, and Brier
-score when applicable. Each report includes
+Intervals are reported for answer F1, evidence recall/precision,
+citation/supporting-fact precision/recall/F1 when those fields are present,
+behavior and correctness accuracy, conflict micro-F1, premise-refutation F1,
+ECE, and Brier score when applicable. Each report includes
 `effective_resamples_by_metric`; replicates where a sparse conditional metric
 has no defined denominator are excluded for that metric instead of receiving
 an imputed score. These intervals quantify sampling uncertainty on the fixed
@@ -255,7 +256,9 @@ question coverage, and per-question alignment. It reports candidate-minus-
 baseline delta intervals, bootstrap probability of improvement, per-question
 wins/ties/losses, a two-sided exact McNemar test for behavior correctness, and
 paired shared-evidence-cluster sensitivity intervals when dependency metadata
-is available.
+is available. Citation and supporting-fact metrics are included automatically
+for reports produced by current VeraBench evaluators; older reports without
+those fields are not backfilled as zero-valued comparisons.
 
 ## Partitioned Evaluation
 

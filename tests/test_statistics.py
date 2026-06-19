@@ -26,10 +26,16 @@ def _row(
     conflict_fp: int = 0,
     conflict_fn: int = 0,
     dependency_group: str = "",
+    citation_f1: float | None = None,
+    citation_precision: float | None = None,
+    citation_recall: float | None = None,
+    supporting_fact_f1: float | None = None,
+    supporting_fact_precision: float | None = None,
+    supporting_fact_recall: float | None = None,
 ):
     expected = "answer_with_citation"
     actual = expected if behavior_correct else "abstain"
-    return SimpleNamespace(
+    row = SimpleNamespace(
         question_id=question_id,
         question_type=question_type,
         answer_f1=answer_f1,
@@ -46,6 +52,18 @@ def _row(
         premise_refutation_detected=False,
         dependency_group=dependency_group,
     )
+    optional_metrics = {
+        "citation_f1": citation_f1,
+        "citation_precision": citation_precision,
+        "citation_recall": citation_recall,
+        "supporting_fact_f1": supporting_fact_f1,
+        "supporting_fact_precision": supporting_fact_precision,
+        "supporting_fact_recall": supporting_fact_recall,
+    }
+    for name, value in optional_metrics.items():
+        if value is not None:
+            setattr(row, name, value)
+    return row
 
 
 def test_metric_estimates_include_micro_conflict_and_calibration():
@@ -79,6 +97,69 @@ def test_metric_estimates_include_micro_conflict_and_calibration():
     assert estimates["conflict_micro_f1"] == pytest.approx(2 / 3)
     assert estimates["ece"] == 0.5
     assert estimates["brier_score"] == 0.5
+
+
+def test_metric_estimates_include_citation_and_supporting_fact_when_present():
+    rows = [
+        _row(
+            "T1",
+            question_type="single_evidence",
+            answer_f1=1.0,
+            evidence_recall=1.0,
+            behavior_correct=True,
+            correct=True,
+            confidence=0.9,
+            citation_precision=1.0,
+            citation_recall=0.5,
+            citation_f1=2 / 3,
+            supporting_fact_precision=1.0,
+            supporting_fact_recall=1.0,
+            supporting_fact_f1=1.0,
+        ),
+        _row(
+            "T2",
+            question_type="single_evidence",
+            answer_f1=0.0,
+            evidence_recall=0.0,
+            behavior_correct=False,
+            correct=False,
+            confidence=0.1,
+            citation_precision=0.0,
+            citation_recall=0.0,
+            citation_f1=0.0,
+            supporting_fact_precision=0.5,
+            supporting_fact_recall=1.0,
+            supporting_fact_f1=2 / 3,
+        ),
+    ]
+
+    estimates = metric_estimates(rows)
+
+    assert estimates["citation_precision"] == 0.5
+    assert estimates["citation_recall"] == 0.25
+    assert estimates["citation_f1"] == pytest.approx(1 / 3)
+    assert estimates["supporting_fact_precision"] == 0.75
+    assert estimates["supporting_fact_recall"] == 1.0
+    assert estimates["supporting_fact_f1"] == pytest.approx(5 / 6)
+
+
+def test_metric_estimates_omit_citation_and_supporting_fact_when_absent():
+    rows = [
+        _row(
+            "T1",
+            question_type="single_evidence",
+            answer_f1=1.0,
+            evidence_recall=1.0,
+            behavior_correct=True,
+            correct=True,
+            confidence=0.9,
+        )
+    ]
+
+    estimates = metric_estimates(rows)
+
+    assert "citation_f1" not in estimates
+    assert "supporting_fact_f1" not in estimates
 
 
 def test_bootstrap_is_deterministic_and_stratified():
@@ -308,6 +389,63 @@ def test_paired_bootstrap_detects_uniform_candidate_improvement():
     }
     assert comparison["behavior_mcnemar_exact"]["candidate_only_correct"] == 4
     assert comparison["behavior_mcnemar_exact"]["two_sided_exact_p"] == 0.125
+
+
+def test_paired_bootstrap_compares_citation_and_supporting_fact_metrics():
+    baseline = [
+        _row(
+            f"T{index}",
+            question_type="single_evidence",
+            answer_f1=0.5,
+            evidence_recall=0.5,
+            behavior_correct=True,
+            correct=True,
+            confidence=0.5,
+            citation_precision=0.25,
+            citation_recall=0.5,
+            citation_f1=1 / 3,
+            supporting_fact_precision=0.5,
+            supporting_fact_recall=0.5,
+            supporting_fact_f1=0.5,
+        )
+        for index in range(4)
+    ]
+    candidate = [
+        _row(
+            f"T{index}",
+            question_type="single_evidence",
+            answer_f1=0.5,
+            evidence_recall=0.5,
+            behavior_correct=True,
+            correct=True,
+            confidence=0.5,
+            citation_precision=0.75,
+            citation_recall=1.0,
+            citation_f1=6 / 7,
+            supporting_fact_precision=1.0,
+            supporting_fact_recall=1.0,
+            supporting_fact_f1=1.0,
+        )
+        for index in range(4)
+    ]
+
+    comparison = paired_bootstrap_comparison(
+        baseline,
+        candidate,
+        resamples=50,
+        seed=9,
+    )
+
+    citation = comparison["metrics"]["citation_f1"]
+    supporting = comparison["metrics"]["supporting_fact_f1"]
+    assert citation["delta_candidate_minus_baseline"] == pytest.approx(0.52381)
+    assert citation["probability_candidate_better"] == 1.0
+    assert citation["paired_outcomes"] == {
+        "candidate_wins": 4,
+        "ties": 0,
+        "candidate_losses": 0,
+    }
+    assert supporting["delta_candidate_minus_baseline"] == 0.5
 
 
 def test_paired_bootstrap_requires_aligned_ids():

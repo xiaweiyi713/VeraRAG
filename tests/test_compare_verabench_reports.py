@@ -12,11 +12,18 @@ from experiments.compare_verabench_reports import (
 )
 
 
-def _report(answer_scores, *, questions_hash="questions-a", mode="pipeline"):
+def _report(
+    answer_scores,
+    *,
+    questions_hash="questions-a",
+    mode="pipeline",
+    citation_scores=None,
+    supporting_scores=None,
+):
     rows = []
     for index, score in enumerate(answer_scores, start=1):
         correct = score >= 0.5
-        rows.append({
+        row = {
             "question_id": f"T{index:03d}",
             "question_type": "single_evidence",
             "answer_f1": score,
@@ -32,7 +39,22 @@ def _report(answer_scores, *, questions_hash="questions-a", mode="pipeline"):
             "conflict_false_positives": 0,
             "conflict_false_negatives": 0,
             "dependency_group": f"component-{(index + 1) // 2}",
-        })
+        }
+        if citation_scores is not None:
+            citation_score = citation_scores[index - 1]
+            row.update({
+                "citation_precision": citation_score,
+                "citation_recall": citation_score,
+                "citation_f1": citation_score,
+            })
+        if supporting_scores is not None:
+            supporting_score = supporting_scores[index - 1]
+            row.update({
+                "supporting_fact_precision": supporting_score,
+                "supporting_fact_recall": supporting_score,
+                "supporting_fact_f1": supporting_score,
+            })
+        rows.append(row)
     return {
         "total_questions": len(rows),
         "completed": len(rows),
@@ -81,6 +103,33 @@ def test_compare_reports_returns_paired_delta_and_markdown():
     assert "| answer_f1 |" in markdown
     assert "Shared-Evidence Dependency Sensitivity" in markdown
     assert "two-sided exact p=0.125000" in markdown
+
+
+def test_compare_reports_includes_citation_and_supporting_fact_metrics():
+    payload = compare_reports(
+        _report(
+            [0.5, 0.5],
+            citation_scores=[0.25, 0.25],
+            supporting_scores=[0.5, 0.5],
+        ),
+        _report(
+            [0.5, 0.5],
+            citation_scores=[0.75, 0.75],
+            supporting_scores=[1.0, 1.0],
+        ),
+        resamples=100,
+        seed=3,
+    )
+
+    assert payload["comparison"]["metrics"]["citation_f1"][
+        "delta_candidate_minus_baseline"
+    ] == 0.5
+    assert payload["comparison"]["metrics"]["supporting_fact_f1"][
+        "delta_candidate_minus_baseline"
+    ] == 0.5
+    markdown = render_markdown(payload)
+    assert "| citation_f1 |" in markdown
+    assert "| supporting_fact_f1 |" in markdown
 
 
 def test_compare_reports_rejects_mismatched_benchmark():

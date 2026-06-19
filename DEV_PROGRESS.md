@@ -18,6 +18,10 @@
 5. **测试覆盖**：新增 parser 与 pipeline report 聚合测试；focused 验证为
    `tests/test_evaluation_metrics.py` + `tests/test_benchmark.py` 共 100 项通过，
    Ruff 通过。
+6. **配对比较接入**：`verarag-compare-reports` 的 paired bootstrap 与
+   evidence-cluster sensitivity 会在新报告字段存在时自动比较
+   citation/supporting-fact precision、recall 和 F1；旧报告缺字段时不会被误填为
+   0。
 
 ## 🆕 本次更新（2026-06-14）：VeraBench v1.1.2、依赖稳健推断与证据可追溯性
 
