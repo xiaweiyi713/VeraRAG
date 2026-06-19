@@ -225,6 +225,9 @@ def test_compare_conflict_detectors_cli_rules_only(tmp_path, temp_bench_dir):
     assert payload["variants"][0]["name"] == "rules"
     assert payload["variants"][0]["summary"]["gold_conflicts"] == 1
     assert "f1" in payload["variants"][0]["summary"]
+    diagnosis = payload["diagnosis"]["variants"]["rules"]
+    assert diagnosis["dominant_failure"] in {"none", "under_detection", "mixed"}
+    assert "actionable_next_step" in diagnosis
 
 
 def test_compare_conflict_detectors_can_limit_dependency_split(tmp_path):
@@ -248,6 +251,7 @@ def test_compare_conflict_detectors_can_limit_dependency_split(tmp_path):
     assert payload["evaluation_scope"]["split_strategy"] == SPLIT_STRATEGY
     assert payload["variants"][0]["summary"]["questions"] > 0
     assert payload["variants"][0]["summary"]["questions"] < 13
+    assert payload["diagnosis"]["variants"]["rules"]["gold_conflicts"] > 0
 
 
 def test_compare_conflict_detectors_marks_external_independent_test(
@@ -298,6 +302,60 @@ def test_compare_conflict_detectors_rejects_invalid_split_ratios():
 
     assert result.returncode == 2
     assert "train_ratio + val_ratio < 1" in result.stderr
+
+
+def test_conflict_detector_comparison_diagnosis_reports_learned_effect():
+    from experiments.compare_conflict_detectors import _comparison_diagnosis
+
+    payload = _comparison_diagnosis([
+        {
+            "name": "rules",
+            "summary": {
+                "gold_conflicts": 10,
+                "predicted_conflicts": 2,
+                "true_positives": 2,
+                "false_positives": 0,
+                "false_negatives": 8,
+                "precision": 1.0,
+                "recall": 0.2,
+                "f1": 0.3333,
+            },
+            "questions": [
+                {
+                    "question_id": "V001",
+                    "question_type": "conflict",
+                    "gold": 2,
+                    "predicted": 0,
+                    "true_positives": 0,
+                    "false_positives": 0,
+                    "false_negatives": 2,
+                    "predicted_pairs": [],
+                    "gold_pairs": [["E1", "E2"], ["E3", "E4"]],
+                }
+            ],
+        },
+        {
+            "name": "rules_plus_learned",
+            "summary": {
+                "gold_conflicts": 10,
+                "predicted_conflicts": 6,
+                "true_positives": 6,
+                "false_positives": 0,
+                "false_negatives": 4,
+                "precision": 1.0,
+                "recall": 0.6,
+                "f1": 0.75,
+            },
+            "questions": [],
+        },
+    ])
+
+    rules = payload["variants"]["rules"]
+    assert rules["dominant_failure"] == "under_detection"
+    assert rules["top_false_negative_questions"][0]["question_id"] == "V001"
+    assert payload["comparison"]["recall_delta"] == 0.4
+    assert payload["comparison"]["false_positive_delta"] == 0
+    assert payload["comparison"]["learned_effect"] == "promising_recall_gain_without_extra_fp"
 
 
 def test_conflict_ablation_plan_only_cli(tmp_path):

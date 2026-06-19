@@ -176,6 +176,126 @@ def _summarize(scores: list[ConflictQuestionScore]) -> dict[str, Any]:
     }
 
 
+def _dominant_failure(false_positives: int, false_negatives: int) -> str:
+    if false_positives == 0 and false_negatives == 0:
+        return "none"
+    if false_negatives > false_positives * 2:
+        return "under_detection"
+    if false_positives > false_negatives * 2:
+        return "over_detection"
+    return "mixed"
+
+
+def _variant_diagnosis(variant: dict[str, Any]) -> dict[str, Any]:
+    summary = variant.get("summary") or {}
+    questions = variant.get("questions") or []
+    false_positives = int(summary.get("false_positives") or 0)
+    false_negatives = int(summary.get("false_negatives") or 0)
+    true_positives = int(summary.get("true_positives") or 0)
+    gold_conflicts = int(summary.get("gold_conflicts") or 0)
+    predicted_conflicts = int(summary.get("predicted_conflicts") or 0)
+    by_type: dict[str, dict[str, int]] = {}
+    missed_questions: list[dict[str, Any]] = []
+    false_positive_questions: list[dict[str, Any]] = []
+    for row in questions:
+        qtype = str(row.get("question_type") or "unknown")
+        by_type.setdefault(qtype, {"tp": 0, "fp": 0, "fn": 0, "gold": 0, "predicted": 0})
+        by_type[qtype]["tp"] += int(row.get("true_positives") or 0)
+        by_type[qtype]["fp"] += int(row.get("false_positives") or 0)
+        by_type[qtype]["fn"] += int(row.get("false_negatives") or 0)
+        by_type[qtype]["gold"] += int(row.get("gold") or 0)
+        by_type[qtype]["predicted"] += int(row.get("predicted") or 0)
+        if int(row.get("false_negatives") or 0) > 0:
+            missed_questions.append({
+                "question_id": row.get("question_id"),
+                "question_type": qtype,
+                "false_negatives": int(row.get("false_negatives") or 0),
+                "gold_pairs": row.get("gold_pairs") or [],
+                "predicted_pairs": row.get("predicted_pairs") or [],
+            })
+        if int(row.get("false_positives") or 0) > 0:
+            false_positive_questions.append({
+                "question_id": row.get("question_id"),
+                "question_type": qtype,
+                "false_positives": int(row.get("false_positives") or 0),
+                "gold_pairs": row.get("gold_pairs") or [],
+                "predicted_pairs": row.get("predicted_pairs") or [],
+            })
+
+    dominant = _dominant_failure(false_positives, false_negatives)
+    if dominant == "under_detection":
+        next_step = "increase recall before full pipeline runs; inspect missed gold pairs and train/add detectors for those pair types"
+    elif dominant == "over_detection":
+        next_step = "tighten precision gates before promotion; inspect false-positive pairs and add entity/fact-slot constraints"
+    elif dominant == "mixed":
+        next_step = "separate recall and precision fixes; learned layer must improve recall without adding false positives"
+    else:
+        next_step = "no edge-level failure on this scope; validate end-to-end behavior before promotion"
+
+    return {
+        "dominant_failure": dominant,
+        "primary_error_count": max(false_positives, false_negatives),
+        "true_positives": true_positives,
+        "false_positives": false_positives,
+        "false_negatives": false_negatives,
+        "gold_conflicts": gold_conflicts,
+        "predicted_conflicts": predicted_conflicts,
+        "recall_gap_to_perfect": round(false_negatives / gold_conflicts, 6) if gold_conflicts else 0.0,
+        "precision_error_rate": (
+            round(false_positives / predicted_conflicts, 6)
+            if predicted_conflicts
+            else 0.0
+        ),
+        "by_type": dict(sorted(by_type.items())),
+        "top_false_negative_questions": sorted(
+            missed_questions,
+            key=lambda row: (-int(row["false_negatives"]), str(row["question_id"])),
+        )[:10],
+        "top_false_positive_questions": sorted(
+            false_positive_questions,
+            key=lambda row: (-int(row["false_positives"]), str(row["question_id"])),
+        )[:10],
+        "actionable_next_step": next_step,
+    }
+
+
+def _comparison_diagnosis(variants: list[dict[str, Any]]) -> dict[str, Any]:
+    diagnoses = {
+        str(variant.get("name")): _variant_diagnosis(variant)
+        for variant in variants
+    }
+    comparison: dict[str, Any] = {}
+    by_name = {str(variant.get("name")): variant for variant in variants}
+    rules = (by_name.get("rules") or {}).get("summary") or {}
+    learned = (by_name.get("rules_plus_learned") or {}).get("summary") or {}
+    if rules and learned:
+        f1_delta = float(learned.get("f1") or 0.0) - float(rules.get("f1") or 0.0)
+        recall_delta = float(learned.get("recall") or 0.0) - float(rules.get("recall") or 0.0)
+        precision_delta = float(learned.get("precision") or 0.0) - float(rules.get("precision") or 0.0)
+        false_positive_delta = int(learned.get("false_positives") or 0) - int(rules.get("false_positives") or 0)
+        false_negative_delta = int(learned.get("false_negatives") or 0) - int(rules.get("false_negatives") or 0)
+        if f1_delta > 0 and recall_delta >= 0 and false_positive_delta <= 0:
+            learned_effect = "promising_recall_gain_without_extra_fp"
+        elif false_positive_delta > 0 and recall_delta <= 0:
+            learned_effect = "harmful_precision_loss_without_recall_gain"
+        elif f1_delta <= 0:
+            learned_effect = "no_f1_gain"
+        else:
+            learned_effect = "mixed_tradeoff"
+        comparison = {
+            "f1_delta": round(f1_delta, 6),
+            "precision_delta": round(precision_delta, 6),
+            "recall_delta": round(recall_delta, 6),
+            "false_positive_delta": false_positive_delta,
+            "false_negative_delta": false_negative_delta,
+            "learned_effect": learned_effect,
+        }
+    return {
+        "variants": diagnoses,
+        "comparison": comparison,
+    }
+
+
 def _dataset_identity(data_dir: str | None) -> dict[str, Any]:
     if not data_dir:
         return {
@@ -323,6 +443,7 @@ def main() -> None:
             "dataset": _dataset_identity(args.data_dir),
         },
         "variants": variants,
+        "diagnosis": _comparison_diagnosis(variants),
     }
     text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     if args.output:

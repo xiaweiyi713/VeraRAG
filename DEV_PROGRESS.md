@@ -586,6 +586,16 @@
     coverage@accuracy≥0.95 **0.5724**，coverage@accuracy≥0.90 **1.0000**。
     新增回归测试覆盖 analyzer artifact 写出路径，`docs/RESULTS.md` 已标明该图仍是
     historical diagnostic，canonical v1.1.2 需全量重跑后替换。
+92. **冲突检测根因诊断结构化**：`verarag-compare-conflicts` / 
+    `experiments/compare_conflict_detectors.py` 新增 `diagnosis` 输出，按 variant
+    标出 dominant failure（under/over/mixed/none）、by-type TP/FP/FN、top false
+    negative / false positive questions，并在 rules+learned 对比时输出 F1/precision/recall
+    delta 与 learned effect。当前 bundled VeraBench v1.1.2 gold-evidence rules-only
+    全量诊断为 precision **0.9231**、recall **0.8000**、F1 **0.8571**，TP/FP/FN
+    **12/1/3**；主要剩 `V021` / `V075` / `V122` self-pair 漏报与 `V017` 额外 pair。
+    dependency-aware test split 为 precision **0.7500**、recall **1.0000**、F1
+    **0.8571**，唯一错误同样是 `V017` 额外 pair。这完成阶段 1 “先诊断再训练”的
+    第一闭环：后续训练/规则修复必须以补 self-pair recall 和守住 precision 为目标。
 
 ## 🆕 本次更新（2026-06-14）：冲突检测召回、检索锚点与回答行为闭环
 

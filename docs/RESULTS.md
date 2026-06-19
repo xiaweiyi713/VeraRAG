@@ -80,6 +80,15 @@ rules and rules+learned both reached precision `0.750`, recall `1.000`, F1
 learned model on multi-seed test F1, dependency-robust lower bound, minimum
 A/B sample size, and held-out improvement.
 
+Current v1.1.2 gold-evidence rules-only diagnosis from
+`compare_conflict_detectors.py` is more precise than the older F1≈0 summary:
+all conflict-bearing rows score precision `0.9231`, recall `0.8000`, F1
+`0.8571` with TP/FP/FN `12/1/3`. The remaining all-scope failure is mainly
+under-detection on self-pair conflicts (`V021`, `V075`, `V122`), while the
+dependency-aware test split has recall `1.0000` and one V017 false-positive
+extra pair. This shifts the next Stage-1 work from blind model training to
+targeted missed-pattern fixes plus strict precision-preserving promotion.
+
 ## Historical VeraBench v1.1 Full Run
 
 Merged from two compatible partition reports with:

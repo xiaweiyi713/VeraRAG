@@ -271,6 +271,11 @@ including behavior failures, conflict failures, confidence AUROC, AURC, and
 coverage@accuracy. Use `--risk-coverage-svg` to write a publication-friendly
 risk-coverage curve and `--risk-coverage-csv` to export the plotted points.
 
+`verarag-compare-conflicts` compares rules-only and optional rules+learned
+conflict graph variants on gold evidence without LLM calls. Its JSON includes a
+`diagnosis` block with dominant failure mode, by-type TP/FP/FN, top missed or
+extra pairs, and learned-vs-rules deltas.
+
 `verarag-calibration` defaults to the boolean `correct` row field, which tracks
 VeraBench behavior correctness. Use `--correctness-field` to inspect another
 boolean outcome such as `premise_refutation_correct`. The command rejects empty
