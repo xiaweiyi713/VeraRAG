@@ -165,6 +165,9 @@ All notable changes to VeraRAG are recorded here.
 - Extend `verarag-compare-conflicts` with machine-readable detector diagnosis,
   including dominant failure mode, by-type TP/FP/FN, top missed/extra pairs,
   and learned-vs-rules deltas for precision-preserving promotion decisions.
+- Close current v1.1.2 gold-evidence rules-only conflict edge gaps by handling
+  same-evidence numeric contrasts, ITER schedule self-refutations, and corrected
+  reported-claim cross-evidence deduplication.
 - Add `verarag-calibrate-report`, a held-out post-hoc confidence calibration
   CLI that fits Platt or temperature scaling, preserves original row
   confidences, and writes before/after calibration and holdout metrics into

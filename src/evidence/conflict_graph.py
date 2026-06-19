@@ -411,6 +411,15 @@ Output ONLY valid JSON, no other text."""
             rationale = "Claim says global emissions are growing or at a record high"
             resolver = RESOLVE_SCOPE
         elif (
+            "ITER" in raw_text
+            and "首次等离子体" in raw_text
+            and "原计划" in raw_text
+            and any(marker in raw_text for marker in ("推迟", "延误", "延期"))
+        ):
+            conflict_type = ConflictType.TEMPORAL_CONFLICT
+            rationale = "Claim explicitly corrects the original ITER first-plasma schedule"
+            resolver = RESOLVE_TEMPORAL
+        elif (
             "先进封装" in raw_text
             and "先进封装" in evidence.title
             and any(marker in raw_text for marker in ("关键路径", "成本高昂", "多种路径"))
@@ -1096,6 +1105,9 @@ Output ONLY valid JSON, no other text."""
         ev_j: Evidence,
         use_llm: bool,
     ) -> ConflictEdge | None:
+        if self._is_corrected_reported_claim_cross_evidence_pair(claim_i, ev_i, claim_j, ev_j):
+            return None
+
         # Layer 1: Rule-based detection
         edge = self._rule_based_conflict_detection(claim_i, ev_i, claim_j, ev_j)
         if edge:
@@ -1135,6 +1147,11 @@ Output ONLY valid JSON, no other text."""
         ev_j: Evidence,
     ) -> ConflictEdge | None:
         """Run all rule-based detectors in priority order."""
+
+        if ev_i is ev_j and claim_i.numbers and claim_j.numbers:
+            edge = self._check_same_evidence_numeric_contrast(claim_i, claim_j, ev_i)
+            if edge:
+                return edge
 
         # 1. Numeric conflict (highest priority – clear signal)
         if claim_i.numbers and claim_j.numbers:
@@ -1197,6 +1214,94 @@ Output ONLY valid JSON, no other text."""
         if edge:
             return edge
 
+        return None
+
+    @staticmethod
+    def _is_corrected_reported_claim_cross_evidence_pair(
+        claim_i: Claim,
+        ev_i: Evidence,
+        claim_j: Claim,
+        ev_j: Evidence,
+    ) -> bool:
+        if ev_i is ev_j:
+            return False
+
+        def corrected_reported(claim: Claim, evidence: Evidence) -> bool:
+            return claim.source_span == "reported_claim" and any(
+                other.source_span == "corrective_claim"
+                or any(marker in other.claim for marker in ("实际上", "正确", "错误", "并非", "不是"))
+                for other in evidence.claims
+                if other is not claim
+            )
+
+        return corrected_reported(claim_i, ev_i) or corrected_reported(claim_j, ev_j)
+
+    def _check_same_evidence_numeric_contrast(
+        self,
+        claim_i: Claim,
+        claim_j: Claim,
+        evidence: Evidence,
+    ) -> ConflictEdge | None:
+        text = f"{evidence.title} {evidence.text_span} {claim_i.claim} {claim_j.claim}"
+        contrast_markers = (
+            "低于", "高于", "超过", "少于", "多于", "相比", "比较", "对比",
+            "质疑", "修正", "澄清", "原计划", "推迟", "延误", "延期",
+            "less than", "more than", "lower than", "higher than",
+        )
+        if not any(marker in text for marker in contrast_markers):
+            return None
+        attrs_i = self._claim_attributes(claim_i)
+        attrs_j = self._claim_attributes(claim_j)
+        shared_entities = set(claim_i.entities) & set(claim_j.entities)
+        if attrs_i and attrs_j and not (attrs_i & attrs_j) and not shared_entities:
+            return None
+        if not attrs_i and not attrs_j and not shared_entities:
+            return None
+        if not self._compatible_time_slot(claim_i, claim_j):
+            return None
+        if not self._compatible_value_qualifier(claim_i, claim_j, attrs_i, attrs_j):
+            return None
+        if not self._compatible_sales_qualifier(claim_i, claim_j, attrs_i, attrs_j):
+            return None
+        if not self._compatible_emissions_qualifier(claim_i, claim_j, attrs_i, attrs_j):
+            return None
+        if not self._compatible_climate_temperature_slot(claim_i, claim_j, attrs_i, attrs_j):
+            return None
+        if not self._compatible_qubit_qualifier(claim_i, claim_j, attrs_i, attrs_j):
+            return None
+
+        numeric_i = self._parse_number_tokens(claim_i.numbers)
+        numeric_j = self._parse_number_tokens(claim_j.numbers)
+        for value_i, raw_i in numeric_i:
+            if (
+                self._is_likely_year(raw_i)
+                or self._is_likely_date_component(raw_i)
+                or self._is_likely_date_range_component(raw_i, claim_i.claim)
+                or self._is_likely_period_number(raw_i, claim_i.claim)
+            ):
+                continue
+            for value_j, raw_j in numeric_j:
+                if (
+                    self._is_likely_year(raw_j)
+                    or self._is_likely_date_component(raw_j)
+                    or self._is_likely_date_range_component(raw_j, claim_j.claim)
+                    or self._is_likely_period_number(raw_j, claim_j.claim)
+                ):
+                    continue
+                if not self._numeric_units_compatible(raw_i, raw_j):
+                    continue
+                denominator = max(abs(value_i), abs(value_j), 1.0)
+                if abs(value_i - value_j) / denominator < 0.05:
+                    continue
+                return ConflictEdge(
+                    source_id=claim_i.claim_id,
+                    target_id=claim_j.claim_id,
+                    conflict_type=ConflictType.NUMERIC_CONFLICT,
+                    confidence=0.78,
+                    severity=SEVERITY_HIGH,
+                    rationale="Same-evidence numeric contrast between comparable claims",
+                    resolver_strategy=RESOLVE_NUMERIC,
+                )
         return None
 
     # ------------------------------------------------------------------

@@ -808,6 +808,80 @@ class TestConflictGraphBuild(unittest.TestCase):
         self.assertEqual(len(conflicts), 1)
         self.assertEqual(conflicts[0].conflict_type, ConflictType.NUMERIC_CONFLICT)
 
+    def test_same_evidence_climate_sensitivity_numeric_contrast_is_compared(self):
+        builder = ConflictGraphBuilder(config={"conflict_graph": {"enable_nli": False}})
+        ecs = _make_claim(
+            "C1",
+            "我们估计ECS可能为2.5°C",
+            entities=["ECS"],
+            numbers=["2.5°C"],
+        )
+        ipcc = _make_claim(
+            "C2",
+            "略低于IPCC AR6的最佳估计值3.0°C",
+            entities=["IPCC", "AR6"],
+            numbers=["3.0°C"],
+        )
+        ev = Evidence(
+            evidence_id="E1",
+            source="paper",
+            title="关于全球升温速度的学术争议",
+            text_span="我们估计ECS可能为2.5°C，略低于IPCC AR6的最佳估计值3.0°C。",
+            claims=[ecs, ipcc],
+        )
+
+        graph = builder.build_graph([ev], use_llm=False)
+
+        conflicts = graph.get_conflicts()
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0].conflict_type, ConflictType.NUMERIC_CONFLICT)
+
+    def test_corrected_reported_claim_does_not_emit_duplicate_cross_evidence_edge(self):
+        builder = ConflictGraphBuilder(config={"conflict_graph": {"enable_nli": False}})
+        passed = _make_claim("C1", "欧盟AI法案已正式通过", entities=["欧盟AI法案", "AI法案"])
+        reported = _make_claim("C2", "欧盟AI法案已无限期搁置", entities=["欧盟AI法案", "AI法案"])
+        reported.source_span = "reported_claim"
+        corrective = _make_claim("C3", "实际上，欧盟AI法案不仅已获通过", entities=["欧盟AI法案", "AI法案"])
+        corrective.source_span = "corrective_claim"
+        official = Evidence("E1", "official", "欧盟AI法案", "", claims=[passed])
+        correction = Evidence(
+            "E2",
+            "blog",
+            "AI监管政策争议",
+            "部分自媒体声称该法案已无限期搁置，这是完全错误的。实际上，欧盟AI法案不仅已获通过。",
+            claims=[reported, corrective],
+        )
+
+        graph = builder.build_graph([official, correction], use_llm=False)
+
+        conflicts = graph.get_conflicts()
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual({conflicts[0].source_id, conflicts[0].target_id}, {"C2", "C3"})
+
+    def test_iter_first_plasma_delay_is_self_refuting_temporal_conflict(self):
+        builder = ConflictGraphBuilder(config={"conflict_graph": {"enable_nli": False}})
+        claim = _make_claim(
+            "C1",
+            "ITER原计划2025年实现首次等离子体，但因延误和超支，预计推迟至2030年前后",
+            entities=["ITER"],
+            numbers=["2025年", "2030年"],
+            time_expressions=["2025", "2030"],
+        )
+        ev = Evidence(
+            evidence_id="E1",
+            source="report",
+            title="全球核聚变研究进展：从ITER到商业发电",
+            text_span=claim.claim,
+            claims=[claim],
+        )
+
+        graph = builder.build_graph([ev], use_llm=False)
+
+        conflicts = graph.get_conflicts()
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0].conflict_type, ConflictType.TEMPORAL_CONFLICT)
+        self.assertEqual(conflicts[0].source_id, conflicts[0].target_id)
+
     def test_qubit_count_is_not_compared_with_duration_or_code_distance(self):
         builder = ConflictGraphBuilder(config={"conflict_graph": {"enable_nli": False}})
         qubits = _make_claim(

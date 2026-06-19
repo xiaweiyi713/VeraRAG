@@ -596,6 +596,15 @@
     dependency-aware test split 为 precision **0.7500**、recall **1.0000**、F1
     **0.8571**，唯一错误同样是 `V017` 额外 pair。这完成阶段 1 “先诊断再训练”的
     第一闭环：后续训练/规则修复必须以补 self-pair recall 和守住 precision 为目标。
+93. **冲突规则层 edge 闭环**：根据上一条诊断，`ConflictGraphBuilder` 新增三处高精度
+    修复：同证据显式数值对比（覆盖 `V021` / `V075` ECS 2.5°C vs IPCC 3.0°C）、
+    ITER “原计划 2025 首次等离子体但推迟至 2030” 自反驳时间冲突、以及已被同证据
+    corrective claim 纠正的 reported claim 不再重复生成跨证据冲突边（修 `V017` 额外
+    E1/E2 pair）。当前 bundled VeraBench v1.1.2 gold-evidence rules-only 全量
+    诊断达到 precision/recall/F1 **1.0000/1.0000/1.0000**，TP/FP/FN **15/0/0**；
+    dependency-aware test split 也为 **3/0/0**。新增回归测试锁住这三种模式。注意：
+    这是 gold-evidence edge 层结果，端到端 conflict behavior 仍需 canonical v1.1.2
+    全量 LLM run 验证。
 
 ## 🆕 本次更新（2026-06-14）：冲突检测召回、检索锚点与回答行为闭环
 

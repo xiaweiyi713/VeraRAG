@@ -465,14 +465,16 @@ should increase recall, tighten precision, or reject a learned layer despite a
 headline F1 gain.
 
 On current bundled VeraBench v1.1.2 gold evidence, rules-only conflict graph
-diagnosis is no longer the old F1≈0 failure mode: all 13 conflict-bearing rows
-score precision `0.9231`, recall `0.8000`, F1 `0.8571`, with 12/1/3
-TP/FP/FN. The dominant all-scope failure is `under_detection`, driven by missed
-self-pair conflicts in `V021`, `V075`, and `V122`; the held-out dependency test
-split scores precision `0.7500`, recall `1.0000`, F1 `0.8571`, where the only
-error is a V017 extra pair. The next detector work should therefore target
-these specific missed self-pair patterns and V017-style pair gating, while the
-promotion audit continues to reject learned models that add false positives.
+diagnosis is no longer the old F1≈0 failure mode. The first structured
+diagnosis isolated missed self-pair conflicts in `V021`, `V075`, and `V122`,
+plus a V017 extra pair. After adding high-precision same-evidence numeric
+contrast handling, ITER first-plasma schedule self-refutation, and corrected
+reported-claim cross-evidence deduplication, the all-scope gold-evidence check
+scores precision `1.0000`, recall `1.0000`, F1 `1.0000`, with 15/0/0 TP/FP/FN;
+the dependency-aware test split also scores 3/0/0. This proves the deterministic
+gold-evidence edge layer is closed on current annotations. It does not yet prove
+end-to-end conflict behavior on retrieved distractors or with LLM generation;
+that remains part of the canonical v1.1.2 run and downstream ablations.
 
 For an independently maintained VeraBench-compatible test set, record an
 immutable evaluation id and file fingerprints:
