@@ -1,0 +1,68 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff lint gate
+        entry: python -m ruff check verarag src web experiments examples tests configs scripts demo.py demo_local.py run_web.py
+        language: system
+        pass_filenames: false
+      - id: mypy-public-api
+        name: Mypy public package gate
+        entry: python -m mypy src/ verarag/ --config-file mypy.ini
+        language: system
+        pass_filenames: false
+      - id: secret-scan
+        name: High-confidence secret scan
+        entry: python experiments/scan_secrets.py
+        language: system
+        pass_filenames: false
+      - id: version-check
+        name: Release version identity gate
+        entry: python experiments/validate_version_identity.py
+        language: system
+        pass_filenames: false
+      - id: python-support-check
+        name: Python support metadata gate
+        entry: python experiments/validate_python_support.py
+        language: system
+        pass_filenames: false
+      - id: doctor-check
+        name: Environment doctor gate
+        entry: python experiments/doctor.py
+        language: system
+        pass_filenames: false
+      - id: configs-check
+        name: YAML config schema gate
+        entry: python experiments/validate_configs.py
+        language: system
+        pass_filenames: false
+      - id: docs-check
+        name: Documentation drift gate
+        entry: python experiments/validate_docs.py
+        language: system
+        pass_filenames: false
+      - id: results-check
+        name: Published results drift gate
+        entry: python experiments/validate_results.py
+        language: system
+        pass_filenames: false
+      - id: examples-check
+        name: No-key quickstart example gate
+        entry: python experiments/validate_examples.py
+        language: system
+        pass_filenames: false
+      - id: deployment-check
+        name: Docker and Web deployment gate
+        entry: python experiments/validate_deployment.py
+        language: system
+        pass_filenames: false
+      - id: deps-check
+        name: Dependency metadata gate
+        entry: python experiments/validate_dependency_metadata.py
+        language: system
+        pass_filenames: false
+      - id: metadata-check
+        name: Open-source metadata gate
+        entry: python experiments/validate_project_metadata.py
+        language: system
+        pass_filenames: false
