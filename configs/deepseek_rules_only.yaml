@@ -1,0 +1,36 @@
+llm:
+  api_key: ${DEEPSEEK_API_KEY}
+  max_tokens: 4000
+  model: deepseek-v4-flash
+  provider: deepseek
+  temperature: 0.0
+
+pipeline:
+  enable_conflict_graph: true
+  enable_repair: true
+  enable_uncertainty: true
+  enable_verification: false
+  max_retrieval_rounds: 1
+
+retriever:
+  type: bm25
+
+evidence:
+  semantic_dedup: false
+
+conflict_graph:
+  enable_learned_detector: false
+  learned_model_path: ${VERARAG_CONFLICT_MODEL}
+  learned_threshold: 0.7
+  learned_require_context: true
+  learned_candidate_similarity: 0.18
+  enable_source_reliability_conflict: false
+  enable_scope_conflict: false
+  enable_granularity_conflict: false
+  compare_within_evidence: false
+  enable_nli: false
+  nli_threshold: 0.7
+  min_conflict_similarity: 0.22
+  unattributed_conflict_similarity: 0.55
+  enable_llm_adjudication: false
+  llm_adjudication_similarity: 0.35

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from ..utils.data_structures import Evidence, EvidenceConflictGraph
+from ..utils.data_structures import ConflictEdge, Evidence, EvidenceConflictGraph
 
 
 class EvidenceScorer:
@@ -74,11 +74,12 @@ class EvidenceScorer:
         conflict_graph: EvidenceConflictGraph
     ) -> float:
         """Calculate how much this evidence is supported by others."""
+        evidence_node_ids = self._evidence_node_ids(evidence)
         support_count = 0
         total_count = 0
 
         for edge in conflict_graph.edges:
-            if edge.source_id in [c.claim_id for c in evidence.claims]:
+            if self._edge_touches_evidence(edge, evidence_node_ids):
                 total_count += 1
                 if edge.conflict_type.value == "support":
                     support_count += 1
@@ -94,11 +95,12 @@ class EvidenceScorer:
         conflict_graph: EvidenceConflictGraph
     ) -> float:
         """Calculate penalty based on conflicts."""
+        evidence_node_ids = self._evidence_node_ids(evidence)
         conflict_count = 0.0
         total_count = 0
 
         for edge in conflict_graph.get_conflicts():
-            if edge.source_id in [c.claim_id for c in evidence.claims]:
+            if self._edge_touches_evidence(edge, evidence_node_ids):
                 total_count += 1
                 conflict_count += 1.0 * edge.confidence
 
@@ -106,6 +108,14 @@ class EvidenceScorer:
             return 0.0
 
         return conflict_count / total_count
+
+    @staticmethod
+    def _evidence_node_ids(evidence: Evidence) -> set[str]:
+        return {evidence.evidence_id, *(claim.claim_id for claim in evidence.claims)}
+
+    @staticmethod
+    def _edge_touches_evidence(edge: ConflictEdge, evidence_node_ids: set[str]) -> bool:
+        return edge.source_id in evidence_node_ids or edge.target_id in evidence_node_ids
 
     def score_evidence_list(
         self,
