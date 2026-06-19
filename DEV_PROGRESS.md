@@ -636,7 +636,9 @@
     `adaptive_*_top_k` 调整裁剪阈值。实现保留原始检索深度、只裁剪进入
     evidence pool 的文档数；`configs/model.yaml` 与 canonical v1.1.2 配置显式保持
     `fixed`，避免未验证策略影响权威 run。新增 agent/config/integration 测试确认
-    policy 裁剪、validator 校验和 pipeline 传参。
+    policy 裁剪、validator 校验和 pipeline 传参；`run_verabench` report metadata
+    现在也记录 retriever type/top-k policy/阈值字段，方便后续 fixed vs adaptive
+    真实 A/B 审计。
 
 ## 🆕 本次更新（2026-06-14）：冲突检测召回、检索锚点与回答行为闭环
 

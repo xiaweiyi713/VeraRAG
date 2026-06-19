@@ -623,6 +623,12 @@ class TestVeraBenchEvaluator:
                     "  model: deepseek-v4-flash",
                     "  temperature: 0",
                     "  max_tokens: 4000",
+                    "retriever:",
+                    "  type: bm25",
+                    "  top_k_policy: complexity_adaptive",
+                    "  adaptive_simple_top_k: 2",
+                    "  adaptive_medium_top_k: 4",
+                    "  adaptive_complex_top_k: 5",
                 ]
             )
             + "\n",
@@ -636,6 +642,11 @@ class TestVeraBenchEvaluator:
             "model": "deepseek-v4-flash",
             "temperature": 0,
             "max_tokens": 4000,
+            "retriever_type": "bm25",
+            "retriever_top_k_policy": "complexity_adaptive",
+            "retriever_adaptive_simple_top_k": 2,
+            "retriever_adaptive_medium_top_k": 4,
+            "retriever_adaptive_complex_top_k": 5,
         }
 
     def test_config_run_metadata_records_read_failure(self, tmp_path):

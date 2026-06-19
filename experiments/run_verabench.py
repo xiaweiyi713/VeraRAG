@@ -166,12 +166,26 @@ def _read_config_run_metadata(config_path: str) -> dict[str, Any]:
         llm = cfg.get("llm", {}) or {}
         if not isinstance(llm, dict):
             raise ValueError("llm config is not a mapping")
-        return {
+        retriever = cfg.get("retriever", {}) or {}
+        if not isinstance(retriever, dict):
+            raise ValueError("retriever config is not a mapping")
+        metadata = {
             "model": llm.get("model", ""),
             "provider": llm.get("provider", ""),
             "temperature": llm.get("temperature", ""),
             "max_tokens": llm.get("max_tokens", ""),
         }
+        for key in (
+            "type",
+            "top_k_policy",
+            "precision_cap_top_k",
+            "adaptive_simple_top_k",
+            "adaptive_medium_top_k",
+            "adaptive_complex_top_k",
+        ):
+            if key in retriever:
+                metadata[f"retriever_{key}"] = retriever[key]
+        return metadata
     except Exception as exc:
         warning = f"failed to read config metadata from {config_path}: {exc}"
         logger.warning(warning)
