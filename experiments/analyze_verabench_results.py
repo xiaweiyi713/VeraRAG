@@ -12,9 +12,23 @@ Usage:
 
 import argparse
 import json
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+from src.benchmark.loader import (  # noqa: E402
+    evidence_dependency_groups,
+    load_verabench,
+)
+from src.evaluation.statistics import (  # noqa: E402
+    dependency_cluster_bootstrap_confidence_intervals,
+    stratified_bootstrap_confidence_intervals,
+)
 
 
 def _load_report(path: str) -> dict[str, Any]:
@@ -55,10 +69,13 @@ def _build_summary(rows: list[dict[str, Any]], max_examples: int) -> dict[str, A
     ]
     conflict_failures = [
         r for r in rows
-        if r.get("question_type") == "conflict"
-        and (
-            r.get("actual_behavior") != r.get("expected_behavior")
-            or float(r.get("conflict_detection_f1") or 0.0) < 0.5
+        if (
+            int(r.get("conflict_false_positives") or 0) > 0
+            or int(r.get("conflict_false_negatives") or 0) > 0
+            or (
+                r.get("question_type") == "conflict"
+                and r.get("actual_behavior") != r.get("expected_behavior")
+            )
         )
     ]
 
@@ -78,6 +95,7 @@ def _build_summary(rows: list[dict[str, Any]], max_examples: int) -> dict[str, A
         "low_evidence_recall_count": len(low_evidence_recall),
         "low_evidence_recall_by_type": _count_by_type(low_evidence_recall),
         "conflict_failure_count": len(conflict_failures),
+        "conflict_failures_by_type": _count_by_type(conflict_failures),
         "top_behavior_failures": ranked_failures[:max_examples],
     }
 
@@ -153,8 +171,77 @@ def _conflict_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "false_negatives": total_fn,
         "precision": round(precision, 4),
         "recall": round(recall, 4),
+        "f1": round(
+            2 * precision * recall / (precision + recall)
+            if precision + recall
+            else 0.0,
+            4,
+        ),
         "dominant_failure": dominant_failure,
     }
+
+
+def _premise_refutation_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    has_fields = any(
+        "premise_refutation_expected" in r or "premise_refutation_detected" in r
+        for r in rows
+    )
+    if not has_fields:
+        return {
+            "available": False,
+            "reason": "Per-question premise_refutation fields are not present in this report. Re-run run_verabench.py with the current evaluator to generate them.",
+        }
+
+    expected = sum(1 for r in rows if r.get("premise_refutation_expected"))
+    detected = sum(1 for r in rows if r.get("premise_refutation_detected"))
+    tp = sum(
+        1 for r in rows
+        if r.get("premise_refutation_expected") and r.get("premise_refutation_detected")
+    )
+    fp = sum(
+        1 for r in rows
+        if not r.get("premise_refutation_expected") and r.get("premise_refutation_detected")
+    )
+    fn = sum(
+        1 for r in rows
+        if r.get("premise_refutation_expected") and not r.get("premise_refutation_detected")
+    )
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    return {
+        "available": True,
+        "expected": expected,
+        "detected": detected,
+        "true_positives": tp,
+        "false_positives": fp,
+        "false_negatives": fn,
+        "precision": round(precision, 4),
+        "recall": round(recall, 4),
+    }
+
+
+def _derive_dependency_intervals(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not rows:
+        return {}
+    if all(row.get("dependency_group") for row in rows):
+        return dependency_cluster_bootstrap_confidence_intervals(rows)
+
+    benchmark = load_verabench()
+    groups = evidence_dependency_groups(benchmark.questions)
+    question_ids = [str(row.get("question_id") or "") for row in rows]
+    if not all(question_id in groups for question_id in question_ids):
+        return {}
+    enriched = [
+        {**row, "dependency_group": groups[question_id]}
+        for row, question_id in zip(rows, question_ids, strict=True)
+    ]
+    intervals = dependency_cluster_bootstrap_confidence_intervals(enriched)
+    intervals["dependency_mapping_source"] = (
+        "current-verabench-shared-gold-document-components"
+    )
+    return intervals
 
 
 def analyze(report: dict[str, Any], max_examples: int = 10) -> dict[str, Any]:
@@ -164,6 +251,17 @@ def analyze(report: dict[str, Any], max_examples: int = 10) -> dict[str, Any]:
     confusion = report.get("behavior_confusion") or _behavior_confusion(rows)
     calibration_bins = report.get("calibration_bins") or _calibration_bins(rows)
     conflict_summary = report.get("conflict_summary") or _conflict_summary(rows)
+    premise_refutation_summary = (
+        report.get("premise_refutation_summary")
+        or _premise_refutation_summary(rows)
+    )
+    confidence_intervals = (
+        report.get("confidence_intervals")
+        or stratified_bootstrap_confidence_intervals(rows)
+    )
+    dependency_intervals = report.get(
+        "dependency_robust_confidence_intervals"
+    ) or _derive_dependency_intervals(rows)
     return {
         "report": {
             "total_questions": report.get("total_questions", len(rows)),
@@ -178,7 +276,10 @@ def analyze(report: dict[str, Any], max_examples: int = 10) -> dict[str, Any]:
         },
         "metadata": report.get("metadata", {}),
         "calibration_bins": calibration_bins,
+        "confidence_intervals": confidence_intervals,
+        "dependency_robust_confidence_intervals": dependency_intervals,
         "conflict_summary": conflict_summary,
+        "premise_refutation_summary": premise_refutation_summary,
         "behavior_confusion": confusion,
         "failure_summary": summary,
     }
@@ -203,6 +304,59 @@ def _print_table(analysis: dict[str, Any], max_examples: int) -> None:
         commit = metadata.get("git_commit", "")
         print(f"Run:             {provider}/{model} @ {commit}")
 
+    intervals = analysis.get("confidence_intervals", {})
+    interval_metrics = intervals.get("metrics", {})
+    if interval_metrics:
+        confidence = float(intervals.get("confidence_level", 0.95)) * 100
+        print(f"\nStratified Bootstrap {confidence:.1f}% Intervals")
+        print("-" * 72)
+        for key in (
+            "answer_f1",
+            "evidence_recall",
+            "behavior_accuracy",
+            "conflict_micro_f1",
+            "ece",
+            "brier_score",
+        ):
+            values = interval_metrics.get(key)
+            if values:
+                print(
+                    f"{key:<24s} "
+                    f"[{float(values['lower']):.4f}, "
+                    f"{float(values['upper']):.4f}]"
+                )
+
+    dependency_intervals = analysis.get(
+        "dependency_robust_confidence_intervals",
+        {},
+    )
+    dependency_metrics = dependency_intervals.get("metrics", {})
+    if dependency_metrics:
+        confidence = (
+            float(dependency_intervals.get("confidence_level", 0.95)) * 100
+        )
+        clusters = int(dependency_intervals.get("clusters", 0))
+        print(
+            f"\nEvidence-Cluster Bootstrap {confidence:.1f}% Intervals "
+            f"({clusters} clusters)"
+        )
+        print("-" * 72)
+        for key in (
+            "answer_f1",
+            "evidence_recall",
+            "behavior_accuracy",
+            "conflict_micro_f1",
+            "ece",
+            "brier_score",
+        ):
+            values = dependency_metrics.get(key)
+            if values:
+                print(
+                    f"{key:<24s} "
+                    f"[{float(values['lower']):.4f}, "
+                    f"{float(values['upper']):.4f}]"
+                )
+
     print("\nFailure Summary")
     print("-" * 72)
     print(f"Behavior failures:   {summary.get('behavior_failure_count', 0)}")
@@ -225,6 +379,17 @@ def _print_table(analysis: dict[str, Any], max_examples: int) -> None:
             print(f"TP / FP / FN:     {conflict.get('true_positives', 0)} / {conflict.get('false_positives', 0)} / {conflict.get('false_negatives', 0)}")
             print(f"Precision/Recall: {float(conflict.get('precision') or 0.0):.4f} / {float(conflict.get('recall') or 0.0):.4f}")
             print(f"Dominant failure: {conflict.get('dominant_failure', 'unknown')}")
+
+    premise = analysis.get("premise_refutation_summary", {})
+    if premise:
+        print("\nPremise Refutation Summary")
+        print("-" * 72)
+        if premise.get("available") is False:
+            print(f"Unavailable: {premise.get('reason', 'missing per-question premise-refutation fields')}")
+        else:
+            print(f"Expected / Detected: {premise.get('expected', 0)} / {premise.get('detected', 0)}")
+            print(f"TP / FP / FN:         {premise.get('true_positives', 0)} / {premise.get('false_positives', 0)} / {premise.get('false_negatives', 0)}")
+            print(f"Precision/Recall:     {float(premise.get('precision') or 0.0):.4f} / {float(premise.get('recall') or 0.0):.4f}")
 
     bins = analysis.get("calibration_bins", [])
     if bins:

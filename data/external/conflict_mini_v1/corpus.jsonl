@@ -1,0 +1,10 @@
+{"doc_id":"EXTD001","title":"星河市图书馆审计报告","source":"audit_report","date":"2025-03-10","author":"星河市审计局","url":"","content":"2025年审计报告显示，星河市公共图书馆改造预算为1200万元，项目范围包括阅览区和无障碍设施。","entities":["星河市公共图书馆"],"tags":["公共项目","预算"]}
+{"doc_id":"EXTD002","title":"星河市图书馆投标摘要","source":"bid_summary","date":"2025-03-12","author":"项目代理机构","url":"","content":"一份投标摘要称，星河市公共图书馆改造预算为1500万元，并包含地下停车区。","entities":["星河市公共图书馆"],"tags":["公共项目","预算"]}
+{"doc_id":"EXTD003","title":"南湾中学新校区公告","source":"school_notice","date":"2026-01-08","author":"南湾中学","url":"","content":"南湾中学新校区计划于2026年9月开学，首批招收七年级和高一年级学生。","entities":["南湾中学"],"tags":["教育"]}
+{"doc_id":"EXTD004","title":"北岭实验室验收通报","source":"government_notice","date":"2024-11-20","author":"北岭科技局","url":"","content":"北岭材料实验室已于2024年11月通过竣工验收，并开始接收联合研究项目。","entities":["北岭材料实验室"],"tags":["科研","时间"]}
+{"doc_id":"EXTD005","title":"北岭实验室建设计划","source":"planning_memo","date":"2025-01-05","author":"北岭新区管委会","url":"","content":"建设计划仍将北岭材料实验室列为2025年待建项目，预计2025年6月启动主体施工。","entities":["北岭材料实验室"],"tags":["科研","时间"]}
+{"doc_id":"EXTD006","title":"河源水厂例行检测","source":"utility_report","date":"2026-02-14","author":"河源供水公司","url":"","content":"河源第二水厂例行检测结果达标，供水公司表示未安排停供或关闭计划。","entities":["河源第二水厂"],"tags":["公共服务","来源"]}
+{"doc_id":"EXTD007","title":"河源社区停水通告","source":"community_bulletin","date":"2026-02-15","author":"河源街道办","url":"","content":"社区通告称，河源第二水厂因污染风险临时关闭，周边小区将分时段停水。","entities":["河源第二水厂"],"tags":["公共服务","来源"]}
+{"doc_id":"EXTD008","title":"云洲公交票价通知","source":"transport_notice","date":"2025-08-01","author":"云洲公交集团","url":"","content":"云洲快速公交机场线单程票价为80元，儿童和老人优惠政策保持不变。","entities":["云洲快速公交"],"tags":["交通"]}
+{"doc_id":"EXTD009","title":"海棠港施工合同","source":"contract_notice","date":"2025-05-18","author":"海棠港务集团","url":"","content":"海棠港三期码头施工合同由蓝桥建设有限公司承建，合同工期为18个月。","entities":["海棠港","蓝桥建设有限公司"],"tags":["工程","实体"]}
+{"doc_id":"EXTD010","title":"海棠港媒体报道","source":"local_news","date":"2025-05-19","author":"海棠日报","url":"","content":"当地媒体报道，海棠港三期码头由青桥建设有限公司承建，预计明年底完工。","entities":["海棠港","青桥建设有限公司"],"tags":["工程","实体"]}

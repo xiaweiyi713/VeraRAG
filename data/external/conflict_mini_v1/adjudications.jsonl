@@ -1,0 +1,6 @@
+{"question_id":"EXT001","adjudicator_id":"lead","gold_conflict_present":true,"gold_conflict_type":"numeric_conflict","evidence_pair":["EXT001_E1","EXT001_E2"],"rationale":"Budget values differ for the same project."}
+{"question_id":"EXT002","adjudicator_id":"lead","gold_conflict_present":false,"gold_conflict_type":"none","rationale":"No contradictory evidence pair exists."}
+{"question_id":"EXT003","adjudicator_id":"lead","gold_conflict_present":true,"gold_conflict_type":"temporal_conflict","evidence_pair":["EXT003_E1","EXT003_E2"],"rationale":"Project status differs across dates."}
+{"question_id":"EXT004","adjudicator_id":"lead","gold_conflict_present":true,"gold_conflict_type":"source_disagreement","evidence_pair":["EXT004_E1","EXT004_E2"],"rationale":"Two sources disagree on whether the plant is closed."}
+{"question_id":"EXT005","adjudicator_id":"lead","gold_conflict_present":false,"gold_conflict_type":"none","rationale":"Single-source factual question."}
+{"question_id":"EXT006","adjudicator_id":"lead","gold_conflict_present":true,"gold_conflict_type":"entity_mismatch","evidence_pair":["EXT006_E1","EXT006_E2"],"rationale":"The disagreement is primarily the contractor entity name."}

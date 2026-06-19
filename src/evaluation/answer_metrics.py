@@ -1,6 +1,7 @@
 """Answer Metrics for VeraRAG Evaluation."""
 
 import re
+from collections import Counter
 
 
 class AnswerMetrics:
@@ -13,6 +14,8 @@ class AnswerMetrics:
     - Soft F1 (keyword/number overlap, better for Chinese free-text)
     """
 
+    VERSION = "soft-f1-v2"
+
     @staticmethod
     def exact_match(predicted: str, reference: str) -> float:
         pred_normalized = AnswerMetrics._normalize_answer(predicted)
@@ -21,49 +24,61 @@ class AnswerMetrics:
 
     @staticmethod
     def f1_score(predicted: str, reference: str) -> float:
-        pred_tokens = AnswerMetrics._tokenize(predicted)
-        ref_tokens = AnswerMetrics._tokenize(reference)
-
-        if not pred_tokens and not ref_tokens:
-            return 1.0
-        if not pred_tokens or not ref_tokens:
-            return 0.0
-
-        common = set(pred_tokens) & set(ref_tokens)
-
-        precision = len(common) / len(pred_tokens) if pred_tokens else 0
-        recall = len(common) / len(ref_tokens) if ref_tokens else 0
-
-        if precision + recall == 0:
-            return 0.0
-
-        f1 = 2 * precision * recall / (precision + recall)
-        return f1
+        return AnswerMetrics._multiset_f1(
+            AnswerMetrics._tokenize(predicted),
+            AnswerMetrics._tokenize(reference),
+        )
 
     @staticmethod
     def soft_f1_score(predicted: str, reference: str) -> float:
         """Keyword/number overlap F1 for Chinese free-text answers.
 
-        Extracts key entities (numbers, proper nouns, domain terms) from both
-        answers and computes overlap. More lenient than token-level F1.
+        Uses normalized containment for concise fact answers and combines
+        keyword overlap with Chinese character-bigram overlap for longer text.
         """
+        pred_normalized = AnswerMetrics._compact_normalize(predicted)
+        ref_normalized = AnswerMetrics._compact_normalize(reference)
+        if not pred_normalized and not ref_normalized:
+            return 1.0
+        if not pred_normalized or not ref_normalized:
+            return 0.0
+        if ref_normalized in pred_normalized:
+            return 1.0
+
         pred_keys = AnswerMetrics._extract_keywords(predicted)
         ref_keys = AnswerMetrics._extract_keywords(reference)
+        keyword_f1 = AnswerMetrics._multiset_f1(pred_keys, ref_keys) if pred_keys or ref_keys else 0.0
+        cjk_f1 = AnswerMetrics._multiset_f1(
+            AnswerMetrics._soft_tokens(predicted),
+            AnswerMetrics._soft_tokens(reference),
+        )
+        return max(keyword_f1, cjk_f1)
 
-        if not pred_keys and not ref_keys:
+    @staticmethod
+    def _multiset_f1(predicted: list[str], reference: list[str]) -> float:
+        if not predicted and not reference:
             return 1.0
-        if not pred_keys or not ref_keys:
+        if not predicted or not reference:
             return 0.0
-
-        common = set(pred_keys) & set(ref_keys)
-
-        precision = len(common) / len(pred_keys)
-        recall = len(common) / len(ref_keys)
-
+        common = sum((Counter(predicted) & Counter(reference)).values())
+        precision = common / len(predicted)
+        recall = common / len(reference)
         if precision + recall == 0:
             return 0.0
-
         return 2 * precision * recall / (precision + recall)
+
+    @staticmethod
+    def _soft_tokens(text: str) -> list[str]:
+        """Tokenize mixed Chinese/English text without external dependencies."""
+        normalized = AnswerMetrics._normalize_answer(text)
+        tokens = re.findall(r"\d+(?:\.\d+)?%?|[a-z]+(?:-[a-z]+)*", normalized)
+        chinese_runs = re.findall(r"[\u4e00-\u9fff]+", normalized)
+        for run in chinese_runs:
+            if len(run) == 1:
+                tokens.append(run)
+            else:
+                tokens.extend(run[index:index + 2] for index in range(len(run) - 1))
+        return tokens
 
     @staticmethod
     def _extract_keywords(text: str) -> list[str]:
@@ -116,6 +131,18 @@ class AnswerMetrics:
         return sum(scores) / len(scores) if scores else 0.0
 
     @staticmethod
+    def batch_soft_f1_score(predictions: list[str], references: list[str]) -> float:
+        """Calculate average soft F1 score across a batch."""
+        if len(predictions) != len(references):
+            raise ValueError("Predictions and references must have same length")
+
+        scores = [
+            AnswerMetrics.soft_f1_score(p, r)
+            for p, r in zip(predictions, references, strict=False)
+        ]
+        return sum(scores) / len(scores) if scores else 0.0
+
+    @staticmethod
     def _normalize_answer(answer: str) -> str:
         """Normalize answer for comparison."""
         # Lowercase
@@ -127,6 +154,10 @@ class AnswerMetrics:
         # Remove extra whitespace
         answer = ' '.join(answer.split())
         return answer
+
+    @staticmethod
+    def _compact_normalize(answer: str) -> str:
+        return re.sub(r"\s+", "", AnswerMetrics._normalize_answer(answer))
 
     @staticmethod
     def _tokenize(answer: str) -> list[str]:
@@ -150,5 +181,6 @@ class AnswerMetrics:
         """
         return {
             "exact_match": AnswerMetrics.exact_match(predicted, reference),
-            "f1_score": AnswerMetrics.f1_score(predicted, reference)
+            "f1_score": AnswerMetrics.f1_score(predicted, reference),
+            "soft_f1_score": AnswerMetrics.soft_f1_score(predicted, reference),
         }

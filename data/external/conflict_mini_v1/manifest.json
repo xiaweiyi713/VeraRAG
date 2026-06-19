@@ -1,0 +1,14 @@
+{
+  "schema_version": "external-conflict-annotation-v1",
+  "dataset_id": "conflict-mini-v1",
+  "source": "repository-fixture",
+  "license": "CC-BY-4.0",
+  "created": "2026-06-15",
+  "annotation_protocol": {
+    "unit": "question-level evidence-pair conflict label",
+    "required_annotators_per_question": 2,
+    "labels": ["conflict_present", "conflict_type", "evidence_pair"],
+    "adjudication": "A lead adjudicator resolves type disagreements into gold labels.",
+    "intended_use": "CI fixture for external conflict-set validation, not a model promotion benchmark."
+  }
+}

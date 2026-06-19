@@ -1,0 +1,12 @@
+{"question_id":"EXT001","annotator_id":"ann_a","conflict_present":true,"conflict_type":"numeric_conflict","evidence_pair":["EXT001_E1","EXT001_E2"],"rationale":"Same project budget has two different values."}
+{"question_id":"EXT001","annotator_id":"ann_b","conflict_present":true,"conflict_type":"numeric_conflict","evidence_pair":["EXT001_E1","EXT001_E2"],"rationale":"1200万元 and 1500万元 cannot both be the budget."}
+{"question_id":"EXT002","annotator_id":"ann_a","conflict_present":false,"conflict_type":"none","rationale":"Only one source states the opening date."}
+{"question_id":"EXT002","annotator_id":"ann_b","conflict_present":false,"conflict_type":"none","rationale":"No contradictory evidence pair is present."}
+{"question_id":"EXT003","annotator_id":"ann_a","conflict_present":true,"conflict_type":"temporal_conflict","evidence_pair":["EXT003_E1","EXT003_E2"],"rationale":"One source says completed in 2024, another says still planned in 2025."}
+{"question_id":"EXT003","annotator_id":"ann_b","conflict_present":true,"conflict_type":"temporal_conflict","evidence_pair":["EXT003_E1","EXT003_E2"],"rationale":"The project status differs across dates."}
+{"question_id":"EXT004","annotator_id":"ann_a","conflict_present":true,"conflict_type":"source_disagreement","evidence_pair":["EXT004_E1","EXT004_E2"],"rationale":"Official utility report and community bulletin disagree."}
+{"question_id":"EXT004","annotator_id":"ann_b","conflict_present":true,"conflict_type":"source_disagreement","evidence_pair":["EXT004_E1","EXT004_E2"],"rationale":"The water plant cannot both remain open and be temporarily closed."}
+{"question_id":"EXT005","annotator_id":"ann_a","conflict_present":false,"conflict_type":"none","rationale":"Single supported fare fact."}
+{"question_id":"EXT005","annotator_id":"ann_b","conflict_present":false,"conflict_type":"none","rationale":"No conflicting source."}
+{"question_id":"EXT006","annotator_id":"ann_a","conflict_present":true,"conflict_type":"entity_mismatch","evidence_pair":["EXT006_E1","EXT006_E2"],"rationale":"The contractor entity differs."}
+{"question_id":"EXT006","annotator_id":"ann_b","conflict_present":true,"conflict_type":"scope_conflict","evidence_pair":["EXT006_E1","EXT006_E2"],"rationale":"The two reports appear to describe incompatible contractor scope."}

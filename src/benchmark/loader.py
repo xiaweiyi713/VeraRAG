@@ -1,6 +1,8 @@
 """VeraBench data loader and validator."""
 
 import json
+import re
+from collections import defaultdict
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
@@ -14,6 +16,8 @@ QUESTION_TYPES = [
     "unanswerable",
     "misleading",
 ]
+
+VERABENCH_VERSION = "1.1.2"
 
 EVIDENCE_CATEGORIES = [
     "supporting",
@@ -38,6 +42,19 @@ EXPECTED_BEHAVIORS = [
     "abstain",
     "correct_premise",
 ]
+
+DIFFICULTIES = ["easy", "medium", "hard"]
+
+GROUND_TRUTH_STATUSES = ["supported", "refuted", "not_enough_info"]
+
+EXPECTED_BEHAVIOR_BY_TYPE = {
+    "single_evidence": "answer_with_citation",
+    "multi_evidence": "answer_with_citation",
+    "conflict": "answer_with_conflict_note",
+    "temporal": "answer_with_citation",
+    "unanswerable": "abstain",
+    "misleading": "correct_premise",
+}
 
 
 @dataclass
@@ -125,6 +142,8 @@ class BenchmarkQuestion:
     requires_multi_hop: bool = False
     expected_behavior: str = "answer_with_citation"
     tags: list[str] = field(default_factory=list)
+    annotation_rationale: str | None = None
+    difficulty_rationale: str | None = None
 
     @staticmethod
     def from_dict(d: dict[str, Any]) -> "BenchmarkQuestion":
@@ -144,6 +163,8 @@ class BenchmarkQuestion:
             requires_multi_hop=d.get("requires_multi_hop", False),
             expected_behavior=d.get("expected_behavior", "answer_with_citation"),
             tags=d.get("tags", []),
+            annotation_rationale=d.get("annotation_rationale"),
+            difficulty_rationale=d.get("difficulty_rationale"),
         )
 
 
@@ -151,7 +172,7 @@ class BenchmarkQuestion:
 class VeraBench:
     corpus: dict[str, CorpusDocument]
     questions: list[BenchmarkQuestion]
-    version: str = "1.0"
+    version: str = VERABENCH_VERSION
 
     def get_questions_by_type(self, qtype: str) -> list[BenchmarkQuestion]:
         return [q for q in self.questions if q.type == qtype]
@@ -173,6 +194,73 @@ class VeraBench:
             "multi_hop_count": sum(1 for q in self.questions if q.requires_multi_hop),
             "conflict_count": sum(1 for q in self.questions if q.expected_conflicts),
         }
+
+
+def evidence_span_match_kind(text_span: str, document_content: str) -> str:
+    """Classify whether an evidence span is reproducibly traceable to a document."""
+    if text_span in document_content:
+        return "exact"
+    segments = [
+        segment.strip(" \t\r\n.。…")
+        for segment in re.split(r"(?:\.{3}|…+)", text_span)
+        if segment.strip(" \t\r\n.。…")
+    ]
+    if len(segments) < 2:
+        return "untraceable"
+    cursor = 0
+    for segment in segments:
+        position = document_content.find(segment, cursor)
+        if position < 0:
+            return "untraceable"
+        cursor = position + len(segment)
+    return "segmented"
+
+
+def evidence_dependency_groups(
+    questions: list[BenchmarkQuestion],
+) -> dict[str, str]:
+    """Group questions connected through shared gold evidence documents."""
+    parent = {question.id: question.id for question in questions}
+
+    def find(question_id: str) -> str:
+        root = question_id
+        while parent[root] != root:
+            root = parent[root]
+        while parent[question_id] != question_id:
+            next_id = parent[question_id]
+            parent[question_id] = root
+            question_id = next_id
+        return root
+
+    def union(first: str, second: str) -> None:
+        first_root = find(first)
+        second_root = find(second)
+        if first_root == second_root:
+            return
+        low, high = sorted((first_root, second_root))
+        parent[high] = low
+
+    questions_by_document: dict[str, list[str]] = defaultdict(list)
+    for question in questions:
+        for doc_id in sorted({evidence.doc_id for evidence in question.evidence}):
+            questions_by_document[doc_id].append(question.id)
+    for question_ids in questions_by_document.values():
+        anchor = question_ids[0]
+        for question_id in question_ids[1:]:
+            union(anchor, question_id)
+
+    components: dict[str, list[str]] = defaultdict(list)
+    for question in questions:
+        components[find(question.id)].append(question.id)
+    ordered = sorted(
+        (sorted(question_ids) for question_ids in components.values()),
+        key=lambda question_ids: question_ids[0],
+    )
+    return {
+        question_id: f"evidence-component-{index:03d}"
+        for index, question_ids in enumerate(ordered, start=1)
+        for question_id in question_ids
+    }
 
 
 class VeraBenchLoader:
@@ -202,6 +290,10 @@ class VeraBenchLoader:
                 line = line.strip()
                 if line:
                     doc = CorpusDocument.from_dict(json.loads(line))
+                    if doc.doc_id in corpus:
+                        raise ValueError(
+                            f"Benchmark validation failed:\nduplicate corpus id '{doc.doc_id}'"
+                        )
                     corpus[doc.doc_id] = doc
 
         questions = []
@@ -216,19 +308,81 @@ class VeraBenchLoader:
 
     def _validate(self, corpus: dict[str, CorpusDocument], questions: list[BenchmarkQuestion]):
         errors = []
+        seen_question_ids: set[str] = set()
         for q in questions:
+            if q.id in seen_question_ids:
+                errors.append(f"{q.id}: duplicate question id")
+            seen_question_ids.add(q.id)
+
             if q.type not in QUESTION_TYPES:
                 errors.append(f"{q.id}: unknown type '{q.type}'")
             if q.expected_behavior not in EXPECTED_BEHAVIORS:
                 errors.append(f"{q.id}: unknown behavior '{q.expected_behavior}'")
+            if q.difficulty not in DIFFICULTIES:
+                errors.append(f"{q.id}: unknown difficulty '{q.difficulty}'")
+            expected_behavior = EXPECTED_BEHAVIOR_BY_TYPE.get(q.type)
+            if expected_behavior and q.expected_behavior != expected_behavior:
+                errors.append(
+                    f"{q.id}: type '{q.type}' requires behavior "
+                    f"'{expected_behavior}', got '{q.expected_behavior}'"
+                )
+            if q.type == "conflict" and not q.expected_conflicts:
+                errors.append(f"{q.id}: conflict question has no expected conflicts")
+            if q.type != "unanswerable" and not q.evidence:
+                errors.append(f"{q.id}: answerable question has no evidence")
+
+            evidence_ids = [e.evidence_id for e in q.evidence]
+            if len(evidence_ids) != len(set(evidence_ids)):
+                errors.append(f"{q.id}: duplicate evidence ids")
+            evidence_id_set = set(evidence_ids)
             for e in q.evidence:
                 if e.doc_id not in corpus:
                     errors.append(f"{q.id}: evidence refs missing doc '{e.doc_id}'")
+                elif evidence_span_match_kind(
+                    e.text_span,
+                    corpus[e.doc_id].content,
+                ) == "untraceable":
+                    errors.append(
+                        f"{q.id}: evidence '{e.evidence_id}' text_span is not "
+                        f"traceable to document '{e.doc_id}'"
+                    )
                 if e.category not in EVIDENCE_CATEGORIES:
                     errors.append(f"{q.id}: unknown category '{e.category}'")
+
+            seen_pairs: set[tuple[str, str, str]] = set()
             for c in q.expected_conflicts:
                 if c.conflict_type not in CONFLICT_TYPES:
                     errors.append(f"{q.id}: unknown conflict type '{c.conflict_type}'")
+                if len(c.pair) != 2:
+                    errors.append(f"{q.id}: conflict pair must contain exactly two evidence ids")
+                    continue
+                missing = [evidence_id for evidence_id in c.pair if evidence_id not in evidence_id_set]
+                if missing:
+                    errors.append(
+                        f"{q.id}: conflict pair references unknown evidence ids {missing}"
+                    )
+                first_id, second_id = sorted(c.pair)
+                pair_key = (first_id, second_id, c.conflict_type)
+                if pair_key in seen_pairs:
+                    errors.append(
+                        f"{q.id}: duplicate conflict pair {c.pair} ({c.conflict_type})"
+                    )
+                seen_pairs.add(pair_key)
+
+            for claim in q.ground_truth_claims:
+                if claim.status not in GROUND_TRUTH_STATUSES:
+                    errors.append(
+                        f"{q.id}: unknown ground-truth status '{claim.status}'"
+                    )
+                missing = [
+                    evidence_id
+                    for evidence_id in claim.evidence_ids
+                    if evidence_id not in evidence_id_set
+                ]
+                if missing:
+                    errors.append(
+                        f"{q.id}: ground-truth claim references unknown evidence ids {missing}"
+                    )
         if errors:
             raise ValueError("Benchmark validation failed:\n" + "\n".join(errors))
 
