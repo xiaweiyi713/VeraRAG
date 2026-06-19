@@ -49,6 +49,9 @@ All notable changes to VeraRAG are recorded here.
 - Add VeraBench citation and supporting-fact scoring to per-question rows and
   report summaries, including pipeline chunk-ID to gold-evidence-ID mapping for
   answer citations such as `[D001_c0]`.
+- Add an offline retrieval ablation matrix to `verarag-evaluate-retrieval`,
+  covering retriever variants, retrieval depths, and top-k selection policies
+  without running an LLM.
 
 ### Added
 

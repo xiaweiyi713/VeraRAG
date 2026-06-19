@@ -18,8 +18,10 @@ from src.benchmark.loader import BenchmarkQuestion, VeraBenchLoader  # noqa: E40
 from src.evaluation.evidence_metrics import EvidenceMetrics  # noqa: E402
 from src.retriever.base import BaseRetriever  # noqa: E402
 from src.retriever.bm25 import BM25Retriever  # noqa: E402
+from src.retriever.dense import DenseRetriever  # noqa: E402
 from src.retriever.hybrid import HybridRetriever  # noqa: E402
 
+RETRIEVERS = ("bm25", "dense", "hybrid")
 TOP_K_POLICIES = ("fixed", "precision_cap", "complexity_adaptive")
 
 
@@ -47,6 +49,8 @@ def _documents_for_index(benchmark: Any) -> list[dict[str, Any]]:
 def _make_retriever(name: str) -> BaseRetriever:
     if name == "bm25":
         return BM25Retriever()
+    if name == "dense":
+        return DenseRetriever()
     if name == "hybrid":
         return HybridRetriever()
     raise ValueError(f"Unsupported retriever: {name}")
@@ -295,14 +299,179 @@ def build_report(
     }
 
 
+def _select_questions(
+    questions: list[BenchmarkQuestion],
+    *,
+    question_types: list[str] | None = None,
+    question_ids: list[str] | None = None,
+    max_questions: int | None = None,
+) -> list[BenchmarkQuestion]:
+    selected = questions
+    if question_types:
+        requested_types = set(question_types)
+        selected = [
+            question for question in selected
+            if question.type in requested_types
+        ]
+    if question_ids:
+        requested_ids = set(question_ids)
+        known_ids = {question.id for question in questions}
+        unknown_ids = sorted(requested_ids - known_ids)
+        if unknown_ids:
+            raise ValueError(
+                f"Unknown VeraBench question id(s): {', '.join(unknown_ids)}"
+            )
+        selected = [question for question in selected if question.id in requested_ids]
+    if max_questions is not None:
+        selected = selected[:max_questions]
+    return selected
+
+
+def build_matrix_report(
+    *,
+    data_dir: str | None,
+    retriever_names: list[str],
+    top_k_values: list[int],
+    top_k_policies: list[str],
+    question_types: list[str] | None = None,
+    question_ids: list[str] | None = None,
+    max_questions: int | None = None,
+    include_no_gold: bool = False,
+    continue_on_error: bool = True,
+) -> dict[str, Any]:
+    loader = VeraBenchLoader(data_dir)
+    benchmark = loader.load()
+    documents = _documents_for_index(benchmark)
+    questions = _select_questions(
+        benchmark.questions,
+        question_types=question_types,
+        question_ids=question_ids,
+        max_questions=max_questions,
+    )
+    variants: list[dict[str, Any]] = []
+    for retriever_name in retriever_names:
+        try:
+            retriever = _make_retriever(retriever_name)
+            retriever.index_documents(documents)
+        except Exception as exc:
+            if not continue_on_error:
+                raise
+            for top_k in top_k_values:
+                for top_k_policy in top_k_policies:
+                    variants.append({
+                        "retriever": retriever_name,
+                        "top_k": top_k,
+                        "top_k_policy": top_k_policy,
+                        "status": "error",
+                        "error": str(exc),
+                    })
+            continue
+
+        for top_k in top_k_values:
+            for top_k_policy in top_k_policies:
+                try:
+                    rows = evaluate_questions(
+                        questions,
+                        retriever,
+                        top_k=top_k,
+                        top_k_policy=top_k_policy,
+                        include_no_gold=include_no_gold,
+                    )
+                    variants.append({
+                        "retriever": retriever_name,
+                        "top_k": top_k,
+                        "top_k_policy": top_k_policy,
+                        "status": "ok",
+                        "evaluated_questions": len(rows),
+                        "summary": _aggregate(rows),
+                        "by_type": _grouped(rows, "question_type"),
+                    })
+                except Exception as exc:
+                    if not continue_on_error:
+                        raise
+                    variants.append({
+                        "retriever": retriever_name,
+                        "top_k": top_k,
+                        "top_k_policy": top_k_policy,
+                        "status": "error",
+                        "error": str(exc),
+                    })
+
+    successful = [variant for variant in variants if variant["status"] == "ok"]
+    best_by_macro_f1 = None
+    if successful:
+        best_by_macro_f1 = max(
+            successful,
+            key=lambda variant: (
+                float(variant["summary"]["macro_f1"]),
+                float(variant["summary"]["macro_precision"]),
+                float(variant["summary"]["macro_recall"]),
+            ),
+        )
+
+    return {
+        "schema_version": "retrieval-matrix-v1",
+        "retrievers": retriever_names,
+        "top_k_values": top_k_values,
+        "top_k_policies": top_k_policies,
+        "include_no_gold": include_no_gold,
+        "benchmark": {
+            "version": benchmark.version,
+            "questions": len(benchmark.questions),
+            "documents": len(benchmark.corpus),
+            "fingerprints": {
+                "corpus_sha256": _sha256(loader.data_dir / "corpus.jsonl"),
+                "questions_sha256": _sha256(loader.data_dir / "questions.jsonl"),
+            },
+        },
+        "selected_questions": len(questions),
+        "variants": variants,
+        "best_by_macro_f1": best_by_macro_f1,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate VeraBench retrieval offline")
     parser.add_argument("--data-dir", help="Optional VeraBench data directory")
     parser.add_argument(
         "--retriever",
-        choices=["bm25", "hybrid"],
+        choices=RETRIEVERS,
         default="bm25",
-        help="Retriever variant to evaluate. Hybrid falls back to BM25 if dense is unavailable.",
+        help=(
+            "Retriever variant to evaluate. Hybrid falls back to BM25 if dense "
+            "is unavailable."
+        ),
+    )
+    parser.add_argument(
+        "--matrix",
+        action="store_true",
+        help="Run a retriever/top-k/policy matrix instead of one detailed report.",
+    )
+    parser.add_argument(
+        "--matrix-retrievers",
+        nargs="+",
+        choices=RETRIEVERS,
+        default=["bm25"],
+        help="Retriever variants to include with --matrix.",
+    )
+    parser.add_argument(
+        "--matrix-top-k",
+        nargs="+",
+        type=int,
+        default=[5, 10],
+        help="Retrieval depths to include with --matrix.",
+    )
+    parser.add_argument(
+        "--matrix-policies",
+        nargs="+",
+        choices=TOP_K_POLICIES,
+        default=["fixed", "precision_cap", "complexity_adaptive"],
+        help="Top-k selection policies to include with --matrix.",
+    )
+    parser.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="In --matrix mode, stop on the first retriever/indexing error.",
     )
     parser.add_argument("--top-k", type=int, default=10)
     parser.add_argument(
@@ -332,17 +501,30 @@ def main() -> None:
     parser.add_argument("--output", help="Optional JSON output path")
     args = parser.parse_args()
 
-    report = build_report(
-        data_dir=args.data_dir,
-        retriever_name=args.retriever,
-        top_k=args.top_k,
-        top_k_policy=args.top_k_policy,
-        sweep_top_k=args.sweep_top_k,
-        question_types=args.types,
-        question_ids=args.ids,
-        max_questions=args.max_questions,
-        include_no_gold=args.include_no_gold,
-    )
+    if args.matrix:
+        report = build_matrix_report(
+            data_dir=args.data_dir,
+            retriever_names=args.matrix_retrievers,
+            top_k_values=args.matrix_top_k,
+            top_k_policies=args.matrix_policies,
+            question_types=args.types,
+            question_ids=args.ids,
+            max_questions=args.max_questions,
+            include_no_gold=args.include_no_gold,
+            continue_on_error=not args.fail_fast,
+        )
+    else:
+        report = build_report(
+            data_dir=args.data_dir,
+            retriever_name=args.retriever,
+            top_k=args.top_k,
+            top_k_policy=args.top_k_policy,
+            sweep_top_k=args.sweep_top_k,
+            question_types=args.types,
+            question_ids=args.ids,
+            max_questions=args.max_questions,
+            include_no_gold=args.include_no_gold,
+        )
     payload = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     if args.output:
         output_path = Path(args.output)

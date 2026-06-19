@@ -4,7 +4,8 @@ import sys
 
 import pytest
 
-from experiments.evaluate_retrieval import build_report
+import experiments.evaluate_retrieval as retrieval_eval
+from experiments.evaluate_retrieval import build_matrix_report, build_report
 
 
 @pytest.fixture
@@ -121,6 +122,61 @@ def test_complexity_adaptive_policy_records_selected_top_k(sample_bench_dir):
     assert report["top_k_policy"] == "complexity_adaptive"
 
 
+def test_dense_retriever_variant_can_be_evaluated(sample_bench_dir, monkeypatch):
+    class FakeDenseRetriever:
+        def index_documents(self, documents):
+            self.documents = documents
+
+        def retrieve(self, query, top_k=10):
+            from src.retriever.base import RetrievalResult
+
+            return [
+                RetrievalResult(
+                    doc_id=document["id"],
+                    content=document["text"],
+                    title=document.get("title", ""),
+                    score=float(len(self.documents) - index),
+                    metadata=document,
+                )
+                for index, document in enumerate(self.documents[:top_k])
+            ]
+
+    monkeypatch.setattr(retrieval_eval, "DenseRetriever", FakeDenseRetriever)
+
+    report = build_report(
+        data_dir=sample_bench_dir,
+        retriever_name="dense",
+        top_k=2,
+    )
+
+    assert report["retriever"] == "dense"
+    assert report["evaluated_questions"] == 2
+    assert report["summary"]["hit_rate"] == 1.0
+
+
+def test_build_matrix_report_compares_retriever_policy_grid(sample_bench_dir):
+    report = build_matrix_report(
+        data_dir=sample_bench_dir,
+        retriever_names=["bm25"],
+        top_k_values=[1, 3],
+        top_k_policies=["fixed", "complexity_adaptive"],
+    )
+
+    assert report["schema_version"] == "retrieval-matrix-v1"
+    assert len(report["variants"]) == 4
+    assert {variant["status"] for variant in report["variants"]} == {"ok"}
+    assert report["best_by_macro_f1"]["summary"]["macro_f1"] >= 0.0
+    assert {
+        (variant["top_k"], variant["top_k_policy"])
+        for variant in report["variants"]
+    } == {
+        (1, "fixed"),
+        (1, "complexity_adaptive"),
+        (3, "fixed"),
+        (3, "complexity_adaptive"),
+    }
+
+
 def test_evaluate_retrieval_cli_writes_json_with_sweep(sample_bench_dir, tmp_path):
     output = tmp_path / "retrieval.json"
 
@@ -147,3 +203,33 @@ def test_evaluate_retrieval_cli_writes_json_with_sweep(sample_bench_dir, tmp_pat
     assert payload["evaluated_questions"] == 2
     assert payload["summary"]["hit_rate"] == 1.0
     assert [row["top_k"] for row in payload["sweep"]] == [1, 3]
+
+
+def test_evaluate_retrieval_cli_writes_matrix_json(sample_bench_dir, tmp_path):
+    output = tmp_path / "matrix.json"
+
+    subprocess.run(
+        [
+            sys.executable,
+            "experiments/evaluate_retrieval.py",
+            "--data-dir",
+            sample_bench_dir,
+            "--matrix",
+            "--matrix-retrievers",
+            "bm25",
+            "--matrix-top-k",
+            "1",
+            "3",
+            "--matrix-policies",
+            "fixed",
+            "precision_cap",
+            "--output",
+            str(output),
+        ],
+        check=True,
+    )
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "retrieval-matrix-v1"
+    assert len(payload["variants"]) == 4
+    assert payload["best_by_macro_f1"]["status"] == "ok"

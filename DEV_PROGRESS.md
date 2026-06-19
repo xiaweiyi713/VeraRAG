@@ -2,23 +2,27 @@
 
 > 最后更新：2026-06-20
 
-## 🆕 本次更新（2026-06-20）：Citation/Supporting-Fact 评测接入
+## 🆕 本次更新（2026-06-20）：检索矩阵与 Citation/Supporting-Fact 评测接入
 
-1. **Citation parser 扩展**：`EvidenceMetrics.extract_citations` 现在支持
+1. **离线检索矩阵**：`verarag-evaluate-retrieval` 新增 `--matrix`，可一次性
+   评估 retriever（BM25/Dense/Hybrid）、retrieval depth 和 top-k policy 组合；
+   默认只跑 BM25，避免 fresh checkout 意外下载 dense 模型，显式传
+   `--matrix-retrievers bm25 hybrid dense` 后用于 Stage-3 检索消融。
+2. **Citation parser 扩展**：`EvidenceMetrics.extract_citations` 现在支持
    `[E1]`、`[D001_c0]` 和包含连字符/下划线的证据 ID，保留重复引用顺序用于
    precision 统计。
-2. **VeraBench report 指标化**：`QuestionResult` 与 `BenchmarkReport` 新增
+3. **VeraBench report 指标化**：`QuestionResult` 与 `BenchmarkReport` 新增
    `citation_*`、`supporting_fact_*` 字段，以及 `citation_summary` 和
    `supporting_fact_summary`，同时输出 macro 与 micro TP/FP/FN。
-3. **pipeline ID 对齐**：evaluator 会把答案引用、retrieved evidence、冲突边和
+4. **pipeline ID 对齐**：evaluator 会把答案引用、retrieved evidence、冲突边和
    `answer_claims[].supporting_evidence` 中的 pipeline chunk ID 映射回
    question-local gold evidence ID，减少 `[D001_c0]` vs `E1` 的假阴性。
-4. **离线重评分兼容**：`rescore_results` 会重算 citation 指标，并把 gold
+5. **离线重评分兼容**：`rescore_results` 会重算 citation 指标，并把 gold
    supporting fact IDs 写回 diagnostics，历史报告可通过重评分升级到新指标口径。
-5. **测试覆盖**：新增 parser 与 pipeline report 聚合测试；focused 验证为
+6. **测试覆盖**：新增 parser 与 pipeline report 聚合测试；focused 验证为
    `tests/test_evaluation_metrics.py` + `tests/test_benchmark.py` 共 100 项通过，
    Ruff 通过。
-6. **配对比较接入**：`verarag-compare-reports` 的 paired bootstrap 与
+7. **配对比较接入**：`verarag-compare-reports` 的 paired bootstrap 与
    evidence-cluster sensitivity 会在新报告字段存在时自动比较
    citation/supporting-fact precision、recall 和 F1；旧报告缺字段时不会被误填为
    0。

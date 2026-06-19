@@ -395,6 +395,26 @@ by question type, difficulty, and multi-hop flag. By default, questions without
 gold evidence are skipped so unanswerable rows do not distort retrieval quality;
 pass `--include-no-gold` when auditing those rows explicitly.
 
+Run a compact offline ablation matrix across retrievers, retrieval depths, and
+selection policies:
+
+```bash
+python experiments/evaluate_retrieval.py \
+  --matrix \
+  --matrix-retrievers bm25 hybrid dense \
+  --matrix-top-k 3 5 10 \
+  --matrix-policies fixed precision_cap complexity_adaptive \
+  --output outputs/retrieval_matrix_v112.json
+```
+
+The single-report mode supports `--retriever bm25`, `--retriever dense`, and
+`--retriever hybrid`. Matrix mode defaults to BM25 only so a fresh checkout does
+not accidentally download dense models; pass `--matrix-retrievers` explicitly
+for full Stage-3 ablations. Dense and hybrid variants require locally available
+`sentence-transformers` models. In matrix mode unavailable dense variants are
+recorded as `status: error` and the remaining variants continue unless
+`--fail-fast` is set.
+
 Current bundled VeraBench v1.1.2 BM25 top-10 baseline evaluates 147 rows and
 scores macro precision `0.1293`, macro recall `0.9830`, macro F1 `0.2244`,
 hit rate `1.0000`, all-gold-retrieved rate `0.9660`, MRR `0.9427`, and nDCG
