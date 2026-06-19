@@ -1265,6 +1265,48 @@ class TestVeraBenchEvaluator:
         )
         assert "answer_f1" in analysis["confidence_intervals"]["metrics"]
         assert len(analysis["calibration_bins"]) == 10
+        assert analysis["confidence_diagnostics"]["confidence_auroc"] == 1.0
+        assert analysis["confidence_diagnostics"]["correct_mean_confidence"] == 0.9
+        assert analysis["confidence_diagnostics"]["incorrect_mean_confidence"] == 0.1
+        assert analysis["risk_coverage"]["coverage_at_accuracy"]["0.90"] == 0.5
+
+    def test_offline_result_analysis_flags_near_constant_confidence(self):
+        from experiments.analyze_verabench_results import analyze
+
+        report = {
+            "question_results": [
+                {
+                    "question_id": "T001",
+                    "question_type": "single_evidence",
+                    "expected_behavior": "answer_with_citation",
+                    "actual_behavior": "answer_with_citation",
+                    "confidence": 0.16,
+                    "correct": True,
+                },
+                {
+                    "question_id": "T002",
+                    "question_type": "unanswerable",
+                    "expected_behavior": "abstain",
+                    "actual_behavior": "answer_with_citation",
+                    "confidence": 0.17,
+                    "correct": False,
+                },
+                {
+                    "question_id": "T003",
+                    "question_type": "temporal",
+                    "expected_behavior": "answer_with_citation",
+                    "actual_behavior": "answer_with_citation",
+                    "confidence": 0.15,
+                    "correct": True,
+                },
+            ],
+        }
+
+        diagnostics = analyze(report)["confidence_diagnostics"]
+
+        assert diagnostics["confidence_std"] < 0.03
+        assert "near_constant_confidence" in diagnostics["diagnostic_flags"]
+        assert "underconfident" in diagnostics["diagnostic_flags"]
 
     def test_offline_result_analysis_marks_legacy_conflict_counts_unavailable(self):
         from experiments.analyze_verabench_results import analyze
@@ -1317,6 +1359,67 @@ class TestVeraBenchEvaluator:
         assert analysis["confidence_intervals"]["metrics"]["answer_f1"][
             "estimate"
         ] == 1.0
+
+    def test_offline_analysis_writes_risk_coverage_artifacts(self, tmp_path):
+        report_path = tmp_path / "report.json"
+        svg_path = tmp_path / "risk_coverage.svg"
+        csv_path = tmp_path / "risk_coverage.csv"
+        report_path.write_text(json.dumps({
+            "question_results": [
+                {
+                    "question_id": "T001",
+                    "question_type": "single_evidence",
+                    "expected_behavior": "answer_with_citation",
+                    "actual_behavior": "answer_with_citation",
+                    "confidence": 0.95,
+                    "correct": True,
+                },
+                {
+                    "question_id": "T002",
+                    "question_type": "unanswerable",
+                    "expected_behavior": "abstain",
+                    "actual_behavior": "answer_with_citation",
+                    "confidence": 0.55,
+                    "correct": False,
+                },
+                {
+                    "question_id": "T003",
+                    "question_type": "temporal",
+                    "expected_behavior": "answer_with_citation",
+                    "actual_behavior": "answer_with_citation",
+                    "confidence": 0.80,
+                    "correct": True,
+                },
+            ]
+        }), encoding="utf-8")
+        script = (
+            Path(__file__).resolve().parent.parent
+            / "experiments"
+            / "analyze_verabench_results.py"
+        )
+
+        subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                str(report_path),
+                "--risk-coverage-svg",
+                str(svg_path),
+                "--risk-coverage-csv",
+                str(csv_path),
+                "--json",
+            ],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert "<svg" in svg_path.read_text(encoding="utf-8")
+        assert "Risk-Coverage Curve" in svg_path.read_text(encoding="utf-8")
+        csv_lines = csv_path.read_text(encoding="utf-8").splitlines()
+        assert csv_lines[0] == "kept,coverage,accuracy,risk,threshold"
+        assert len(csv_lines) == 4
 
     def test_calibration_curve_loads_report_json(self, tmp_path):
         from experiments.calibration_curve import load_confidence_rows

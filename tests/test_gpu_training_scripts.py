@@ -83,6 +83,8 @@ def test_verabench_eval_launcher_uses_fifo_secret_injection():
 
     assert "read -r -s -p" in script
     assert "VERARAG_DEEPSEEK_API_KEY" in script
+    assert "configs/verabench_v112_canonical.yaml" in script
+    assert "verabench_v112_canonical_deepseek.json" in script
     assert "mkfifo" in script
     assert "printf 'VERARAG_REMOTE_PROJECT=%q\\n'" in script
     assert "printf 'VERARAG_REMOTE_KEY_FIFO=%q\\n'" in script

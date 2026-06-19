@@ -1,5 +1,6 @@
 """VeraRAG Main Pipeline."""
 
+import math
 import os
 import re
 import time
@@ -30,6 +31,8 @@ from ..utils.data_structures import (
     SubQuestion,
     UncertaintyBreakdown,
     VeraRAGOutput,
+    VerificationReport,
+    VerificationStatus,
 )
 
 
@@ -1095,9 +1098,8 @@ class VeraRAG:
                 "answer": answer,
             })
 
-        # Stage 9: Final uncertainty
+        # Stage 9: Final uncertainty and confidence
         uncertainty = UncertaintyBreakdown()
-        final_confidence = 0.5
 
         if self.enable_uncertainty:
             uncertainty = self.uncertainty_controller.get_uncertainty_breakdown(
@@ -1107,20 +1109,24 @@ class VeraRAG:
             )
 
             if verification_report:
-                verification_conf = (
-                    1.0 if verification_report.overall_status.value == "supported"
-                    else 0.5
-                )
+                verification_conf = self._verification_confidence_score(verification_report)
+                answer_conf = self._reasoning_confidence_score(answer_claims, reasoning_chain)
                 uncertainty = self.uncertainty_controller.estimator.estimate_for_answer(
-                    final_confidence,
+                    answer_conf,
                     verification_conf,
                     uncertainty
                 )
 
-            final_confidence = self.uncertainty_controller.calibrator.calibrate_confidence(
-                1.0 - uncertainty.overall,
-                uncertainty
-            )
+        final_confidence = self._estimate_final_confidence(
+            answer=answer,
+            answer_claims=answer_claims,
+            reasoning_chain=reasoning_chain,
+            evidence_pool=evidence_pool,
+            conflict_graph=conflict_graph,
+            verification_report=verification_report,
+            uncertainty=uncertainty,
+            answerability_guard=answerability_guard,
+        )
 
         # Stage 10: Output
         elapsed_time = time.time() - start_time
@@ -1161,6 +1167,220 @@ class VeraRAG:
             marker in text
             for marker in ("vs", "对比", "相比", "差异", "不同", "仅从", "质疑")
         )
+
+    def _estimate_final_confidence(
+        self,
+        *,
+        answer: str,
+        answer_claims: list[AnswerClaim],
+        reasoning_chain: list[ReasoningStep],
+        evidence_pool: list[Evidence],
+        conflict_graph: EvidenceConflictGraph,
+        verification_report: VerificationReport | None,
+        uncertainty: UncertaintyBreakdown,
+        answerability_guard: dict[str, Any] | None,
+    ) -> float:
+        """Fuse runtime evidence into a behavior-level final confidence score."""
+        evidence_signal = self._evidence_confidence_signal(answer_claims, evidence_pool)
+        reasoning_signal = self._reasoning_confidence_score(answer_claims, reasoning_chain)
+        verification_signal = (
+            self._verification_confidence_score(verification_report)
+            if verification_report
+            else reasoning_signal
+        )
+        conflict_signal = self._conflict_resolution_signal(conflict_graph, verification_report)
+        uncertainty_signal = 1.0 - self._clamp01(uncertainty.overall)
+
+        if self._is_abstention_answer(answer):
+            abstention_confidence = self._abstention_confidence_score(
+                evidence_signal=evidence_signal,
+                verification_report=verification_report,
+                uncertainty=uncertainty,
+                answerability_guard=answerability_guard,
+            )
+            return float(self.uncertainty_controller.calibrator.calibrate_confidence(
+                abstention_confidence,
+                uncertainty,
+            ))
+
+        raw_confidence = (
+            verification_signal * 0.34
+            + evidence_signal * 0.24
+            + reasoning_signal * 0.18
+            + uncertainty_signal * 0.14
+            + conflict_signal * 0.10
+        )
+        raw_confidence = self._cap_confidence_for_failure_modes(
+            raw_confidence,
+            evidence_pool=evidence_pool,
+            answer_claims=answer_claims,
+            verification_report=verification_report,
+            conflict_graph=conflict_graph,
+        )
+        return float(self.uncertainty_controller.calibrator.calibrate_confidence(
+            raw_confidence,
+            uncertainty,
+        ))
+
+    @staticmethod
+    def _clamp01(value: Any, default: float = 0.0) -> float:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return default
+        if not math.isfinite(numeric):
+            return default
+        return max(0.0, min(1.0, numeric))
+
+    @staticmethod
+    def _mean01(values: list[Any], default: float = 0.0) -> float:
+        cleaned = [VeraRAG._clamp01(value) for value in values]
+        return sum(cleaned) / len(cleaned) if cleaned else default
+
+    @staticmethod
+    def _normalize_verification_status(status: Any) -> str:
+        if isinstance(status, VerificationStatus):
+            return status.value
+        return str(status or "").strip().lower()
+
+    def _reasoning_confidence_score(
+        self,
+        answer_claims: list[AnswerClaim],
+        reasoning_chain: list[ReasoningStep],
+    ) -> float:
+        claim_values = [claim.confidence for claim in answer_claims]
+        step_values = [step.confidence for step in reasoning_chain]
+        if claim_values and step_values:
+            return self._mean01(claim_values, 0.5) * 0.65 + self._mean01(step_values, 0.5) * 0.35
+        if claim_values:
+            return self._mean01(claim_values, 0.5)
+        if step_values:
+            return self._mean01(step_values, 0.5)
+        return 0.45
+
+    def _evidence_confidence_signal(
+        self,
+        answer_claims: list[AnswerClaim],
+        evidence_pool: list[Evidence],
+    ) -> float:
+        if not evidence_pool:
+            return 0.05
+
+        evidence_ids = {evidence.evidence_id for evidence in evidence_pool}
+        evidence_quality = self._mean01(
+            [
+                evidence.combined_score * 0.70 + evidence.relevance_score * 0.30
+                for evidence in evidence_pool[:10]
+            ],
+            0.5,
+        )
+
+        verifiable_claims = [claim for claim in answer_claims if claim.verifiable]
+        if not verifiable_claims:
+            return evidence_quality * 0.55
+
+        covered = 0
+        for claim in verifiable_claims:
+            supporting_ids = [ev_id for ev_id in claim.supporting_evidence if ev_id in evidence_ids]
+            if supporting_ids and claim.support_type != "none":
+                covered += 1
+
+        coverage = covered / len(verifiable_claims)
+        return evidence_quality * 0.45 + coverage * 0.55
+
+    def _verification_confidence_score(
+        self,
+        verification_report: VerificationReport,
+    ) -> float:
+        if not verification_report.claim_verifications:
+            return 0.45 if verification_report.overall_status == VerificationStatus.SUPPORTED else 0.35
+
+        status_scores = []
+        for verification in verification_report.claim_verifications:
+            status = self._normalize_verification_status(verification.get("status"))
+            confidence = self._clamp01(verification.get("confidence", 0.5), default=0.5)
+            if status == "supported":
+                status_scores.append(confidence)
+            elif status == "refuted":
+                status_scores.append(1.0 - confidence)
+            elif status == "not_enough_info":
+                status_scores.append(0.35 * (1.0 - confidence) + 0.15)
+            else:
+                status_scores.append(0.25)
+
+        score = self._mean01(status_scores, 0.35)
+        if verification_report.overall_status == VerificationStatus.SUPPORTED:
+            return max(score, 0.70)
+        if verification_report.overall_status == VerificationStatus.REFUTED:
+            return min(score, 0.25)
+        return min(score, 0.50)
+
+    def _conflict_resolution_signal(
+        self,
+        conflict_graph: EvidenceConflictGraph,
+        verification_report: VerificationReport | None,
+    ) -> float:
+        conflicts = conflict_graph.get_conflicts()
+        if not conflicts:
+            return 1.0
+
+        conflict_pressure = self._mean01([edge.confidence for edge in conflicts], 0.5)
+        ignored_count = len(verification_report.ignored_conflicts) if verification_report else 0
+        ignored_penalty = min(0.50, ignored_count * 0.15)
+        return max(0.0, 1.0 - conflict_pressure * 0.70 - ignored_penalty)
+
+    def _abstention_confidence_score(
+        self,
+        *,
+        evidence_signal: float,
+        verification_report: VerificationReport | None,
+        uncertainty: UncertaintyBreakdown,
+        answerability_guard: dict[str, Any] | None,
+    ) -> float:
+        lack_of_evidence = max(
+            self._clamp01(uncertainty.retrieval_uncertainty),
+            1.0 - self._clamp01(evidence_signal),
+        )
+        verification_nei = 0.0
+        verification_supported = False
+        if verification_report:
+            verification_nei = (
+                1.0 if verification_report.overall_status == VerificationStatus.NOT_ENOUGH_INFO
+                else 0.0
+            )
+            verification_supported = verification_report.overall_status == VerificationStatus.SUPPORTED
+
+        confidence = 0.32 + lack_of_evidence * 0.42 + verification_nei * 0.12
+        if answerability_guard:
+            confidence += 0.10
+        if verification_supported:
+            confidence -= 0.25
+        return self._clamp01(confidence)
+
+    def _cap_confidence_for_failure_modes(
+        self,
+        confidence: float,
+        *,
+        evidence_pool: list[Evidence],
+        answer_claims: list[AnswerClaim],
+        verification_report: VerificationReport | None,
+        conflict_graph: EvidenceConflictGraph,
+    ) -> float:
+        capped = self._clamp01(confidence)
+        if not evidence_pool:
+            capped = min(capped, 0.25)
+        if not answer_claims:
+            capped = min(capped, 0.50)
+        if verification_report:
+            if verification_report.overall_status == VerificationStatus.REFUTED:
+                capped = min(capped, 0.35)
+            elif verification_report.overall_status == VerificationStatus.NOT_ENOUGH_INFO:
+                capped = min(capped, 0.58)
+            if verification_report.ignored_conflicts:
+                capped = min(capped, 0.65)
+        if conflict_graph.get_conflicts() and not verification_report:
+            capped = min(capped, 0.70)
+        return capped
 
     def batch_query(
         self,

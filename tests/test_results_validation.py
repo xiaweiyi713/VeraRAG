@@ -99,6 +99,8 @@ def _write_results_fixture(
         f"Corpus SHA-256: `{corpus_sha}`\n\n"
         f"Questions SHA-256: `{questions_sha}`\n\n"
         "A v1.1.2 targeted rerun should use a current config.\n\n"
+        "The canonical full run uses configs/verabench_v112_canonical.yaml "
+        "and writes results/verabench_v112_canonical_deepseek.json.\n\n"
         "## Historical VeraBench v1.1 Full Run\n\n"
         "| Run | Model | Questions | Errors | Behavior Acc | Answer F1 | Evidence Recall | Conflict micro-F1 |\n"
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n\n"

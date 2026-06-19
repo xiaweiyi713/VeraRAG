@@ -13,7 +13,12 @@ from typing import Any
 import yaml
 
 ENV_PLACEHOLDER_RE = re.compile(r"^\$\{[A-Z][A-Z0-9_]*\}$")
-RUNTIME_CONFIG_NAMES = {"model.yaml", "deepseek_run.yaml", "deepseek_rules_only.yaml"}
+RUNTIME_CONFIG_NAMES = {
+    "model.yaml",
+    "deepseek_run.yaml",
+    "deepseek_rules_only.yaml",
+    "verabench_v112_canonical.yaml",
+}
 RETRIEVER_TYPES = {"bm25", "hybrid", "dense"}
 
 

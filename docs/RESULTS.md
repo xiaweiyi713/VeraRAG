@@ -41,9 +41,24 @@ rerun should use:
 
 ```bash
 DEEPSEEK_API_KEY=<key> verarag-benchmark \
-  --config configs/deepseek_run.yaml \
+  --config configs/verabench_v112_canonical.yaml \
   --ids V036 V048 V084 \
   --output results/verabench_v112_targeted_failures.json \
+  --restart
+```
+
+The canonical v1.1.2 full run is fixed in
+`configs/verabench_v112_canonical.yaml`: DeepSeek `deepseek-v4-flash`,
+temperature `0.0`, `max_tokens=4000`, BM25 retrieval,
+`max_retrieval_rounds=1`, all verification/conflict/uncertainty/repair stages
+enabled, and statistical intervals using 2,000 bootstrap resamples with seed
+`1729`. Its authoritative artifact path is
+`outputs/remote_results/verabench_v112_canonical_deepseek.json`.
+
+```bash
+DEEPSEEK_API_KEY=<key> verarag-benchmark \
+  --config configs/verabench_v112_canonical.yaml \
+  --output outputs/remote_results/verabench_v112_canonical_deepseek.json \
   --restart
 ```
 
@@ -118,6 +133,19 @@ dependency sensitivity intervals:
 
 These are sensitivity estimates for evidence reuse, not retroactive proof that
 the historical v1.1 run used the current v1.1.2 annotations.
+
+### v1.1 Selective Prediction Diagnostic
+
+The historical v1.1 rows were post-hoc calibrated with behavior-grouped Platt
+scaling before drawing the selective-prediction curve. This diagnostic is not a
+canonical v1.1.2 claim, but it demonstrates the ROADMAP stage-2 reporting path:
+AURC `0.0328`, coverage@accuracy≥0.95 `0.572`, and coverage@accuracy≥0.90
+`1.000`.
+
+![Historical v1.1 behavior-calibrated risk-coverage curve](assets/verabench_v11_group_calibrated_risk_coverage.svg)
+
+Curve points are archived in
+[`assets/verabench_v11_group_calibrated_risk_coverage.csv`](assets/verabench_v11_group_calibrated_risk_coverage.csv).
 
 ### v1.1 By Type
 

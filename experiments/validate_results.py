@@ -77,6 +77,8 @@ def validate_results(project_root: str | Path = ".") -> ResultsAudit:
         "Current repository data is VeraBench v1.1.2",
         "v1.0 and v1.1 rows are historical and must not be",
         "v1.1.2 targeted",
+        "configs/verabench_v112_canonical.yaml",
+        "verabench_v112_canonical_deepseek.json",
     ):
         if snippet not in results:
             errors.append(f"docs/RESULTS.md missing result provenance note: {snippet}")

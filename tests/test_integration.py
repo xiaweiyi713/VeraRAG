@@ -11,13 +11,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.utils.data_structures import (
+    AnswerClaim,
     Claim,
     ClaimType,
     ConflictEdge,
     ConflictType,
     Evidence,
     EvidenceConflictGraph,
+    ReasoningStep,
     VeraRAGOutput,
+    VerificationReport,
+    VerificationStatus,
 )
 
 
@@ -1158,6 +1162,136 @@ class TestPipelineIntegration:
         assert "无法回答此问题" not in answer
         assert claims[0].claim == "问题中的断言缺乏充分证据支持"
         assert steps[0].description.startswith("识别到这是前提/断言验证问题")
+
+    def test_final_confidence_uses_verification_evidence_and_conflicts(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="E1",
+                source="report",
+                title="量子计算进展",
+                text_span="Willow 是 2024 年发布的量子处理器。",
+                credibility_score=0.9,
+                recency_score=0.9,
+                relevance_score=0.95,
+            )
+        ]
+        claims = [
+            AnswerClaim(
+                claim="Willow 是 2024 年发布的量子处理器。",
+                supporting_evidence=["E1"],
+                confidence=0.9,
+                verification_status=VerificationStatus.SUPPORTED,
+                support_type="direct",
+            )
+        ]
+        steps = [ReasoningStep(step=1, description="读取证据", evidence_ids=["E1"], confidence=0.85)]
+        supported_report = VerificationReport(
+            claim_verifications=[
+                {"claim": claims[0].claim, "status": "SUPPORTED", "confidence": 0.92}
+            ],
+            overall_status=VerificationStatus.SUPPORTED,
+        )
+        refuted_report = VerificationReport(
+            claim_verifications=[
+                {"claim": claims[0].claim, "status": "REFUTED", "confidence": 0.9}
+            ],
+            overall_status=VerificationStatus.REFUTED,
+        )
+        conflict_graph = EvidenceConflictGraph()
+        conflict_graph.add_edge(
+            ConflictEdge(
+                source_id="E1",
+                target_id="E2",
+                conflict_type=ConflictType.NUMERIC_CONFLICT,
+                severity="high",
+                confidence=0.9,
+            )
+        )
+
+        supported = pipeline._estimate_final_confidence(
+            answer="Willow 是 2024 年发布的量子处理器。",
+            answer_claims=claims,
+            reasoning_chain=steps,
+            evidence_pool=evidence,
+            conflict_graph=EvidenceConflictGraph(),
+            verification_report=supported_report,
+            uncertainty=pipeline.uncertainty_controller.get_uncertainty_breakdown(
+                [], evidence, EvidenceConflictGraph()
+            ),
+            answerability_guard=None,
+        )
+        refuted = pipeline._estimate_final_confidence(
+            answer="Willow 是 2025 年发布的量子处理器。",
+            answer_claims=claims,
+            reasoning_chain=steps,
+            evidence_pool=evidence,
+            conflict_graph=conflict_graph,
+            verification_report=refuted_report,
+            uncertainty=pipeline.uncertainty_controller.get_uncertainty_breakdown(
+                [], evidence, conflict_graph
+            ),
+            answerability_guard=None,
+        )
+
+        assert supported > 0.65
+        assert refuted < 0.35
+        assert supported - refuted > 0.35
+
+    def test_final_confidence_scores_reasonable_abstention(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        not_enough_report = VerificationReport(
+            claim_verifications=[],
+            overall_status=VerificationStatus.NOT_ENOUGH_INFO,
+        )
+        supported_report = VerificationReport(
+            claim_verifications=[
+                {"claim": "已有直接证据", "status": "SUPPORTED", "confidence": 0.95}
+            ],
+            overall_status=VerificationStatus.SUPPORTED,
+        )
+        high_uncertainty = pipeline.uncertainty_controller.get_uncertainty_breakdown(
+            [], [], EvidenceConflictGraph()
+        )
+        supported_evidence = [
+            Evidence(
+                evidence_id="E1",
+                source="report",
+                title="直接证据",
+                text_span="已有直接证据。",
+                credibility_score=0.95,
+                recency_score=0.9,
+                relevance_score=0.95,
+            )
+        ]
+        low_uncertainty = pipeline.uncertainty_controller.get_uncertainty_breakdown(
+            [], supported_evidence, EvidenceConflictGraph()
+        )
+
+        justified = pipeline._estimate_final_confidence(
+            answer="证据不足，无法回答。",
+            answer_claims=[],
+            reasoning_chain=[],
+            evidence_pool=[],
+            conflict_graph=EvidenceConflictGraph(),
+            verification_report=not_enough_report,
+            uncertainty=high_uncertainty,
+            answerability_guard={"action": "abstain"},
+        )
+        unjustified = pipeline._estimate_final_confidence(
+            answer="证据不足，无法回答。",
+            answer_claims=[],
+            reasoning_chain=[],
+            evidence_pool=supported_evidence,
+            conflict_graph=EvidenceConflictGraph(),
+            verification_report=supported_report,
+            uncertainty=low_uncertainty,
+            answerability_guard=None,
+        )
+
+        assert justified > 0.65
+        assert unjustified < justified
+        assert unjustified < 0.55
 
     def test_full_pipeline_run(self, pipeline_config):
         """Test that the full pipeline runs end-to-end with mock LLM."""

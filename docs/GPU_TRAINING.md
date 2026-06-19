@@ -172,7 +172,7 @@ This is the preferred check before spending time on a full 152-question run:
 
 ```bash
 DEEPSEEK_API_KEY=<key> python experiments/run_verabench.py \
-  --config configs/deepseek_run.yaml \
+  --config configs/verabench_v112_canonical.yaml \
   --ids V036 V048 V084 \
   --output results/verabench_targeted_failures.json \
   --restart
@@ -334,8 +334,8 @@ scripts/start_windows_verabench_eval.sh
 
 Defaults:
 
-- config: `configs/deepseek_run.yaml`
-- output: `outputs/remote_results/verabench_v112_full.json`
+- config: `configs/verabench_v112_canonical.yaml`
+- output: `outputs/remote_results/verabench_v112_canonical_deepseek.json`
 - session: `verarag-verabench-eval`
 - restart mode: enabled
 

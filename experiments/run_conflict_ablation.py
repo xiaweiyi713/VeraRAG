@@ -302,7 +302,11 @@ def print_result(payload: dict[str, Any]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run rules-only vs rules+learned VeraBench pipeline ablation")
-    parser.add_argument("--config", default="configs/deepseek_run.yaml", help="Base pipeline config YAML")
+    parser.add_argument(
+        "--config",
+        default="configs/verabench_v112_canonical.yaml",
+        help="Base pipeline config YAML",
+    )
     parser.add_argument("--data-dir", help="VeraBench data directory")
     parser.add_argument("--output-dir", default="results/conflict_pipeline_ablation", help="Directory for configs, reports, and summary")
     parser.add_argument("--types", nargs="+", default=["conflict", "misleading"], help="Question types passed to run_verabench.py")

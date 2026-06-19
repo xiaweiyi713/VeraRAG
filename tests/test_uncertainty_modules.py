@@ -120,6 +120,32 @@ class TestConfidenceCalibrator:
         calibrated = cal.calibrate_confidence(raw_confidence=0.8, uncertainty=unc)
         assert 0 <= calibrated <= 1
 
+    def test_calibrate_confidence_preserves_strong_low_uncertainty_signal(self):
+        from src.uncertainty.calibrator import ConfidenceCalibrator
+
+        cal = ConfidenceCalibrator()
+        low_uncertainty = UncertaintyBreakdown(
+            retrieval_uncertainty=0.05,
+            evidence_conflict=0.0,
+            reasoning_gap=0.05,
+            source_reliability=0.05,
+            verification_uncertainty=0.0,
+        )
+        high_uncertainty = UncertaintyBreakdown(
+            retrieval_uncertainty=0.8,
+            evidence_conflict=0.8,
+            reasoning_gap=0.7,
+            source_reliability=0.6,
+            verification_uncertainty=0.8,
+        )
+
+        strong = cal.calibrate_confidence(raw_confidence=0.8, uncertainty=low_uncertainty)
+        weak = cal.calibrate_confidence(raw_confidence=0.8, uncertainty=high_uncertainty)
+
+        assert strong > 0.75
+        assert weak < strong
+        assert weak < 0.65
+
     def test_empty_metrics(self):
         from src.uncertainty.calibrator import ConfidenceCalibrator
         cal = ConfidenceCalibrator()

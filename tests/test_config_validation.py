@@ -1,6 +1,9 @@
 """Tests for YAML configuration validation."""
 
 import json
+from pathlib import Path
+
+import yaml
 
 from experiments.validate_configs import main, validate_configs
 
@@ -13,6 +16,28 @@ def test_config_validation_accepts_repository_configs():
     assert "configs/model.yaml" in audit.files
     assert "configs/deepseek_run.yaml" in audit.files
     assert "configs/deepseek_rules_only.yaml" in audit.files
+    assert "configs/verabench_v112_canonical.yaml" in audit.files
+
+
+def test_canonical_verabench_config_freezes_authoritative_run_identity():
+    config = yaml.safe_load(
+        Path("configs/verabench_v112_canonical.yaml").read_text(encoding="utf-8")
+    )
+
+    assert config["canonical_run"]["name"] == "verabench_v112_canonical_deepseek"
+    assert config["canonical_run"]["benchmark_version"] == "1.1.2"
+    assert (
+        config["canonical_run"]["output"]
+        == "outputs/remote_results/verabench_v112_canonical_deepseek.json"
+    )
+    assert config["canonical_run"]["question_types"] == "all"
+    assert config["canonical_run"]["bootstrap"]["seed"] == 1729
+    assert config["canonical_run"]["bootstrap"]["resamples"] == 2000
+    assert config["llm"]["provider"] == "deepseek"
+    assert config["llm"]["model"] == "deepseek-v4-flash"
+    assert config["llm"]["temperature"] == 0.0
+    assert config["retriever"]["type"] == "bm25"
+    assert config["pipeline"]["max_retrieval_rounds"] == 1
 
 
 def test_config_validation_reports_runtime_shape_errors(tmp_path):

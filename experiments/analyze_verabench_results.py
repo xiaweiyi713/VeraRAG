@@ -11,7 +11,9 @@ Usage:
 """
 
 import argparse
+import csv
 import json
+import math
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -134,6 +136,272 @@ def _calibration_bins(rows: list[dict[str, Any]], n_bins: int = 10) -> list[dict
     return bins
 
 
+def _correctness(row: dict[str, Any]) -> bool | None:
+    value = row.get("correct")
+    if isinstance(value, bool):
+        return value
+    expected = row.get("expected_behavior")
+    actual = row.get("actual_behavior")
+    if expected and actual:
+        return expected == actual
+    return None
+
+
+def _confidence_value(row: dict[str, Any]) -> float | None:
+    value = row.get("confidence")
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    confidence = float(value)
+    if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+        return None
+    return confidence
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _std(values: list[float]) -> float | None:
+    if not values:
+        return None
+    mean = sum(values) / len(values)
+    return math.sqrt(sum((value - mean) ** 2 for value in values) / len(values))
+
+
+def _quantile(values: list[float], q: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * q
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[int(position)]
+    fraction = position - lower
+    return ordered[lower] * (1 - fraction) + ordered[upper] * fraction
+
+
+def _round_optional(value: float | None, digits: int = 6) -> float | None:
+    return round(value, digits) if value is not None else None
+
+
+def _confidence_auc(pairs: list[tuple[float, bool]]) -> float | None:
+    positives = [confidence for confidence, correct in pairs if correct]
+    negatives = [confidence for confidence, correct in pairs if not correct]
+    if not positives or not negatives:
+        return None
+    wins = 0.0
+    total = len(positives) * len(negatives)
+    for positive in positives:
+        for negative in negatives:
+            if positive > negative:
+                wins += 1.0
+            elif positive == negative:
+                wins += 0.5
+    return wins / total
+
+
+def _risk_coverage(
+    pairs: list[tuple[float, bool]],
+    *,
+    targets: tuple[float, ...] = (0.8, 0.9, 0.95),
+) -> dict[str, Any]:
+    if not pairs:
+        return {
+            "available": False,
+            "reason": "no rows with valid confidence and correctness",
+        }
+    ranked = sorted(pairs, key=lambda item: item[0], reverse=True)
+    points: list[dict[str, float | int]] = []
+    correct_count = 0
+    total = len(ranked)
+    best_by_accuracy = {target: 0.0 for target in targets}
+    for idx, (confidence, correct) in enumerate(ranked, start=1):
+        correct_count += int(correct)
+        coverage = idx / total
+        accuracy = correct_count / idx
+        risk = 1.0 - accuracy
+        points.append(
+            {
+                "coverage": round(coverage, 6),
+                "accuracy": round(accuracy, 6),
+                "risk": round(risk, 6),
+                "threshold": round(confidence, 6),
+                "kept": idx,
+            }
+        )
+        for target in targets:
+            if accuracy >= target:
+                best_by_accuracy[target] = coverage
+
+    aurc = sum(float(point["risk"]) for point in points) / len(points)
+    return {
+        "available": True,
+        "aurc": round(aurc, 6),
+        "coverage_at_accuracy": {
+            f"{target:.2f}": round(coverage, 6)
+            for target, coverage in best_by_accuracy.items()
+        },
+        "points": points,
+    }
+
+
+def _write_risk_coverage_csv(risk_coverage: dict[str, Any], path: Path) -> None:
+    points = _require_risk_coverage_points(risk_coverage)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["kept", "coverage", "accuracy", "risk", "threshold"],
+        )
+        writer.writeheader()
+        writer.writerows(points)
+
+
+def _write_risk_coverage_svg(risk_coverage: dict[str, Any], path: Path) -> None:
+    points = _require_risk_coverage_points(risk_coverage)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_risk_coverage_svg(risk_coverage, points), encoding="utf-8")
+
+
+def _require_risk_coverage_points(risk_coverage: dict[str, Any]) -> list[dict[str, Any]]:
+    if risk_coverage.get("available") is False:
+        raise ValueError(f"risk-coverage unavailable: {risk_coverage.get('reason', 'missing data')}")
+    points = risk_coverage.get("points") or []
+    if not points:
+        raise ValueError("risk-coverage curve has no points")
+    return points
+
+
+def _risk_coverage_svg(risk_coverage: dict[str, Any], points: list[dict[str, Any]]) -> str:
+    width = 760
+    height = 460
+    left = 72
+    right = 32
+    top = 44
+    bottom = 74
+    plot_width = width - left - right
+    plot_height = height - top - bottom
+
+    def x_coord(coverage: float) -> float:
+        return left + coverage * plot_width
+
+    def y_coord(risk: float) -> float:
+        return top + (1.0 - risk) * plot_height
+
+    polyline = " ".join(
+        f"{x_coord(float(point['coverage'])):.2f},{y_coord(float(point['risk'])):.2f}"
+        for point in points
+    )
+    coverage_labels = risk_coverage.get("coverage_at_accuracy") or {}
+    coverage_text = ", ".join(
+        f"acc>={target}: {float(coverage):.3f}"
+        for target, coverage in sorted(coverage_labels.items())
+    )
+    if not coverage_text:
+        coverage_text = "coverage targets unavailable"
+
+    grid_lines = []
+    tick_labels = []
+    for idx in range(6):
+        value = idx / 5
+        x = x_coord(value)
+        y = y_coord(value)
+        grid_lines.append(
+            f'<line x1="{x:.2f}" y1="{top}" x2="{x:.2f}" y2="{height - bottom}" class="grid"/>'
+        )
+        grid_lines.append(
+            f'<line x1="{left}" y1="{y:.2f}" x2="{width - right}" y2="{y:.2f}" class="grid"/>'
+        )
+        tick_labels.append(
+            f'<text x="{x:.2f}" y="{height - bottom + 24}" text-anchor="middle">{value:.1f}</text>'
+        )
+        tick_labels.append(
+            f'<text x="{left - 14}" y="{y + 4:.2f}" text-anchor="end">{value:.1f}</text>'
+        )
+
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-labelledby="title desc">
+  <title id="title">VeraBench Risk-Coverage Curve</title>
+  <desc id="desc">Selective prediction curve showing risk as coverage increases by confidence threshold.</desc>
+  <style>
+    .bg {{ fill: #ffffff; }}
+    .axis {{ stroke: #1f2937; stroke-width: 1.4; }}
+    .grid {{ stroke: #e5e7eb; stroke-width: 1; }}
+    .curve {{ fill: none; stroke: #2563eb; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }}
+    .label {{ fill: #111827; font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    .small {{ fill: #4b5563; font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    .title {{ fill: #111827; font: 700 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+  </style>
+  <rect class="bg" width="100%" height="100%"/>
+  <text x="{left}" y="26" class="title">Risk-Coverage Curve</text>
+  <text x="{left}" y="{height - 18}" class="small">AURC={float(risk_coverage.get('aurc') or 0.0):.4f}; {coverage_text}</text>
+  {''.join(grid_lines)}
+  <line x1="{left}" y1="{height - bottom}" x2="{width - right}" y2="{height - bottom}" class="axis"/>
+  <line x1="{left}" y1="{top}" x2="{left}" y2="{height - bottom}" class="axis"/>
+  <polyline points="{polyline}" class="curve"/>
+  {''.join(tick_labels)}
+  <text x="{left + plot_width / 2:.2f}" y="{height - 34}" text-anchor="middle" class="label">Coverage</text>
+  <text x="22" y="{top + plot_height / 2:.2f}" text-anchor="middle" class="label" transform="rotate(-90 22 {top + plot_height / 2:.2f})">Risk</text>
+</svg>
+"""
+
+
+def _confidence_diagnostics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    pairs: list[tuple[float, bool]] = []
+    for row in rows:
+        confidence = _confidence_value(row)
+        correct = _correctness(row)
+        if confidence is not None and correct is not None:
+            pairs.append((confidence, correct))
+
+    if not pairs:
+        return {
+            "available": False,
+            "reason": "no rows with valid confidence and correctness",
+        }
+
+    confidences = [confidence for confidence, _ in pairs]
+    correct_confidences = [confidence for confidence, correct in pairs if correct]
+    incorrect_confidences = [
+        confidence for confidence, correct in pairs if not correct
+    ]
+    accuracy = sum(int(correct) for _, correct in pairs) / len(pairs)
+    mean_confidence = sum(confidences) / len(confidences)
+    std_confidence = _std(confidences)
+    auc = _confidence_auc(pairs)
+
+    flags = []
+    if std_confidence is not None and std_confidence < 0.03:
+        flags.append("near_constant_confidence")
+    if mean_confidence < accuracy - 0.10:
+        flags.append("underconfident")
+    if mean_confidence > accuracy + 0.10:
+        flags.append("overconfident")
+    if auc is not None and auc <= 0.60:
+        flags.append("weak_correctness_discrimination")
+    if not flags:
+        flags.append("no_obvious_confidence_pathology")
+
+    return {
+        "available": True,
+        "rows": len(pairs),
+        "accuracy": round(accuracy, 6),
+        "mean_confidence": round(mean_confidence, 6),
+        "confidence_std": _round_optional(std_confidence),
+        "confidence_min": round(min(confidences), 6),
+        "confidence_p25": _round_optional(_quantile(confidences, 0.25)),
+        "confidence_median": _round_optional(_quantile(confidences, 0.5)),
+        "confidence_p75": _round_optional(_quantile(confidences, 0.75)),
+        "confidence_max": round(max(confidences), 6),
+        "correct_mean_confidence": _round_optional(_mean(correct_confidences)),
+        "incorrect_mean_confidence": _round_optional(_mean(incorrect_confidences)),
+        "confidence_auroc": _round_optional(auc),
+        "diagnostic_flags": flags,
+    }
+
+
 def _conflict_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     has_counts = any(
         "predicted_conflicts" in r or "gold_conflicts" in r
@@ -250,6 +518,15 @@ def analyze(report: dict[str, Any], max_examples: int = 10) -> dict[str, Any]:
     summary = embedded_summary or _build_summary(rows, max_examples=max_examples)
     confusion = report.get("behavior_confusion") or _behavior_confusion(rows)
     calibration_bins = report.get("calibration_bins") or _calibration_bins(rows)
+    confidence_diagnostics = _confidence_diagnostics(rows)
+    risk_coverage = _risk_coverage(
+        [
+            (confidence, correct)
+            for row in rows
+            if (confidence := _confidence_value(row)) is not None
+            and (correct := _correctness(row)) is not None
+        ]
+    )
     conflict_summary = report.get("conflict_summary") or _conflict_summary(rows)
     premise_refutation_summary = (
         report.get("premise_refutation_summary")
@@ -276,6 +553,8 @@ def analyze(report: dict[str, Any], max_examples: int = 10) -> dict[str, Any]:
         },
         "metadata": report.get("metadata", {}),
         "calibration_bins": calibration_bins,
+        "confidence_diagnostics": confidence_diagnostics,
+        "risk_coverage": risk_coverage,
         "confidence_intervals": confidence_intervals,
         "dependency_robust_confidence_intervals": dependency_intervals,
         "conflict_summary": conflict_summary,
@@ -403,6 +682,43 @@ def _print_table(analysis: dict[str, Any], max_examples: int) -> None:
                     f"acc={b['accuracy']:.3f} gap={b['gap']:.3f}"
                 )
 
+    confidence = analysis.get("confidence_diagnostics", {})
+    if confidence:
+        print("\nConfidence Diagnostics")
+        print("-" * 72)
+        if confidence.get("available") is False:
+            print(f"Unavailable: {confidence.get('reason', 'missing confidence/correctness rows')}")
+        else:
+            print(
+                f"Mean / std:       "
+                f"{float(confidence.get('mean_confidence') or 0.0):.4f} / "
+                f"{float(confidence.get('confidence_std') or 0.0):.4f}"
+            )
+            print(
+                f"Correct / wrong:  "
+                f"{float(confidence.get('correct_mean_confidence') or 0.0):.4f} / "
+                f"{float(confidence.get('incorrect_mean_confidence') or 0.0):.4f}"
+            )
+            auc = confidence.get("confidence_auroc")
+            print(f"AUROC:            {float(auc):.4f}" if auc is not None else "AUROC:            unavailable")
+            print(
+                "Flags:            "
+                + ", ".join(confidence.get("diagnostic_flags", []))
+            )
+
+    risk_coverage = analysis.get("risk_coverage", {})
+    if risk_coverage:
+        print("\nRisk-Coverage")
+        print("-" * 72)
+        if risk_coverage.get("available") is False:
+            print(f"Unavailable: {risk_coverage.get('reason', 'missing confidence/correctness rows')}")
+        else:
+            print(f"AURC: {float(risk_coverage.get('aurc') or 0.0):.4f}")
+            for target, coverage in sorted(
+                (risk_coverage.get("coverage_at_accuracy") or {}).items()
+            ):
+                print(f"coverage@accuracy>={target}: {float(coverage):.4f}")
+
     print("\nBehavior Confusion")
     print("-" * 72)
     for expected, actual_counts in sorted(analysis["behavior_confusion"].items()):
@@ -428,6 +744,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze a saved VeraBench report JSON")
     parser.add_argument("report", help="Path to a run_verabench.py JSON report")
     parser.add_argument("--max-examples", type=int, default=10, help="Number of failure examples")
+    parser.add_argument("--risk-coverage-svg", help="Optional path to write a risk-coverage SVG curve")
+    parser.add_argument("--risk-coverage-csv", help="Optional path to write risk-coverage curve points as CSV")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON")
     args = parser.parse_args()
 
@@ -436,10 +754,22 @@ def main() -> None:
         raise SystemExit(f"Report not found: {path}")
 
     analysis = analyze(_load_report(str(path)), max_examples=args.max_examples)
+    try:
+        if args.risk_coverage_svg:
+            _write_risk_coverage_svg(analysis["risk_coverage"], Path(args.risk_coverage_svg))
+        if args.risk_coverage_csv:
+            _write_risk_coverage_csv(analysis["risk_coverage"], Path(args.risk_coverage_csv))
+    except ValueError as exc:
+        raise SystemExit(f"Cannot write risk-coverage artifact: {exc}") from exc
+
     if args.json:
         print(json.dumps(analysis, ensure_ascii=False, indent=2))
     else:
         _print_table(analysis, max_examples=args.max_examples)
+        if args.risk_coverage_svg:
+            print(f"\nWrote risk-coverage SVG: {args.risk_coverage_svg}")
+        if args.risk_coverage_csv:
+            print(f"Wrote risk-coverage CSV: {args.risk_coverage_csv}")
 
 
 if __name__ == "__main__":

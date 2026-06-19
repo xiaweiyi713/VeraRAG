@@ -78,7 +78,7 @@ The public compatibility surface is:
    evaluation:
 
    ```bash
-   verarag-benchmark --config configs/deepseek_run.yaml \
+   verarag-benchmark --config configs/verabench_v112_canonical.yaml \
      --ids V036 V048 V084 \
      --output results/verabench_targeted_failures.json \
      --restart

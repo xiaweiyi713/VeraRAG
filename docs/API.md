@@ -209,7 +209,7 @@ For real evaluation:
 
 ```python
 def make_pipeline():
-    pipeline = create_verarag("configs/deepseek_run.yaml")
+    pipeline = create_verarag("configs/verabench_v112_canonical.yaml")
     # index documents before returning the pipeline
     return pipeline
 
@@ -225,10 +225,11 @@ Installed packages expose:
 verarag-web --port 8000
 verarag-doctor --json
 verarag-benchmark --demo
-verarag-analyze results/verabench_full.json
+verarag-analyze results/verabench_full.json --risk-coverage-svg results/risk_coverage.svg --risk-coverage-csv results/risk_coverage.csv
 verarag-rescore results/verabench_full.json --output results/verabench_rescored.json
 verarag-merge-reports results/part-a.json results/part-b.json --output results/full.json
 verarag-calibration --input results/verabench_full.json --correctness-field correct --output results/calibration_curve.svg
+verarag-calibrate-report --input results/verabench_full.json --output results/verabench_full_calibrated.json --method platt --group-field actual_behavior
 verarag-leaderboard results/verabench_full_v3.json --output docs/RESULTS.md
 verarag-compare-reports results/baseline.json results/candidate.json --output results/comparison.md
 verarag-audit-contamination --reference /path/to/local/corpus --containment-threshold 0.85 --output results/contamination_audit.json
@@ -265,11 +266,27 @@ fingerprints by default. Cross-version and metadata-free legacy inputs require
 the explicit diagnostic overrides `--allow-benchmark-mismatch` and
 `--allow-unverified`, respectively.
 
+`verarag-analyze` computes offline diagnostics for a saved VeraBench report,
+including behavior failures, conflict failures, confidence AUROC, AURC, and
+coverage@accuracy. Use `--risk-coverage-svg` to write a publication-friendly
+risk-coverage curve and `--risk-coverage-csv` to export the plotted points.
+
 `verarag-calibration` defaults to the boolean `correct` row field, which tracks
 VeraBench behavior correctness. Use `--correctness-field` to inspect another
 boolean outcome such as `premise_refutation_correct`. The command rejects empty
 reports, missing fields, non-boolean correctness values, and out-of-range
 confidence scores instead of drawing a misleading reliability diagram.
+
+`verarag-calibrate-report` fits held-out Platt scaling by default and writes a
+new report JSON with calibrated confidence values. Use `--method temperature`
+for temperature scaling, `--summary-output` for a separate before/after metric
+summary, and `--seed` / `--calibration-fraction` to reproduce the deterministic
+correctness-stratified split. Use `--group-field actual_behavior` to fit
+separate behavior-level calibrators for answer, abstention, premise-correction,
+and conflict-note rows. Groups with too few calibration rows or only one
+correctness class fall back to a smoothed empirical constant by default; use
+`--group-fallback global` to reuse the global model instead. Per-row diagnostics
+record the group value, model scope, mode, and fallback reason when applicable.
 
 `verarag-doctor` summarizes local readiness without exposing secrets. It checks
 the supported Python floor, required runtime modules, optional feature

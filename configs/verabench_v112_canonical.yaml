@@ -1,0 +1,66 @@
+# Canonical VeraBench v1.1.2 full-run configuration.
+#
+# This file is the stable identity for the next authoritative VeraBench result.
+# Changing it changes the run signature through config_sha256 and should create
+# a new published result artifact rather than silently replacing old numbers.
+canonical_run:
+  name: verabench_v112_canonical_deepseek
+  benchmark_version: "1.1.2"
+  benchmark_data_dir: data/verabench
+  output: outputs/remote_results/verabench_v112_canonical_deepseek.json
+  checkpoint: outputs/remote_results/verabench_v112_canonical_deepseek.json.ckpt.jsonl
+  question_types: all
+  question_ids: all
+  max_questions: all
+  bootstrap:
+    method: stratified-question-bootstrap-v1
+    dependency_method: evidence-cluster-bootstrap-v1
+    confidence_level: 0.95
+    resamples: 2000
+    seed: 1729
+
+llm:
+  api_key: ${DEEPSEEK_API_KEY}
+  max_tokens: 4000
+  model: deepseek-v4-flash
+  provider: deepseek
+  temperature: 0.0
+
+pipeline:
+  enable_conflict_graph: true
+  enable_repair: true
+  enable_uncertainty: true
+  enable_verification: true
+  max_retrieval_rounds: 1
+
+retriever:
+  type: bm25
+
+evidence:
+  semantic_dedup: true
+  semantic_dedup_model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+  semantic_dedup_local_files_only: true
+
+verification:
+  nli_model: cross-encoder/nli-distilroberta-base
+  nli_local_files_only: true
+  nli_threshold: 0.7
+
+conflict_graph:
+  enable_learned_detector: false
+  learned_model_path: ${VERARAG_CONFLICT_MODEL}
+  learned_threshold: 0.7
+  learned_require_context: true
+  learned_candidate_similarity: 0.18
+  enable_source_reliability_conflict: false
+  enable_scope_conflict: false
+  enable_granularity_conflict: false
+  compare_within_evidence: false
+  enable_nli: true
+  nli_model: cross-encoder/nli-distilroberta-base
+  nli_local_files_only: true
+  nli_threshold: 0.7
+  min_conflict_similarity: 0.22
+  unattributed_conflict_similarity: 0.55
+  enable_llm_adjudication: false
+  llm_adjudication_similarity: 0.35

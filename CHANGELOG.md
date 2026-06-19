@@ -40,6 +40,10 @@ All notable changes to VeraRAG are recorded here.
   out-of-scope rows so filtered or edited runs cannot reuse polluted results.
 - Normalize pipeline and loaded report confidence values into finite `[0, 1]`
   probabilities before calibration and aggregate reporting.
+- Rebuild runtime pipeline confidence as a behavior-level fusion of verifier
+  support, evidence quality/coverage, claim and reasoning confidence, conflict
+  pressure, abstention justification, and bounded uncertainty pressure instead
+  of relying on a single multiplicatively discounted uncertainty aggregate.
 
 ### Added
 
@@ -148,6 +152,23 @@ All notable changes to VeraRAG are recorded here.
 - Add `scripts/windows_gpu_status.sh` plus `make gpu-status`, a read-only
   Windows GPU operations helper that reports tmux sessions, attach commands,
   GPU utilization, disk space, and recent training/evaluation artifacts.
+- Add `configs/verabench_v112_canonical.yaml`, the canonical VeraBench v1.1.2
+  DeepSeek full-run configuration, and make the remote VeraBench launcher,
+  RESULTS page, and validation contract point at the same reproducible run
+  identity.
+- Extend `verarag-analyze` with confidence diagnostics and risk-coverage
+  summaries so calibration failures can be diagnosed offline before spending
+  LLM budget.
+- Add `verarag-analyze --risk-coverage-svg/--risk-coverage-csv`, producing
+  publication-ready selective-prediction curves and reusable curve-point
+  exports with AURC and coverage@accuracy summaries.
+- Add `verarag-calibrate-report`, a held-out post-hoc confidence calibration
+  CLI that fits Platt or temperature scaling, preserves original row
+  confidences, and writes before/after calibration and holdout metrics into
+  report metadata.
+- Extend `verarag-calibrate-report` with behavior-grouped calibration via
+  `--group-field actual_behavior`, including documented fallbacks for sparse or
+  single-class behavior groups and per-row calibration diagnostics.
 - Add `verarag-validate-examples` / `make examples-check`, a no-key quickstart
   gate that runs `examples/quickstart.py`, checks the README exposes the same
   first-run command, and is wired into release checks.
@@ -451,7 +472,7 @@ All notable changes to VeraRAG are recorded here.
 
 ### Verified
 
-- Full local suite: `782 passed, 3 skipped`; Ruff, mypy, secret scan,
+- Full local suite: `791 passed, 3 skipped`; Ruff, mypy, secret scan,
   version identity, Python support, documentation/results/example/dependency/project metadata validation,
   release-check/package audit, installed-wheel smoke, release checksum
   validation, sdist, and wheel build pass locally.

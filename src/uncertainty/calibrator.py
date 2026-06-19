@@ -94,26 +94,25 @@ class ConfidenceCalibrator:
         Returns:
             Calibrated confidence score
         """
-        # Start with raw confidence
-        calibrated = raw_confidence
+        raw = self._clamp01(raw_confidence)
+        uncertainty_penalty = (
+            self._clamp01(uncertainty.retrieval_uncertainty) * 0.25 +
+            self._clamp01(uncertainty.evidence_conflict) * 0.30 +
+            self._clamp01(uncertainty.reasoning_gap) * 0.20 +
+            self._clamp01(uncertainty.source_reliability) * 0.15 +
+            self._clamp01(uncertainty.verification_uncertainty) * 0.10
+        )
 
-        # Reduce based on uncertainty components
-        # High retrieval uncertainty -> reduce confidence
-        calibrated *= (1.0 - uncertainty.retrieval_uncertainty * 0.3)
+        # Preserve ranking from the fused signal, then apply bounded uncertainty
+        # pressure. The older multiplicative chain compressed most scores into
+        # a narrow low-confidence band, weakening selective prediction.
+        calibrated = raw * (1.0 - 0.35 * uncertainty_penalty)
+        severe_penalty = (
+            max(0.0, self._clamp01(uncertainty.evidence_conflict) - 0.60) * 0.15 +
+            max(0.0, self._clamp01(uncertainty.verification_uncertainty) - 0.60) * 0.20
+        )
 
-        # High conflict -> reduce confidence
-        calibrated *= (1.0 - uncertainty.evidence_conflict * 0.4)
-
-        # High reasoning gap -> reduce confidence
-        calibrated *= (1.0 - uncertainty.reasoning_gap * 0.3)
-
-        # Low source reliability -> reduce confidence
-        calibrated *= (1.0 - uncertainty.source_reliability * 0.2)
-
-        # Verification uncertainty -> reduce confidence
-        calibrated *= (1.0 - uncertainty.verification_uncertainty * 0.5)
-
-        return max(0.0, min(1.0, calibrated))
+        return self._clamp01(calibrated - severe_penalty)
 
     def compute_calibration_metrics(
         self,
@@ -234,3 +233,13 @@ class ConfidenceCalibrator:
         for is_correct in correct:
             if not isinstance(is_correct, bool | np.bool_):
                 raise ValueError("correct values must be booleans")
+
+    @staticmethod
+    def _clamp01(value: Any) -> float:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        if not np.isfinite(numeric):
+            return 0.0
+        return max(0.0, min(1.0, numeric))

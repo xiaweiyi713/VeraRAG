@@ -72,7 +72,7 @@ Use a fixed config and save output JSON:
 
 ```bash
 DEEPSEEK_API_KEY=<key> python experiments/run_verabench.py \
-  --config configs/deepseek_run.yaml \
+  --config configs/verabench_v112_canonical.yaml \
   --output results/verabench_full.json \
   --restart
 ```
@@ -141,6 +141,96 @@ on premise-refutation rows. The calibration CLI is fail-closed: it rejects empty
 reports, missing correctness fields, non-boolean correctness values, non-finite
 or out-of-range confidence scores, and invalid bin counts.
 
+For ROADMAP stage-2 calibration diagnosis, use the offline analyzer. It reports
+confidence distribution, correct-vs-incorrect separation, confidence AUROC,
+diagnostic flags such as `underconfident`, `near_constant_confidence`, and
+`weak_correctness_discrimination`, plus risk-coverage/AURC values:
+
+```bash
+verarag-analyze \
+  outputs/remote_results/verabench_v11_full_merged_rescored.json \
+  --risk-coverage-svg results/risk_coverage.svg \
+  --risk-coverage-csv results/risk_coverage.csv \
+  --json
+```
+
+The historical v1.1 full report currently shows mean confidence `0.352` versus
+behavior correctness `0.914`, correct/incorrect mean confidence `0.354/0.330`,
+confidence AUROC `0.555`, and flags `underconfident` plus
+`weak_correctness_discrimination`. That narrows the stage-2 bug from generic
+"bad ECE" to two concrete symptoms: confidence is too low overall and barely
+ranks correct rows above incorrect rows.
+
+The analyzer can also write the full selective-prediction curve. The SVG plots
+risk against coverage after sorting rows by confidence; the CSV contains one
+row per retained prefix with `kept`, `coverage`, `accuracy`, `risk`, and
+`threshold`. The JSON summary reports AURC plus coverage@accuracy targets. On
+the historical v1.1 report after behavior-grouped Platt calibration, AURC is
+`0.0328`; retaining only rows above the threshold needed for at least 95%
+accuracy keeps coverage `0.5724`, while 90% accuracy is available at full
+coverage. This is useful evidence that selective prediction is measurable, but
+the public claim still belongs to the canonical v1.1.2 run.
+
+Runtime confidence now uses a behavior-level fused signal rather than only
+`1 - overall_uncertainty`: claim verification status/confidence, evidence
+quality and claim coverage, answer-claim/reasoning confidence, unresolved
+conflict pressure, and abstention justification are combined before a bounded
+uncertainty penalty is applied. This fixes the code-level root cause where a
+five-dimensional uncertainty aggregate plus multiplicative calibration could
+compress otherwise different outcomes into a narrow low-confidence band. The
+change still requires a canonical v1.1.2 full run before claiming the stage-2
+DoD targets for ECE, confidence AUROC, and risk-coverage.
+
+For held-out post-hoc calibration, write a calibrated copy of a saved report:
+
+```bash
+verarag-calibrate-report \
+  --input outputs/remote_results/verabench_v11_full_merged_rescored.json \
+  --output outputs/remote_results/verabench_v11_full_merged_rescored_calibrated_platt.json \
+  --summary-output outputs/remote_results/verabench_v11_full_merged_rescored_calibration_summary.json \
+  --method platt \
+  --json
+```
+
+The command also supports `--method temperature`, but Platt scaling is the
+default because historical VeraBench confidence is mostly below 0.5 despite
+high behavior accuracy. The split is deterministic, stratified by correctness,
+and controlled by `--seed` plus `--calibration-fraction`. The calibrated report
+preserves each row's original confidence under
+`diagnostics.confidence_calibration.original_confidence` and writes the method,
+split, seed, and before/after all/calibration/holdout ECE and Brier metrics to
+`metadata.posthoc_confidence_calibration`. On the historical v1.1 full report,
+the held-out Platt calibration run with seed 1729 changes ECE from `0.5523` to
+`0.0110` and Brier from `0.3929` to `0.0836`; this is a historical diagnostic,
+not the canonical v1.1.2 result.
+
+Because VeraRAG confidence attaches to different behavior types, the same CLI
+can calibrate each behavior family separately:
+
+```bash
+verarag-calibrate-report \
+  --input outputs/remote_results/verabench_v11_full_merged_rescored.json \
+  --output outputs/remote_results/verabench_v11_full_merged_rescored_calibrated_group_platt.json \
+  --summary-output outputs/remote_results/verabench_v11_full_merged_rescored_group_calibration_summary.json \
+  --method platt \
+  --group-field actual_behavior \
+  --min-group-rows 8 \
+  --json
+```
+
+Rows are still split once by correctness, then grouped by `actual_behavior`.
+Each group fits its own Platt/temperature model only when the calibration split
+has enough rows and both correctness classes. Sparse or single-class groups fall
+back to a smoothed empirical constant by default, with the reason recorded in
+both `metadata.posthoc_confidence_calibration.groups` and
+`diagnostics.confidence_calibration`. On the historical v1.1 report this
+behavior-aware run changes holdout ECE from `0.5523` to `0.0666` and Brier from
+`0.3929` to `0.0840`; `answer_with_citation` receives a group Platt model,
+while `abstain`, `answer_with_conflict_note`, and `correct_premise` use
+documented fallbacks because their calibration splits are sparse or single
+class. These numbers are diagnostic only; the canonical v1.1.2 run must be
+calibrated and validated before updating the public results table.
+
 Intervals are reported for answer F1, evidence recall/precision, behavior and
 correctness accuracy, conflict micro-F1, premise-refutation F1, ECE, and Brier
 score when applicable. Each report includes
@@ -190,7 +280,7 @@ checkpoints from different id subsets cannot be silently reused:
 
 ```bash
 DEEPSEEK_API_KEY=<key> python experiments/run_verabench.py \
-  --config configs/deepseek_run.yaml \
+  --config configs/verabench_v112_canonical.yaml \
   --ids V036 V048 V084 \
   --output results/verabench_targeted_failures.json \
   --restart
@@ -200,7 +290,7 @@ For conflict work:
 
 ```bash
 DEEPSEEK_API_KEY=<key> python experiments/run_verabench.py \
-  --config configs/deepseek_run.yaml \
+  --config configs/verabench_v112_canonical.yaml \
   --types conflict \
   --max 10 \
   --output results/conflict_diagnostic.json \
@@ -462,7 +552,7 @@ comparison with the same base config. First generate the plan without LLM calls:
 
 ```bash
 python experiments/run_conflict_ablation.py \
-  --config configs/deepseek_run.yaml \
+  --config configs/verabench_v112_canonical.yaml \
   --learned-model-path outputs/conflict_cross_encoder_expanded_balanced_seed13 \
   --learned-threshold 0.5 \
   --types conflict misleading \
@@ -474,7 +564,7 @@ When the API key is available, remove `--plan-only`:
 
 ```bash
 DEEPSEEK_API_KEY=<key> python experiments/run_conflict_ablation.py \
-  --config configs/deepseek_run.yaml \
+  --config configs/verabench_v112_canonical.yaml \
   --learned-model-path outputs/conflict_cross_encoder_expanded_balanced_seed13 \
   --learned-threshold 0.5 \
   --types conflict misleading \
@@ -486,7 +576,7 @@ Installed package equivalent:
 
 ```bash
 verarag-conflict-ablation \
-  --config configs/deepseek_run.yaml \
+  --config configs/verabench_v112_canonical.yaml \
   --learned-model-path outputs/conflict_cross_encoder_expanded_balanced_seed13 \
   --learned-threshold 0.5 \
   --types conflict misleading \

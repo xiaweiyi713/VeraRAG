@@ -36,7 +36,7 @@
 10. **精确题号复测**：`run_verabench.py` / `verarag-benchmark` 新增 `--ids`，
    可直接运行 `--ids V036 V048 V084` 复测具体失败样例；题号过滤进入
    checkpoint 签名，避免不同子集误复用旧结果。
-11. **质量门禁**：当前全量测试 **750 passed + 3 skipped**，Ruff、mypy、
+11. **质量门禁**：当前全量测试 **791 passed + 3 skipped**，Ruff、mypy、
    secret scan、docs/examples/deployment/pre-commit/dependency/project metadata、
    release-check、package audit、installed-wheel smoke、`git diff --check`、sdist
    与 wheel 构建通过。
@@ -518,6 +518,74 @@
     当前 `make release-check` 复跑通过：**785 collected / 782 passed + 3 skipped**，
     total coverage **94.59%**，docs gate 验证 **245** 个命令引用，
     package/install audit 均覆盖 **35** 个 console script。
+86. **VeraBench v1.1.2 canonical run 固定**：根据 `docs/ROADMAP.md` 阶段 0，
+    新增 `configs/verabench_v112_canonical.yaml` 作为下一版权威 DeepSeek 全量
+    评测的唯一配置身份，锁定 benchmark v1.1.2、输出路径、checkpoint、模型
+    `deepseek-v4-flash`、temperature `0.0`、`max_tokens=4000`、BM25 检索、
+    `max_retrieval_rounds=1`、全流程开关，以及 2,000 次 bootstrap / seed 1729。
+    `scripts/start_windows_verabench_eval.sh` 默认改用该配置；`docs/RESULTS.md`、
+    README、EVALUATION、GPU_TRAINING、RELEASING 和 `validate_results` 均同步
+    指向同一 canonical run，避免 v1.1.2 全量跑分前出现多个候选入口。当前
+    `make release-check` 复跑通过：**786 collected / 783 passed + 3 skipped**，
+    total coverage **94.59%**，config gate 验证 **7** 个 YAML，docs gate 验证
+    **13** 份 Markdown / **246** 个命令引用，package/install audit 均覆盖
+    **35** 个 console script。
+87. **校准无区分力离线诊断**：根据 `docs/ROADMAP.md` 阶段 2，扩展
+    `experiments/analyze_verabench_results.py` / `verarag-analyze`，新增
+    `confidence_diagnostics` 与 `risk_coverage` 输出，离线报告置信度分布、
+    正确/错误样本均值、confidence AUROC、`underconfident`、
+    `near_constant_confidence`、`weak_correctness_discrimination` 等诊断 flag，
+    以及 AURC / coverage@accuracy。对历史 v1.1 全量报告复跑诊断得到：
+    mean confidence **0.352** vs behavior correctness **0.914**，
+    correct/incorrect mean confidence **0.354 / 0.330**，confidence AUROC
+    **0.555**，flag 为 `underconfident` 和
+    `weak_correctness_discrimination`；说明阶段 2 下一步应优先重建置信信号，
+    而不只是做后验 temperature scaling。当前 `make release-check` 复跑通过：
+    **787 collected / 784 passed + 3 skipped**，total coverage **94.59%**，
+    docs gate 验证 **13** 份 Markdown / **248** 个命令引用。
+88. **运行时置信信号重建**：根据阶段 2 诊断结果，`src/pipeline/verarag.py`
+    的最终 `confidence` 不再只使用 `1 - overall_uncertainty` 与乘法折扣，而是融合
+    verifier 支持/反驳状态、证据质量与 claim 覆盖、answer claim 与 reasoning
+    置信度、冲突压力以及拒答是否合理；`src/uncertainty/calibrator.py` 改为保序的
+    有界 uncertainty penalty，避免强支持样本被压到近常数低分区间。新增回归测试
+    覆盖支持答案 vs 被反驳答案、合理拒答 vs 不合理拒答，以及低 uncertainty 强信号
+    不被压塌。当前 `make release-check` 复跑通过：**790 collected /
+    787 passed + 3 skipped**，total coverage **94.51%**，docs gate 验证
+    **13** 份 Markdown / **248** 个命令引用，package/install audit 均覆盖
+    **35** 个 console script。阶段 2 代码层“根因诊断/信号重建”已完成；ECE、AUROC
+    与 risk-coverage 是否达标仍需 canonical v1.1.2 全量评测验证。
+89. **held-out 后验置信校准**：新增 `experiments/calibrate_verabench_confidence.py`
+    / `verarag-calibrate-report`，对保存的 VeraBench report 做 correctness-stratified
+    deterministic split，并支持 Platt scaling 与 temperature scaling。输出报告会把
+    原始 confidence 保存在 `diagnostics.confidence_calibration.original_confidence`，
+    同时在 `metadata.posthoc_confidence_calibration` 记录 method、seed、split、
+    all/calibration/holdout 的 before/after ECE 与 Brier。历史 v1.1 全量报告用
+    seed 1729、50/50 split、Platt scaling 复跑得到 holdout ECE **0.5523 → 0.0110**，
+    Brier **0.3929 → 0.0836**；这证明“后验校准工具链”已可用，但 canonical v1.1.2
+    仍需全量结果后重新校准并写入权威报告。新增回归测试覆盖报告写入、temperature
+    分支、坏输入 fail-closed 与 CLI 输出。当前 `make release-check` 复跑通过：
+    **794 collected / 791 passed + 3 skipped**，total coverage **94.51%**，
+    docs gate 验证 **13** 份 Markdown / **251** 个命令引用，package/install audit
+    均覆盖 **36** 个 console script。
+90. **分行为后验校准**：`verarag-calibrate-report` 新增
+    `--group-field actual_behavior`、`--min-group-rows` 与 `--group-fallback`，
+    可按 answer / abstain / conflict-note / premise-correction 等实际行为分别
+    拟合 Platt/temperature；当某个行为组校准样本不足或只有单一 correctness 类别时，
+    默认回退到 Laplace-smoothed empirical constant，也可选择全局模型回退。输出摘要会在
+    `metadata.posthoc_confidence_calibration.groups` 记录每组 mode、fallback reason、
+    before/after ECE/Brier；逐题 diagnostics 记录 group value、model scope 与原始
+    confidence。历史 v1.1 全量报告用 seed 1729、50/50 split、Platt + actual_behavior
+    分组复跑得到 holdout ECE **0.5523 → 0.0666**，Brier **0.3929 → 0.0840**；
+    `answer_with_citation` 可拟合 group Platt，其余稀疏/单类别行为使用显式回退。
+    新增测试覆盖分组拟合、回退、缺失 group field fail-closed 与 CLI 参数。
+91. **选择性预测曲线产品化**：`verarag-analyze` 新增
+    `--risk-coverage-svg` 与 `--risk-coverage-csv`，可从保存的 VeraBench report
+    直接输出 risk-coverage 曲线和逐点 CSV，并继续在 JSON/table 中报告 AURC 与
+    coverage@accuracy。历史 v1.1 分行为校准报告生成的诊断曲线已进入
+    `docs/assets/verabench_v11_group_calibrated_risk_coverage.svg`，AURC **0.0328**，
+    coverage@accuracy≥0.95 **0.5724**，coverage@accuracy≥0.90 **1.0000**。
+    新增回归测试覆盖 analyzer artifact 写出路径，`docs/RESULTS.md` 已标明该图仍是
+    historical diagnostic，canonical v1.1.2 需全量重跑后替换。
 
 ## 🆕 本次更新（2026-06-14）：冲突检测召回、检索锚点与回答行为闭环
 
@@ -595,7 +663,7 @@
 |------|------|
 | 仓库 | https://github.com/xiaweiyi713/VeraRAG |
 | 源码行数 | ~8,200 行 (src/) |
-| 测试 | 782 passed + 3 skipped (real LLM) |
+| 测试 | 791 passed + 3 skipped (real LLM) |
 | Web UI | ~1,800 行 (web/) |
 | VeraBench 题库 | 152 题 / 6 类型 |
 | VeraBench 语料 | 57 篇 / 13 主题 |
@@ -691,7 +759,7 @@
 - [x] `run_baselines.py` — 3 种基线对比
 - [x] `build_index.py` — 索引构建 CLI
 
-### 11. 测试覆盖（785 collected）
+### 11. 测试覆盖（794 collected）
 - [x] `test_data_structures.py` — 核心数据结构
 - [x] `test_evaluation_metrics.py` — 5 个评估模块
 - [x] `test_conflict_detection.py` — 8 种冲突检测器

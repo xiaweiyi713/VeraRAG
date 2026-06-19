@@ -83,6 +83,7 @@ def test_console_scripts_are_registered():
     assert 'verarag-benchmark = "experiments.run_verabench:main"' in pyproject
     assert 'verarag-analyze = "experiments.analyze_verabench_results:main"' in pyproject
     assert 'verarag-calibration = "experiments.calibration_curve:main"' in pyproject
+    assert 'verarag-calibrate-report = "experiments.calibrate_verabench_confidence:main"' in pyproject
     assert 'verarag-leaderboard = "experiments.build_verabench_leaderboard:main"' in pyproject
     assert 'verarag-build-conflict-data = "experiments.build_conflict_training_data:main"' in pyproject
     assert 'verarag-train-conflict = "experiments.train_conflict_cross_encoder:main"' in pyproject
