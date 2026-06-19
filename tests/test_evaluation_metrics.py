@@ -133,6 +133,27 @@ class TestEvidenceMetrics(unittest.TestCase):
         )
         self.assertEqual(EvidenceMetrics.citation_recall("Claim [E1]", {"E1", "E2"}), 0.5)
 
+    def test_extract_citations_supports_pipeline_chunk_ids(self):
+        """Citation parser should accept benchmark and pipeline evidence IDs."""
+        answer = "A [E1], B [D001_c0], C [policy-brief_2024], repeated [E1]."
+
+        self.assertEqual(
+            EvidenceMetrics.extract_citations(answer),
+            ["E1", "D001_c0", "policy-brief_2024", "E1"],
+        )
+        self.assertEqual(
+            EvidenceMetrics.citation_precision(answer, {}, {"E1", "D001_c0"}),
+            0.75,
+        )
+        self.assertEqual(
+            EvidenceMetrics.citation_recall(answer, {"E1", "D001_c0", "E2"}),
+            2 / 3,
+        )
+        self.assertAlmostEqual(
+            EvidenceMetrics.citation_f1("A [E1] B [D001_c0]", {"E1", "D001_c0", "E2"}),
+            0.8,
+        )
+
 
 class TestConflictMetrics(unittest.TestCase):
     """Test conflict metrics."""

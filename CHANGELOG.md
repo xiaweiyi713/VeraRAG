@@ -44,6 +44,9 @@ All notable changes to VeraRAG are recorded here.
   support, evidence quality/coverage, claim and reasoning confidence, conflict
   pressure, abstention justification, and bounded uncertainty pressure instead
   of relying on a single multiplicatively discounted uncertainty aggregate.
+- Add VeraBench citation and supporting-fact scoring to per-question rows and
+  report summaries, including pipeline chunk-ID to gold-evidence-ID mapping for
+  answer citations such as `[D001_c0]`.
 
 ### Added
 

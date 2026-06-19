@@ -46,6 +46,14 @@ class QuestionResult:
     answer_f1: float = 0.0
     evidence_recall: float = 0.0
     evidence_precision: float = 0.0
+    supporting_fact_recall: float = 0.0
+    supporting_fact_precision: float = 0.0
+    supporting_fact_f1: float = 0.0
+    citation_recall: float = 0.0
+    citation_precision: float = 0.0
+    citation_f1: float = 0.0
+    citation_count: int = 0
+    required_citations: int = 0
     conflict_detection_f1: float = 0.0
     predicted_conflicts: int = 0
     gold_conflicts: int = 0
@@ -88,6 +96,8 @@ class BenchmarkReport:
         default_factory=dict
     )
     conflict_summary: dict[str, Any] = field(default_factory=dict)
+    supporting_fact_summary: dict[str, Any] = field(default_factory=dict)
+    citation_summary: dict[str, Any] = field(default_factory=dict)
     premise_refutation_summary: dict[str, Any] = field(default_factory=dict)
     behavior_confusion: dict[str, dict[str, int]] = field(default_factory=dict)
     failure_summary: dict[str, Any] = field(default_factory=dict)
@@ -116,6 +126,8 @@ class BenchmarkReport:
                 self.dependency_robust_confidence_intervals
             ),
             "conflict_summary": self.conflict_summary,
+            "supporting_fact_summary": self.supporting_fact_summary,
+            "citation_summary": self.citation_summary,
             "premise_refutation_summary": self.premise_refutation_summary,
             "behavior_confusion": self.behavior_confusion,
             "failure_summary": self.failure_summary,
@@ -135,6 +147,14 @@ class BenchmarkReport:
                     "answer_f1": r.answer_f1,
                     "evidence_recall": round(r.evidence_recall, 4),
                     "evidence_precision": round(r.evidence_precision, 4),
+                    "supporting_fact_recall": round(r.supporting_fact_recall, 4),
+                    "supporting_fact_precision": round(r.supporting_fact_precision, 4),
+                    "supporting_fact_f1": round(r.supporting_fact_f1, 4),
+                    "citation_recall": round(r.citation_recall, 4),
+                    "citation_precision": round(r.citation_precision, 4),
+                    "citation_f1": round(r.citation_f1, 4),
+                    "citation_count": r.citation_count,
+                    "required_citations": r.required_citations,
                     "conflict_detection_f1": round(r.conflict_detection_f1, 4),
                     "predicted_conflicts": r.predicted_conflicts,
                     "gold_conflicts": r.gold_conflicts,
@@ -363,6 +383,8 @@ class VeraBenchEvaluator:
             gold_evidence_ids,
             gold_evidence_ids,
         )
+        gold_supporting_ids = self._gold_supporting_fact_ids(q)
+        supporting_metrics = self._score_supporting_facts(q, gold_supporting_ids)
         supported = sum(
             1 for claim in q.ground_truth_claims
             if claim.status == "supported"
@@ -387,6 +409,14 @@ class VeraBenchEvaluator:
             answer_f1=1.0,
             evidence_recall=evidence_recall,
             evidence_precision=evidence_precision,
+            supporting_fact_recall=supporting_metrics["recall"],
+            supporting_fact_precision=supporting_metrics["precision"],
+            supporting_fact_f1=supporting_metrics["f1"],
+            citation_recall=1.0,
+            citation_precision=1.0 if gold_evidence_ids else 0.0,
+            citation_f1=1.0 if gold_evidence_ids else 0.0,
+            citation_count=len(gold_evidence_ids),
+            required_citations=len(gold_evidence_ids),
             conflict_detection_f1=1.0 if gold_conflict_pairs else 0.0,
             predicted_conflicts=len(gold_conflict_pairs),
             gold_conflicts=len(gold_conflict_pairs),
@@ -409,6 +439,11 @@ class VeraBenchEvaluator:
                 "scored_predicted_conflict_pairs": sorted(gold_conflict_pairs),
                 "unscored_extraneous_conflict_pairs": [],
                 "gold_conflict_pairs": sorted(gold_conflict_pairs),
+                "citation_ids": gold_evidence_ids,
+                "mapped_citation_ids": gold_evidence_ids,
+                "required_citation_ids": gold_evidence_ids,
+                "predicted_supporting_fact_ids": gold_supporting_ids,
+                "gold_supporting_fact_ids": supporting_metrics["gold_ids"],
             },
         )
 
@@ -420,6 +455,8 @@ class VeraBenchEvaluator:
         gold_evidence_ids = [e.evidence_id for e in q.evidence]
         ep = EvidenceMetrics.evidence_precision(predicted_evidence_ids, gold_evidence_ids)
         er = EvidenceMetrics.evidence_recall(predicted_evidence_ids, gold_evidence_ids)
+        citation_metrics = self._score_citations(q, answer)
+        supporting_metrics = self._score_supporting_facts(q, [])
 
         actual_behavior = self._classify_behavior(q, answer)
         premise_refutation_expected = self._premise_refutation_expected(q)
@@ -436,6 +473,14 @@ class VeraBenchEvaluator:
             correct=self._is_correct(q, f1, actual_behavior),
             answer_em=em, answer_f1=f1,
             evidence_recall=er, evidence_precision=ep,
+            supporting_fact_recall=supporting_metrics["recall"],
+            supporting_fact_precision=supporting_metrics["precision"],
+            supporting_fact_f1=supporting_metrics["f1"],
+            citation_recall=citation_metrics["recall"],
+            citation_precision=citation_metrics["precision"],
+            citation_f1=citation_metrics["f1"],
+            citation_count=citation_metrics["citation_count"],
+            required_citations=citation_metrics["required_count"],
             gold_conflicts=gold_conflict_count,
             conflict_false_negatives=gold_conflict_count,
             premise_refutation_expected=premise_refutation_expected,
@@ -445,6 +490,13 @@ class VeraBenchEvaluator:
             ),
             latency_seconds=latency,
             difficulty=q.difficulty,
+            diagnostics={
+                "citation_ids": citation_metrics["citation_ids"],
+                "mapped_citation_ids": citation_metrics["mapped_citation_ids"],
+                "required_citation_ids": citation_metrics["required_citation_ids"],
+                "predicted_supporting_fact_ids": [],
+                "gold_supporting_fact_ids": supporting_metrics["gold_ids"],
+            },
         )
 
     def _score_pipeline_output(self, q: BenchmarkQuestion, output: Any, latency: float) -> QuestionResult:
@@ -456,22 +508,22 @@ class VeraBenchEvaluator:
 
         # Evidence matching — map pipeline evidence_id (D006_c0) → original doc_id (D006) → gold evidence_id (E1)
         gold_evidence_ids = [e.evidence_id for e in q.evidence]
-        doc_to_gold_eid = {ref.doc_id: ref.evidence_id for ref in q.evidence}
-
-        def _chunk_id_to_doc_id(chunk_id: str) -> str:
-            """Strip chunk suffix: D006_c0 → D006"""
-            if "_c" in chunk_id:
-                return chunk_id.rsplit("_c", 1)[0]
-            return chunk_id
+        doc_to_gold_eid = self._doc_to_gold_evidence_id(q)
 
         pred_evidence_ids = []
         if hasattr(output, "evidence"):
             pred_evidence_ids = [
-                doc_to_gold_eid.get(_chunk_id_to_doc_id(e.evidence_id), e.evidence_id)
+                self._map_evidence_id_to_gold(e.evidence_id, doc_to_gold_eid)
                 for e in output.evidence
             ]
         ep = EvidenceMetrics.evidence_precision(pred_evidence_ids, gold_evidence_ids)
         er = EvidenceMetrics.evidence_recall(pred_evidence_ids, gold_evidence_ids)
+        citation_metrics = self._score_citations(q, answer)
+        predicted_supporting_ids = self._predicted_supporting_fact_ids(
+            output,
+            doc_to_gold_eid,
+        )
+        supporting_metrics = self._score_supporting_facts(q, predicted_supporting_ids)
 
         # Conflict detection — map claim IDs → evidence IDs → gold evidence IDs
         # Build claim_id → pipeline evidence_id mapping from conflict report nodes
@@ -495,10 +547,8 @@ class VeraBenchEvaluator:
                 src_ev = claim_to_ev_id.get(src_claim, src_claim)
                 tgt_ev = claim_to_ev_id.get(tgt_claim, tgt_claim)
                 # Map pipeline evidence_id (D006_c0) → doc_id (D006) → gold evidence_id (E1)
-                src_doc = _chunk_id_to_doc_id(src_ev)
-                tgt_doc = _chunk_id_to_doc_id(tgt_ev)
-                src_gold = doc_to_gold_eid.get(src_doc, src_ev)
-                tgt_gold = doc_to_gold_eid.get(tgt_doc, tgt_ev)
+                src_gold = self._map_evidence_id_to_gold(src_ev, doc_to_gold_eid)
+                tgt_gold = self._map_evidence_id_to_gold(tgt_ev, doc_to_gold_eid)
                 pair = tuple(sorted([src_gold, tgt_gold]))
                 pred_conflicts.append(pair)
                 if len(conflict_edge_diagnostics) < 20:
@@ -567,6 +617,11 @@ class VeraBenchEvaluator:
             "premise_refutation_detected": premise_refutation_detected,
             "conflict_report_nodes": len(conflict_report.get("nodes", [])),
             "conflict_report_edges": len(conflict_report.get("edges", [])),
+            "citation_ids": citation_metrics["citation_ids"],
+            "mapped_citation_ids": citation_metrics["mapped_citation_ids"],
+            "required_citation_ids": citation_metrics["required_citation_ids"],
+            "predicted_supporting_fact_ids": predicted_supporting_ids,
+            "gold_supporting_fact_ids": supporting_metrics["gold_ids"],
             "output_metadata": output_metadata,
         }
 
@@ -576,6 +631,14 @@ class VeraBenchEvaluator:
             expected_behavior=q.expected_behavior, actual_behavior=actual_behavior,
             correct=correct, answer_em=em, answer_f1=f1,
             evidence_recall=er, evidence_precision=ep,
+            supporting_fact_recall=supporting_metrics["recall"],
+            supporting_fact_precision=supporting_metrics["precision"],
+            supporting_fact_f1=supporting_metrics["f1"],
+            citation_recall=citation_metrics["recall"],
+            citation_precision=citation_metrics["precision"],
+            citation_f1=citation_metrics["f1"],
+            citation_count=citation_metrics["citation_count"],
+            required_citations=citation_metrics["required_count"],
             conflict_detection_f1=conflict_f1,
             predicted_conflicts=len(pred_conflict_set),
             gold_conflicts=len(gold_conflict_set),
@@ -594,6 +657,113 @@ class VeraBenchEvaluator:
             difficulty=q.difficulty,
             diagnostics=diagnostics,
         )
+
+    @staticmethod
+    def _chunk_id_to_doc_id(evidence_id: str) -> str:
+        """Strip a chunk suffix such as D006_c0 back to its document ID."""
+        if "_c" in evidence_id:
+            return evidence_id.rsplit("_c", 1)[0]
+        return evidence_id
+
+    @staticmethod
+    def _doc_to_gold_evidence_id(q: BenchmarkQuestion) -> dict[str, str]:
+        """Map benchmark document IDs to their question-local gold evidence IDs."""
+        return {ref.doc_id: ref.evidence_id for ref in q.evidence}
+
+    @classmethod
+    def _map_evidence_id_to_gold(
+        cls,
+        evidence_id: str,
+        doc_to_gold_eid: dict[str, str],
+    ) -> str:
+        """Map pipeline chunk/document IDs to question-local gold evidence IDs."""
+        doc_id = cls._chunk_id_to_doc_id(evidence_id)
+        return doc_to_gold_eid.get(doc_id, evidence_id)
+
+    @staticmethod
+    def _dedupe_preserve_order(values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for value in values:
+            if value and value not in seen:
+                seen.add(value)
+                deduped.append(value)
+        return deduped
+
+    def _gold_supporting_fact_ids(self, q: BenchmarkQuestion) -> list[str]:
+        ids: list[str] = []
+        for claim in q.ground_truth_claims:
+            if claim.status.lower() == "supported":
+                ids.extend(claim.evidence_ids)
+        if not ids:
+            ids = [
+                ref.evidence_id
+                for ref in q.evidence
+                if ref.category in {"supporting", "partial"}
+            ]
+        if not ids:
+            ids = [ref.evidence_id for ref in q.evidence]
+        return self._dedupe_preserve_order(ids)
+
+    def _score_supporting_facts(
+        self,
+        q: BenchmarkQuestion,
+        predicted_ids: list[str],
+    ) -> dict[str, Any]:
+        gold_ids = self._gold_supporting_fact_ids(q)
+        return {
+            "gold_ids": gold_ids,
+            "precision": EvidenceMetrics.supporting_fact_precision(
+                predicted_ids,
+                gold_ids,
+            ),
+            "recall": EvidenceMetrics.supporting_fact_recall(predicted_ids, gold_ids),
+            "f1": EvidenceMetrics.supporting_fact_f1(predicted_ids, gold_ids),
+        }
+
+    def _score_citations(self, q: BenchmarkQuestion, answer: str) -> dict[str, Any]:
+        doc_to_gold_eid = self._doc_to_gold_evidence_id(q)
+        citation_ids = EvidenceMetrics.extract_citations(answer)
+        mapped_citation_ids = [
+            self._map_evidence_id_to_gold(citation_id, doc_to_gold_eid)
+            for citation_id in citation_ids
+        ]
+        required_ids = self._dedupe_preserve_order([ref.evidence_id for ref in q.evidence])
+        required_set = set(required_ids)
+        if mapped_citation_ids:
+            precision = (
+                sum(1 for citation_id in mapped_citation_ids if citation_id in required_set)
+                / len(mapped_citation_ids)
+            )
+        else:
+            precision = 0.0
+        recall = (
+            len(set(mapped_citation_ids) & required_set) / len(required_set)
+            if required_set
+            else 1.0
+        )
+        f1 = 0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall)
+        return {
+            "citation_ids": citation_ids,
+            "mapped_citation_ids": mapped_citation_ids,
+            "required_citation_ids": required_ids,
+            "citation_count": len(citation_ids),
+            "required_count": len(required_ids),
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+        }
+
+    def _predicted_supporting_fact_ids(
+        self,
+        output: Any,
+        doc_to_gold_eid: dict[str, str],
+    ) -> list[str]:
+        ids: list[str] = []
+        for claim in getattr(output, "answer_claims", []) or []:
+            for evidence_id in getattr(claim, "supporting_evidence", []) or []:
+                ids.append(self._map_evidence_id_to_gold(evidence_id, doc_to_gold_eid))
+        return self._dedupe_preserve_order(ids)
 
     @staticmethod
     def _coerce_confidence(value: Any) -> float:
@@ -652,6 +822,41 @@ class VeraBenchEvaluator:
                 result.answer_f1,
                 result.actual_behavior,
             )
+            citation_metrics = self._score_citations(question, result.predicted)
+            result.citation_precision = citation_metrics["precision"]
+            result.citation_recall = citation_metrics["recall"]
+            result.citation_f1 = citation_metrics["f1"]
+            result.citation_count = citation_metrics["citation_count"]
+            result.required_citations = citation_metrics["required_count"]
+            result.diagnostics["citation_ids"] = citation_metrics["citation_ids"]
+            result.diagnostics["mapped_citation_ids"] = citation_metrics[
+                "mapped_citation_ids"
+            ]
+            result.diagnostics["required_citation_ids"] = citation_metrics[
+                "required_citation_ids"
+            ]
+            predicted_supporting = result.diagnostics.get(
+                "predicted_supporting_fact_ids",
+                [],
+            )
+            doc_to_gold_eid = self._doc_to_gold_evidence_id(question)
+            mapped_supporting = [
+                self._map_evidence_id_to_gold(evidence_id, doc_to_gold_eid)
+                for evidence_id in predicted_supporting
+            ]
+            result.diagnostics["predicted_supporting_fact_ids"] = (
+                self._dedupe_preserve_order(mapped_supporting)
+            )
+            supporting_metrics = self._score_supporting_facts(
+                question,
+                result.diagnostics["predicted_supporting_fact_ids"],
+            )
+            result.supporting_fact_precision = supporting_metrics["precision"]
+            result.supporting_fact_recall = supporting_metrics["recall"]
+            result.supporting_fact_f1 = supporting_metrics["f1"]
+            result.diagnostics["gold_supporting_fact_ids"] = supporting_metrics[
+                "gold_ids"
+            ]
             self._rescore_conflicts_from_diagnostics(question, result)
         return self._build_report(results)
 
@@ -933,6 +1138,8 @@ class VeraBenchEvaluator:
         )
         report.conflict_summary = self._build_conflict_summary(completed)
         report.overall_conflict_f1 = float(report.conflict_summary.get("f1", 0.0))
+        report.supporting_fact_summary = self._build_supporting_fact_summary(completed)
+        report.citation_summary = self._build_citation_summary(completed)
         report.premise_refutation_summary = self._build_premise_refutation_summary(completed)
         report.behavior_confusion = self._build_behavior_confusion(completed)
         report.failure_summary = self._build_failure_summary(completed, errored)
@@ -963,6 +1170,9 @@ class VeraBenchEvaluator:
                     "answer_em": sum(r.answer_em for r in items) / n,
                     "answer_f1": sum(r.answer_f1 for r in items) / n,
                     "evidence_recall": sum(r.evidence_recall for r in items) / n,
+                    "evidence_precision": sum(r.evidence_precision for r in items) / n,
+                    "supporting_fact_f1": sum(r.supporting_fact_f1 for r in items) / n,
+                    "citation_f1": sum(r.citation_f1 for r in items) / n,
                     "behavior_accuracy": sum(1 for r in items if r.actual_behavior == r.expected_behavior) / n,
                     "avg_confidence": sum(r.confidence for r in items) / n,
                 }
@@ -1059,6 +1269,115 @@ class VeraBenchEvaluator:
             "dominant_failure": dominant_failure,
             "by_type": by_type,
         }
+
+    @staticmethod
+    def _build_binary_id_summary(
+        results: list[QuestionResult],
+        *,
+        precision_field: str,
+        recall_field: str,
+        f1_field: str,
+        predicted_key: str,
+        gold_key: str,
+    ) -> dict[str, Any]:
+        """Aggregate per-question ID-set precision/recall/F1 diagnostics."""
+        total_predicted = 0
+        total_gold = 0
+        total_tp = 0
+        by_type: dict[str, dict[str, Any]] = {}
+        for r in results:
+            predicted_ids = set(r.diagnostics.get(predicted_key, []))
+            gold_ids = set(r.diagnostics.get(gold_key, []))
+            tp = len(predicted_ids & gold_ids)
+            total_predicted += len(predicted_ids)
+            total_gold += len(gold_ids)
+            total_tp += tp
+            bucket = by_type.setdefault(r.question_type, {
+                "count": 0,
+                "predicted": 0,
+                "gold": 0,
+                "tp": 0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+            })
+            bucket["count"] += 1
+            bucket["predicted"] += len(predicted_ids)
+            bucket["gold"] += len(gold_ids)
+            bucket["tp"] += tp
+            bucket["precision"] += getattr(r, precision_field)
+            bucket["recall"] += getattr(r, recall_field)
+            bucket["f1"] += getattr(r, f1_field)
+
+        total_fp = total_predicted - total_tp
+        total_fn = total_gold - total_tp
+        micro_precision = total_tp / total_predicted if total_predicted else 0.0
+        micro_recall = total_tp / total_gold if total_gold else 1.0
+        micro_f1 = (
+            2 * micro_precision * micro_recall / (micro_precision + micro_recall)
+            if micro_precision + micro_recall
+            else 0.0
+        )
+        for bucket in by_type.values():
+            count = bucket["count"]
+            bucket["precision"] = round(bucket["precision"] / count, 4)
+            bucket["recall"] = round(bucket["recall"] / count, 4)
+            bucket["f1"] = round(bucket["f1"] / count, 4)
+
+        return {
+            "available": True,
+            "predicted": total_predicted,
+            "gold": total_gold,
+            "true_positives": total_tp,
+            "false_positives": total_fp,
+            "false_negatives": total_fn,
+            "macro_precision": round(
+                sum(getattr(r, precision_field) for r in results) / len(results),
+                4,
+            ) if results else 0.0,
+            "macro_recall": round(
+                sum(getattr(r, recall_field) for r in results) / len(results),
+                4,
+            ) if results else 0.0,
+            "macro_f1": round(
+                sum(getattr(r, f1_field) for r in results) / len(results),
+                4,
+            ) if results else 0.0,
+            "micro_precision": round(micro_precision, 4),
+            "micro_recall": round(micro_recall, 4),
+            "micro_f1": round(micro_f1, 4),
+            "by_type": by_type,
+        }
+
+    @classmethod
+    def _build_supporting_fact_summary(
+        cls,
+        results: list[QuestionResult],
+    ) -> dict[str, Any]:
+        """Aggregate HotpotQA-style supporting evidence ID metrics."""
+        return cls._build_binary_id_summary(
+            results,
+            precision_field="supporting_fact_precision",
+            recall_field="supporting_fact_recall",
+            f1_field="supporting_fact_f1",
+            predicted_key="predicted_supporting_fact_ids",
+            gold_key="gold_supporting_fact_ids",
+        )
+
+    @classmethod
+    def _build_citation_summary(
+        cls,
+        results: list[QuestionResult],
+    ) -> dict[str, Any]:
+        """Aggregate answer citation precision/recall metrics."""
+        return cls._build_binary_id_summary(
+            results,
+            precision_field="citation_precision",
+            recall_field="citation_recall",
+            f1_field="citation_f1",
+            predicted_key="mapped_citation_ids",
+            gold_key="required_citation_ids",
+        )
 
     @staticmethod
     def _build_premise_refutation_summary(results: list[QuestionResult]) -> dict[str, Any]:

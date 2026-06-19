@@ -332,6 +332,18 @@ Key fields:
   evaluator classifies the question as requiring premise refutation.
 - `question_results[].diagnostics.premise_refutation_detected`: whether the
   generated answer explicitly performed that refutation.
+- `question_results[].diagnostics.citation_ids`: bracketed evidence IDs parsed
+  from the generated answer, such as `E1` or pipeline chunk IDs like
+  `D001_c0`.
+- `question_results[].diagnostics.mapped_citation_ids`: answer citations after
+  mapping pipeline chunk IDs back to question-local VeraBench evidence IDs.
+- `question_results[].diagnostics.required_citation_ids`: gold evidence IDs that
+  should be cited for the question.
+- `question_results[].diagnostics.predicted_supporting_fact_ids`: claim-level
+  supporting evidence IDs emitted by the pipeline after the same gold-ID
+  mapping.
+- `question_results[].diagnostics.gold_supporting_fact_ids`: gold supporting
+  evidence IDs derived from VeraBench ground-truth claims.
 - `question_results[].diagnostics.output_metadata.num_conflicts`: conflict count seen by the answer pipeline before scoring.
 
 For example, if `conflict_summary` shows a false negative, inspect that
@@ -340,6 +352,27 @@ the failure is retrieval. If the gold document is present but
 `conflict_report_edges` is zero, inspect claim extraction, evidence metadata, or
 fact-slot gates. If `conflict_edges` contains the right edge but the mapped pair
 does not match gold, inspect evaluator mapping or VeraBench annotations.
+
+## Citation and Supporting-Fact Metrics
+
+VeraBench reports citation and supporting-fact quality alongside evidence
+retrieval quality:
+
+- `citation_summary`: answer-level citation precision, recall, and F1. The
+  parser accepts bracketed benchmark IDs (`[E1]`) and pipeline chunk IDs
+  (`[D001_c0]`), then maps chunk IDs through the question's gold documents
+  before scoring.
+- `supporting_fact_summary`: HotpotQA-style supporting evidence precision,
+  recall, and F1 over claim-level `answer_claims[].supporting_evidence`.
+- `question_results[].citation_*` and
+  `question_results[].supporting_fact_*`: per-question scores used for macro
+  averages and type/difficulty breakdowns.
+
+Both summaries include macro averages plus micro true positives, false
+positives, and false negatives. Use `citation_summary` when answers cite the
+wrong source despite retrieving the right document; use
+`supporting_fact_summary` when the reasoning/verifier claim links fail even
+though the final prose contains plausible citations.
 
 ## Retrieval Diagnostics
 

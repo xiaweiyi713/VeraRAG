@@ -1050,6 +1050,69 @@ class TestVeraBenchEvaluator:
         assert result.diagnostics["scored_predicted_conflict_pairs"] == []
         assert result.diagnostics["unscored_extraneous_conflict_pairs"] == ["D003_c0-E1"]
 
+    def test_pipeline_scores_citations_and_supporting_facts(self, temp_bench_dir):
+        bench = VeraBenchLoader(temp_bench_dir).load()
+        evaluator = VeraBenchEvaluator(benchmark=bench)
+        q = bench.questions[0]  # D001 maps to gold E1
+
+        output = SimpleNamespace(
+            answer=f"{q.ground_truth_answer} [D001_c0] 额外引用 [D999_c0]",
+            confidence=0.8,
+            evidence=[SimpleNamespace(evidence_id="D001_c0")],
+            answer_claims=[
+                SimpleNamespace(supporting_evidence=["D001_c0"]),
+            ],
+            verification_report=None,
+            conflict_report={"nodes": [], "edges": []},
+            metadata={},
+        )
+
+        result = evaluator._score_pipeline_output(q, output, latency=0.0)
+
+        assert result.evidence_recall == 1.0
+        assert result.supporting_fact_precision == 1.0
+        assert result.supporting_fact_recall == 1.0
+        assert result.supporting_fact_f1 == 1.0
+        assert result.citation_precision == 0.5
+        assert result.citation_recall == 1.0
+        assert round(result.citation_f1, 4) == 0.6667
+        assert result.diagnostics["citation_ids"] == ["D001_c0", "D999_c0"]
+        assert result.diagnostics["mapped_citation_ids"] == ["E1", "D999_c0"]
+        assert result.diagnostics["predicted_supporting_fact_ids"] == ["E1"]
+
+        report = evaluator._build_report([result])
+        assert report.citation_summary["false_positives"] == 1
+        assert report.citation_summary["true_positives"] == 1
+        assert report.citation_summary["micro_f1"] == 0.6667
+        assert report.supporting_fact_summary["micro_f1"] == 1.0
+        assert report.to_dict()["question_results"][0]["citation_f1"] == 0.6667
+
+    def test_rescore_maps_citation_and_supporting_chunk_ids(self, temp_bench_dir):
+        bench = VeraBenchLoader(temp_bench_dir).load()
+        evaluator = VeraBenchEvaluator(benchmark=bench)
+        result = QuestionResult(
+            question_id="T001",
+            question_type="single_evidence",
+            question="?",
+            ground_truth="500万元。",
+            predicted="500万元。 [D001_c0]",
+            expected_behavior="answer_with_citation",
+            actual_behavior="answer_with_citation",
+            correct=False,
+            diagnostics={
+                "predicted_supporting_fact_ids": ["D001_c0"],
+            },
+        )
+
+        report = evaluator.rescore_results([result])
+        row = report.results[0]
+
+        assert row.citation_precision == 1.0
+        assert row.citation_recall == 1.0
+        assert row.supporting_fact_f1 == 1.0
+        assert row.diagnostics["mapped_citation_ids"] == ["E1"]
+        assert row.diagnostics["predicted_supporting_fact_ids"] == ["E1"]
+
     def test_conflict_scoring_ignores_unannotated_self_pairs(self, temp_bench_dir):
         bench = VeraBenchLoader(temp_bench_dir).load()
         evaluator = VeraBenchEvaluator(benchmark=bench)

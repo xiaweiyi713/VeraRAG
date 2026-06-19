@@ -1,7 +1,10 @@
 """Evidence Metrics for VeraRAG Evaluation."""
 
+import re
 
 from ..utils.data_structures import Evidence
+
+_CITATION_PATTERN = re.compile(r"\[([A-Za-z][A-Za-z0-9_-]*)\]")
 
 
 class EvidenceMetrics:
@@ -175,6 +178,11 @@ class EvidenceMetrics:
         return 1.0 if (answer_em == 1.0 and supporting_fact_em == 1.0) else 0.0
 
     @staticmethod
+    def extract_citations(answer: str) -> list[str]:
+        """Extract bracketed evidence IDs from an answer in mention order."""
+        return _CITATION_PATTERN.findall(answer or "")
+
+    @staticmethod
     def citation_precision(
         answer: str,
         evidence_map: dict[str, Evidence],
@@ -191,9 +199,7 @@ class EvidenceMetrics:
         Returns:
             Precision score (0-1)
         """
-        # Extract citations from answer
-        import re
-        citations = re.findall(r'\[([E\d]+)\]', answer)
+        citations = EvidenceMetrics.extract_citations(answer)
 
         if not citations:
             return 0.0
@@ -219,8 +225,19 @@ class EvidenceMetrics:
         if not required_citations:
             return 1.0
 
-        import re
-        citations = set(re.findall(r'\[([E\d]+)\]', answer))
+        citations = set(EvidenceMetrics.extract_citations(answer))
 
         cited = len(citations & required_citations)
         return cited / len(required_citations)
+
+    @staticmethod
+    def citation_f1(
+        answer: str,
+        valid_citations: set[str],
+    ) -> float:
+        """Calculate citation F1 from answer citations and required IDs."""
+        precision = EvidenceMetrics.citation_precision(answer, {}, valid_citations)
+        recall = EvidenceMetrics.citation_recall(answer, valid_citations)
+        if precision + recall == 0:
+            return 0.0
+        return 2 * precision * recall / (precision + recall)
