@@ -339,6 +339,9 @@ python experiments/evaluate_retrieval.py \
     --top-k 10 \
     --top-k-policy complexity_adaptive
 
+# 端到端 pipeline 中可通过 retriever.top_k_policy 显式启用；
+# canonical v1.1.2 配置仍保持 fixed，直到端到端消融证明无行为回退。
+
 # 消融实验（7 组）与基线对比（3 种）
 python experiments/run_ablation.py --demo    # make ablation
 python experiments/run_baselines.py --demo   # make baselines

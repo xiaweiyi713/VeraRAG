@@ -37,6 +37,7 @@ def test_canonical_verabench_config_freezes_authoritative_run_identity():
     assert config["llm"]["model"] == "deepseek-v4-flash"
     assert config["llm"]["temperature"] == 0.0
     assert config["retriever"]["type"] == "bm25"
+    assert config["retriever"]["top_k_policy"] == "fixed"
     assert config["pipeline"]["max_retrieval_rounds"] == 1
 
 
@@ -55,6 +56,7 @@ def test_config_validation_reports_runtime_shape_errors(tmp_path):
                 "  enable_repair: sometimes",
                 "retriever:",
                 "  type: graph",
+                "  top_k_policy: vibes",
                 "conflict_graph:",
                 "  nli_threshold: 1.5",
             ]
@@ -72,6 +74,10 @@ def test_config_validation_reports_runtime_shape_errors(tmp_path):
     assert ("pipeline.max_retrieval_rounds", "pipeline.max_retrieval_rounds must be a positive integer") in messages
     assert ("pipeline.enable_repair", "pipeline.enable_repair must be a boolean") in messages
     assert ("retriever.type", "retriever.type must be one of bm25, hybrid, dense") in messages
+    assert (
+        "retriever.top_k_policy",
+        "retriever.top_k_policy must be one of complexity_adaptive, fixed, precision_cap",
+    ) in messages
     assert ("conflict_graph.nli_threshold", "conflict_graph.nli_threshold must be a probability in [0, 1]") in messages
 
 

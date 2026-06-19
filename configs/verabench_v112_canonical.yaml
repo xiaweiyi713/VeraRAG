@@ -35,6 +35,7 @@ pipeline:
 
 retriever:
   type: bm25
+  top_k_policy: fixed
 
 evidence:
   semantic_dedup: true

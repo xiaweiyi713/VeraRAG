@@ -20,6 +20,7 @@ RUNTIME_CONFIG_NAMES = {
     "verabench_v112_canonical.yaml",
 }
 RETRIEVER_TYPES = {"bm25", "hybrid", "dense"}
+TOP_K_POLICIES = {"fixed", "precision_cap", "complexity_adaptive"}
 
 
 @dataclass(frozen=True)
@@ -126,6 +127,20 @@ def _validate_runtime_config(
             )
         _positive_int(path, "retriever.top_k", retriever.get("top_k"), errors, required=False)
         _positive_int(path, "retriever.fetch_k", retriever.get("fetch_k"), errors, required=False)
+        _choice(
+            path,
+            "retriever.top_k_policy",
+            retriever.get("top_k_policy"),
+            TOP_K_POLICIES,
+            errors,
+        )
+        for field in (
+            "precision_cap_top_k",
+            "adaptive_simple_top_k",
+            "adaptive_medium_top_k",
+            "adaptive_complex_top_k",
+        ):
+            _positive_int(path, f"retriever.{field}", retriever.get(field), errors, required=False)
         _probability(path, "retriever.sparse_weight", retriever.get("sparse_weight"), errors)
         _probability(path, "retriever.dense_weight", retriever.get("dense_weight"), errors)
 
@@ -332,6 +347,25 @@ def _probability(path: str, field: str, value: Any, errors: list[ConfigIssue]) -
         return
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= float(value) <= 1:
         errors.append(ConfigIssue(path, field, f"{field} must be a probability in [0, 1]"))
+
+
+def _choice(
+    path: str,
+    field: str,
+    value: Any,
+    choices: set[str],
+    errors: list[ConfigIssue],
+) -> None:
+    if value is None:
+        return
+    if value not in choices:
+        errors.append(
+            ConfigIssue(
+                path,
+                field,
+                f"{field} must be one of {', '.join(sorted(choices))}",
+            )
+        )
 
 
 def _string(

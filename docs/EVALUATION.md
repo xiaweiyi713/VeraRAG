@@ -387,6 +387,19 @@ temporal/misleading rows, and five for multi-hop/conflict rows; it scores macro
 precision `0.3500`, recall `0.9456`, and F1 `0.4977`. These are offline
 retrieval-selection diagnostics, not end-to-end behavior claims.
 
+The same policy can be enabled in the pipeline through the `retriever` config
+section:
+
+```yaml
+retriever:
+  type: bm25
+  top_k_policy: complexity_adaptive
+```
+
+Pipeline defaults and the canonical v1.1.2 run keep `top_k_policy: fixed` until
+an end-to-end ablation proves that the smaller evidence set improves Evidence
+Precision without causing over-abstention or behavior regressions.
+
 ## Calibration Diagnostics
 
 Analyze confidence bins:

@@ -44,12 +44,13 @@ class TestDynamicRetrievalAgent:
             self.top_k_calls.append(top_k)
             return [
                 RetrievalResult(
-                    doc_id="D001_c0",
-                    content="欧盟AI法案已通过。",
+                    doc_id=f"D{idx:03d}_c0",
+                    content=f"欧盟AI法案证据 {idx}",
                     title="欧盟AI法案",
-                    score=1.0,
+                    score=float(top_k - idx),
                     metadata={"entities": ["欧盟AI法案"]},
                 )
+                for idx in range(top_k)
             ]
 
     def test_result_to_evidence_preserves_entity_metadata(self):
@@ -92,6 +93,48 @@ class TestDynamicRetrievalAgent:
         agent.dynamic_retrieve(subquestions, [], max_rounds=1, budget_per_round=50)
 
         assert retriever.top_k_calls[0] == 10
+
+    def test_precision_cap_keeps_retrieval_depth_but_limits_output(self):
+        from src.agents.retrieval_agent import DynamicRetrievalAgent
+
+        retriever = self.RecordingRetriever()
+        agent = DynamicRetrievalAgent(
+            retriever=retriever,  # type: ignore[arg-type]
+            config={"retriever": {"top_k_policy": "precision_cap", "precision_cap_top_k": 4}},
+        )
+
+        results = agent.retrieve_for_subquestion(
+            SubQuestion(id="sq_original", question="原始问题"),
+            top_k=10,
+        )
+
+        assert retriever.top_k_calls == [10]
+        assert len(results) == 4
+
+    def test_complexity_adaptive_keeps_more_for_conflict_questions(self):
+        from src.agents.retrieval_agent import DynamicRetrievalAgent
+
+        retriever = self.RecordingRetriever()
+        agent = DynamicRetrievalAgent(
+            retriever=retriever,  # type: ignore[arg-type]
+            config={"retriever": {"top_k_policy": "complexity_adaptive"}},
+        )
+
+        simple = agent.retrieve_for_subquestion(
+            SubQuestion(id="sq_simple", question="普通事实问题"),
+            top_k=10,
+        )
+        conflict = agent.retrieve_for_subquestion(
+            SubQuestion(
+                id="sq_conflict",
+                question="冲突问题",
+                required_evidence_type="conflict",
+            ),
+            top_k=10,
+        )
+
+        assert len(simple) == 2
+        assert len(conflict) == 5
 
     def test_compact_entity_group_expands_retrieval_queries(self):
         from src.agents.retrieval_agent import DynamicRetrievalAgent

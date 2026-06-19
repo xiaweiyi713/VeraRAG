@@ -13,6 +13,9 @@ pipeline:
 
 retriever:
   type: hybrid
+  # fixed preserves the historical pipeline behavior. Use precision_cap or
+  # complexity_adaptive for Stage-3 retrieval-precision ablations.
+  top_k_policy: fixed
 
 evidence:
   semantic_dedup: true

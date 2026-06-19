@@ -630,6 +630,13 @@
     precision **0.3500**、recall **0.9456**、F1 **0.4977**。这满足“离线文档检索
     精度 ≥0.30 且召回仍高”的中间目标，但还不是端到端 Evidence Precision /
     Behavior 改善证明，下一步需要在 pipeline 或 ablation 中验证是否会引发过度拒答。
+97. **动态 top-k pipeline 开关**：`DynamicRetrievalAgent` 现在读取
+    `retriever.top_k_policy`，支持 `fixed`、`precision_cap` 与
+    `complexity_adaptive`，并允许通过 `precision_cap_top_k` /
+    `adaptive_*_top_k` 调整裁剪阈值。实现保留原始检索深度、只裁剪进入
+    evidence pool 的文档数；`configs/model.yaml` 与 canonical v1.1.2 配置显式保持
+    `fixed`，避免未验证策略影响权威 run。新增 agent/config/integration 测试确认
+    policy 裁剪、validator 校验和 pipeline 传参。
 
 ## 🆕 本次更新（2026-06-14）：冲突检测召回、检索锚点与回答行为闭环
 

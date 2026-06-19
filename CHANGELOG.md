@@ -179,6 +179,9 @@ All notable changes to VeraRAG are recorded here.
 - Extend `verarag-evaluate-retrieval` with top-k sweeps plus `precision_cap`
   and `complexity_adaptive` selection policies, making the retrieval
   precision/recall frontier reproducible before changing pipeline defaults.
+- Add optional pipeline support for `retriever.top_k_policy`, allowing
+  `precision_cap` and `complexity_adaptive` evidence selection to be tested
+  end-to-end while canonical runs remain on the historical `fixed` policy.
 - Add `verarag-calibrate-report`, a held-out post-hoc confidence calibration
   CLI that fits Platt or temperature scaling, preserves original row
   confidences, and writes before/after calibration and holdout metrics into

@@ -78,6 +78,12 @@ class DynamicRetrievalAgent(BaseAgent):
         self.system_prompt = """You are an expert at generating effective search queries.
 Your goal is to create queries that will find relevant evidence.
 Output ONLY valid JSON, no other text."""
+        retriever_config = self.config.get("retriever", {})
+        self.top_k_policy = str(retriever_config.get("top_k_policy", "fixed"))
+        self.precision_cap_top_k = int(retriever_config.get("precision_cap_top_k", 4))
+        self.adaptive_simple_top_k = int(retriever_config.get("adaptive_simple_top_k", 2))
+        self.adaptive_medium_top_k = int(retriever_config.get("adaptive_medium_top_k", 4))
+        self.adaptive_complex_top_k = int(retriever_config.get("adaptive_complex_top_k", 5))
 
     def retrieve_for_subquestion(
         self,
@@ -113,18 +119,69 @@ Output ONLY valid JSON, no other text."""
                 seen_ids.add(r.doc_id)
                 unique_results.append(r)
 
-        # Re-rank and limit
-        unique_results = sorted(unique_results, key=lambda x: x.score, reverse=True)[:top_k]
+        # Re-rank and limit. The retrieval depth can stay high for recall, while
+        # the retained evidence set is controlled by a configurable policy.
+        selected_top_k = self._select_output_top_k(subquestion, top_k)
+        unique_results = sorted(unique_results, key=lambda x: x.score, reverse=True)[
+            :selected_top_k
+        ]
 
         # If counter-evidence is requested, generate negation queries
         if seek_counter_evidence or subquestion.requires_counter_evidence:
             counter_queries = self._generate_counter_evidence_queries(subquestion.question)
-            counter_top_k = max(1, top_k // 2)
+            counter_top_k = max(1, selected_top_k // 2)
             for cq in counter_queries:
                 c_results = self.retriever.retrieve(cq, top_k=counter_top_k)
                 unique_results.extend(c_results)
 
         return unique_results
+
+    def _select_output_top_k(self, subquestion: SubQuestion, retrieval_depth: int) -> int:
+        """Select how many retrieved documents should enter the evidence pool."""
+        if retrieval_depth < 0:
+            raise ValueError("retrieval_depth must be non-negative")
+        if self.top_k_policy == "fixed":
+            return retrieval_depth
+        if self.top_k_policy == "precision_cap":
+            return min(retrieval_depth, max(1, self.precision_cap_top_k))
+        if self.top_k_policy == "complexity_adaptive":
+            if self._is_complex_retrieval_need(subquestion):
+                return min(retrieval_depth, max(1, self.adaptive_complex_top_k))
+            if self._is_medium_retrieval_need(subquestion):
+                return min(retrieval_depth, max(1, self.adaptive_medium_top_k))
+            return min(retrieval_depth, max(1, self.adaptive_simple_top_k))
+        raise ValueError(
+            "retriever.top_k_policy must be one of fixed, precision_cap, "
+            "complexity_adaptive"
+        )
+
+    @staticmethod
+    def _is_complex_retrieval_need(subquestion: SubQuestion) -> bool:
+        evidence_type = subquestion.required_evidence_type.lower()
+        if subquestion.requires_counter_evidence or subquestion.dependency_ids:
+            return True
+        return any(
+            marker in evidence_type
+            for marker in ("multi", "hop", "conflict", "comparative", "comparison")
+        )
+
+    @staticmethod
+    def _is_medium_retrieval_need(subquestion: SubQuestion) -> bool:
+        evidence_type = subquestion.required_evidence_type.lower()
+        question = subquestion.question.lower()
+        return any(
+            marker in evidence_type or marker in question
+            for marker in (
+                "temporal",
+                "time",
+                "timeline",
+                "latest",
+                "最新",
+                "时间",
+                "进展",
+                "版本",
+            )
+        )
 
     def dynamic_retrieve(
         self,

@@ -126,6 +126,20 @@ def _create_pipeline(config):
     return pipeline
 
 
+def test_retrieval_top_k_policy_config_reaches_retrieval_agent(pipeline_config):
+    config = {
+        **pipeline_config,
+        "retriever": {
+            **pipeline_config["retriever"],
+            "top_k_policy": "complexity_adaptive",
+        },
+    }
+
+    pipeline = _create_pipeline(config)
+
+    assert pipeline.retrieval_agent.top_k_policy == "complexity_adaptive"
+
+
 class TestPipelineIntegration:
     def test_original_question_retrieval_anchor_is_added(self):
         from src.pipeline.verarag import VeraRAG
