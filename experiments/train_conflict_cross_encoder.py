@@ -231,16 +231,44 @@ def _classification_metrics(
     }
 
 
-def _best_threshold(labels: list[int], probabilities: list[float]) -> float:
+def _best_threshold(
+    labels: list[int],
+    probabilities: list[float],
+    *,
+    objective: str = "f1",
+    min_precision: float = 0.0,
+    min_recall: float = 0.0,
+) -> float:
     if not labels:
         return 0.5
+    if objective not in {"f1", "precision", "recall"}:
+        raise ValueError("objective must be one of: f1, precision, recall")
     candidates = sorted({0.0, 0.5, 0.7, 1.0, *probabilities})
 
-    def key(threshold: float) -> tuple[float, float, float]:
+    def key(threshold: float) -> tuple[float, float, float, float, float, float]:
         metrics = _classification_metrics(labels, probabilities, threshold)
+        precision = float(metrics["precision"])
+        recall = float(metrics["recall"])
+        f1 = float(metrics["f1"])
+        feasible = float(precision >= min_precision and recall >= min_recall)
+        if objective == "precision":
+            primary = precision
+            secondary = f1
+            tertiary = recall
+        elif objective == "recall":
+            primary = recall
+            secondary = f1
+            tertiary = precision
+        else:
+            primary = f1
+            secondary = recall
+            tertiary = precision
         return (
-            float(metrics["f1"]),
-            float(metrics["recall"]),
+            feasible,
+            primary,
+            secondary,
+            tertiary,
+            f1,
             -abs(threshold - 0.5),
         )
 
@@ -391,6 +419,28 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--warmup-steps", type=int, default=10)
     parser.add_argument("--threshold", type=float, default=0.7)
+    parser.add_argument(
+        "--threshold-objective",
+        choices=["f1", "precision", "recall"],
+        default="f1",
+        help=(
+            "Validation objective used to select the learned-detector threshold. "
+            "Use precision for supplemental conflict layers where false positives "
+            "are more damaging than missed learned edges."
+        ),
+    )
+    parser.add_argument(
+        "--min-threshold-precision",
+        type=float,
+        default=0.0,
+        help="Preferred minimum validation precision for selected threshold.",
+    )
+    parser.add_argument(
+        "--min-threshold-recall",
+        type=float,
+        default=0.0,
+        help="Preferred minimum validation recall for selected threshold.",
+    )
     parser.add_argument("--seed", type=int, default=13)
     parser.add_argument(
         "--no-balance-train",
@@ -534,7 +584,13 @@ def main() -> None:
     metric_rows = {"val": val_rows, "test": test_rows}
     scored: dict[str, dict[str, Any]] = {}
     val_labels, val_probabilities = _score_rows(model, val_rows)
-    selected_threshold = _best_threshold(val_labels, val_probabilities)
+    selected_threshold = _best_threshold(
+        val_labels,
+        val_probabilities,
+        objective=args.threshold_objective,
+        min_precision=args.min_threshold_precision,
+        min_recall=args.min_threshold_recall,
+    )
     if val_rows:
         scored["val"] = {
             "default_threshold": _classification_metrics(
@@ -599,6 +655,11 @@ def main() -> None:
         "schema_version": "conflict-training-metrics-v2",
         "default_threshold": args.threshold,
         "selected_threshold": round(selected_threshold, 6),
+        "threshold_selection": {
+            "objective": args.threshold_objective,
+            "min_precision": args.min_threshold_precision,
+            "min_recall": args.min_threshold_recall,
+        },
         "prediction_artifacts": prediction_artifacts,
         "splits": scored,
     }

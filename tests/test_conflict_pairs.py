@@ -638,3 +638,21 @@ def test_best_threshold_prefers_validation_f1():
     )
 
     assert 0.4 < threshold <= 0.8
+
+
+def test_best_threshold_can_prefer_precision_for_supplemental_layer():
+    threshold = _best_threshold(
+        labels=[1, 1, 0, 0],
+        probabilities=[0.9, 0.45, 0.8, 0.1],
+        objective="precision",
+        min_precision=1.0,
+    )
+
+    metrics = _classification_metrics(
+        labels=[1, 1, 0, 0],
+        probabilities=[0.9, 0.45, 0.8, 0.1],
+        threshold=threshold,
+    )
+    assert threshold == 0.9
+    assert metrics["precision"] == 1.0
+    assert metrics["fp"] == 0
