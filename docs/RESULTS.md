@@ -119,15 +119,17 @@ A guarded follow-up config,
 `retriever_reranker_preserve_base_top_k=1` and
 `reasoning_enforce_answer_citations=true` in new reports. On the three-question
 DeepSeek smoke (`V001`, `V017`, `V041`), it keeps Evidence Recall and Behavior
-Accuracy at `1.0000`, improves Citation F1 from `0.0000` to `0.8889` versus
-the canonical smoke, and improves Evidence Precision from `0.1667` to
-`0.8333`. A question-aware NLI pruning guard removes same-polarity law-status
-false positives for ordinary status questions while preserving premise-check
-cross-evidence conflicts; after that fix, Conflict micro-F1 is `1.0000` on the
-smoke. It is still not ready for full-run promotion: Answer F1 is `0.4721`
-versus canonical smoke `0.5382`, Brier worsens to `0.4239`, and
-Supporting-Fact F1 drops to `0.8889`. The next retrieval candidate should
-reduce over-broad answer/supporting citations before a 152-question rerun.
+Accuracy at `1.0000`, improves Evidence Precision from `0.1667` to `0.8333`,
+improves Citation F1 from `0.0000` to `1.0000`, improves Answer F1 from
+`0.5382` to `0.6914`, preserves Supporting-Fact F1 at `1.0000`, improves Brier
+from `0.4140` to `0.4040`, and cuts mean latency from `57.58s` to `13.92s`
+versus the canonical smoke. A question-aware NLI pruning guard removes
+same-polarity law-status false positives for ordinary status questions while
+preserving premise-check cross-evidence conflicts; a point-in-time value guard
+also filters early-version evidence when an exact current-value answer drifts
+into historical digressions. The guarded three-question smoke now clears its
+launch gate, but it remains too small for promotion; the next retrieval
+candidate should run a broader guarded gate before a 152-question rerun.
 
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 

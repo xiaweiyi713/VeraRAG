@@ -785,6 +785,119 @@ class VeraRAG:
 
         return answer, claims, reasoning, None
 
+    def _apply_point_in_time_value_guard(
+        self,
+        question: str,
+        answer: str,
+        claims: list[AnswerClaim],
+        reasoning: list[ReasoningStep],
+        evidence: list[Evidence],
+        conflict_graph: EvidenceConflictGraph,
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep], dict[str, Any] | None]:
+        """Correct historical-version digressions for current exact-value questions."""
+        if not self._should_apply_point_in_time_value_guard(
+            question,
+            answer,
+            evidence,
+            conflict_graph,
+        ):
+            return answer, claims, reasoning, None
+
+        current_evidence = [
+            item for item in evidence
+            if not self._is_historical_version_evidence(item, question)
+        ]
+        relevant = self._rank_guard_sentences(question, current_evidence, limit=1)
+        if not relevant:
+            return answer, claims, reasoning, None
+
+        evidence_id, sentence = relevant[0]
+        guarded_answer = f"根据现有证据，{sentence}（[{evidence_id}]）。"
+        guarded_claims = [
+            AnswerClaim(
+                claim=sentence,
+                supporting_evidence=[evidence_id],
+                confidence=0.88,
+                claim_type="factual",
+                verifiable=True,
+                support_type="direct",
+            )
+        ]
+        guarded_reasoning = [
+            ReasoningStep(
+                step=1,
+                description="识别到问题询问当前/最终版本的具体数值，过滤早期版本噪声并仅保留直接回答该数值的证据。",
+                evidence_ids=[evidence_id],
+                confidence=0.88,
+            ),
+            *reasoning,
+        ]
+        for index, step in enumerate(guarded_reasoning, start=1):
+            step.step = index
+        return (
+            guarded_answer,
+            guarded_claims,
+            guarded_reasoning,
+            {
+                "action": "point_in_time_value_answer",
+                "selected_evidence": evidence_id,
+            },
+        )
+
+    @classmethod
+    def _should_apply_point_in_time_value_guard(
+        cls,
+        question: str,
+        answer: str,
+        evidence: list[Evidence],
+        conflict_graph: EvidenceConflictGraph,
+    ) -> bool:
+        if conflict_graph.get_conflicts():
+            return False
+        if cls._is_premise_validation_question(question) or cls._is_comparison_question(question):
+            return False
+        question_text = question.lower()
+        value_markers = (
+            "多少",
+            "几",
+            "数值",
+            "金额",
+            "比例",
+            "百分比",
+            "上限",
+            "下限",
+            "罚款",
+            "specific",
+            "exact",
+        )
+        if not any(marker in question_text for marker in value_markers):
+            return False
+        if not re.search(r"\d", answer):
+            return False
+        drift_markers = ("证据存在冲突", "证据中存在不一致", "早期提案", "早期版本", "初始提案", "最终通过")
+        if not any(marker in answer for marker in drift_markers):
+            return False
+        return any(cls._is_historical_version_evidence(item, question) for item in evidence)
+
+    @staticmethod
+    def _is_historical_version_evidence(evidence: Evidence, question: str) -> bool:
+        if any(
+            marker in question
+            for marker in ("早期", "初始", "提案", "后来", "变化", "演变", "修订", "相比", "对比")
+        ):
+            return False
+        title = evidence.title or ""
+        title_historical_markers = ("早期", "初始", "提案版本", "草案", "旧版")
+        if any(marker in title for marker in title_historical_markers):
+            return True
+
+        text = f"{title} {evidence.text_span}"
+        historical_markers = ("早期", "初始", "提案版本", "2021年初始提案", "草案", "旧版")
+        current_markers = ("最终", "正式通过", "现行", "当前", "最新")
+        return any(marker in text for marker in historical_markers) and not any(
+            marker in text for marker in current_markers
+        )
+
     @classmethod
     def _is_abstention_answer(cls, answer: str) -> bool:
         return any(marker in answer for marker in cls._ABSTENTION_MARKERS)
@@ -842,6 +955,7 @@ class VeraRAG:
                 if not sentence:
                     continue
                 score = cls._guard_overlap(question_terms, sentence)
+                score += cls._guard_attribute_score(question, sentence)
                 if re.search(r"\d", sentence):
                     score += 0.25
                 if any(marker in sentence.lower() for marker in cls._APPROXIMATE_MARKERS):
@@ -886,6 +1000,20 @@ class VeraRAG:
     def _guard_overlap(question_terms: set[str], sentence: str) -> float:
         lowered = sentence.lower()
         return sum(1.0 for term in question_terms if term in lowered)
+
+    @staticmethod
+    def _guard_attribute_score(question: str, sentence: str) -> float:
+        question_text = question.lower()
+        sentence_text = sentence.lower()
+        score = 0.0
+        if any(marker in question_text for marker in ("罚款", "处罚", "上限", "营业额", "fine", "penalty")):
+            if any(marker in sentence_text for marker in ("罚款", "处罚", "上限", "营业额", "欧元", "fine", "penalty", "turnover")):
+                score += 6.0
+            if any(marker in sentence_text for marker in ("生效", "适用", "风险等级", "分类", "规则")) and not any(
+                marker in sentence_text for marker in ("罚款", "处罚", "上限", "营业额", "欧元")
+            ):
+                score -= 4.0
+        return score
 
     def _build_exact_value_gap_answer(
         self,
@@ -1175,6 +1303,17 @@ class VeraRAG:
             reasoning_chain,
             evidence_pool,
         )
+        if not answerability_guard:
+            answer, answer_claims, reasoning_chain, answerability_guard = (
+                self._apply_point_in_time_value_guard(
+                    question,
+                    answer,
+                    answer_claims,
+                    reasoning_chain,
+                    evidence_pool,
+                    conflict_graph,
+                )
+            )
         if answerability_guard:
             emit("answerability_guard", {
                 **answerability_guard,

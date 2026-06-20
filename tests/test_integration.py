@@ -1248,6 +1248,52 @@ class TestPipelineIntegration:
         assert claims[0].claim == "问题中的断言缺乏充分证据支持"
         assert steps[0].description.startswith("识别到这是前提/断言验证问题")
 
+    def test_point_in_time_value_guard_filters_historical_version_noise(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D002_c0",
+                source="report",
+                title="欧盟AI法案早期提案版本要点",
+                text_span="2021年初始提案规定罚款上限为3000万欧元或全球年营业额6%。",
+                date="2021-04-21",
+                relevance_score=0.7,
+            ),
+            Evidence(
+                evidence_id="D001_c0",
+                source="official",
+                title="欧盟人工智能法案：从提案到立法",
+                text_span="违规者最高可被处以3500万欧元或全球年营业额7%的罚款。",
+                date="2024-03-13",
+                relevance_score=0.95,
+            ),
+        ]
+
+        answer, claims, steps, guard = pipeline._apply_point_in_time_value_guard(
+            "欧盟AI法案将违规罚款上限设定为多少？",
+            "证据存在冲突：早期提案是3000万欧元或6%，最终通过版本是3500万欧元或7%。\n"
+            "引用证据：[D002_c0] [D001_c0]",
+            [
+                AnswerClaim(
+                    claim="罚款上限存在早期和最终版本差异",
+                    supporting_evidence=["D002_c0", "D001_c0"],
+                )
+            ],
+            [],
+            evidence,
+            EvidenceConflictGraph(),
+        )
+
+        assert guard == {
+            "action": "point_in_time_value_answer",
+            "selected_evidence": "D001_c0",
+        }
+        assert "3500万欧元" in answer
+        assert "[D001_c0]" in answer
+        assert "D002_c0" not in answer
+        assert claims[0].supporting_evidence == ["D001_c0"]
+        assert steps[0].evidence_ids == ["D001_c0"]
+
     def test_final_confidence_uses_verification_evidence_and_conflicts(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
         evidence = [

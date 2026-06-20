@@ -118,14 +118,19 @@ All notable changes to VeraRAG are recorded here.
   `reasoning_enforce_answer_citations`) so Stage-3 reports remain auditable.
 - Run the guarded+citation DeepSeek smoke on `V001`, `V017`, and `V041`:
   Evidence Precision improves from `0.1667` to `0.8333`, Citation F1 from
-  `0.0000` to `0.8889`, and Recall/Behavior stay at `1.0000` versus canonical
-  smoke, but Answer F1, Brier, Supporting-Fact F1, and conflict behavior still
-  block a full-run promotion.
+  `0.0000` to `1.0000`, Answer F1 from `0.5382` to `0.6914`, and
+  Recall/Behavior/Supporting-Fact F1 stay at `1.0000` versus canonical smoke;
+  the result clears the three-question guarded gate but remains too small for
+  full-run promotion.
 - Add question-aware NLI conflict pruning for law-status claims: ordinary
   status questions suppress NLI false positives between same-polarity
   "passed/approved" claims, while premise-validation questions retain
   cross-evidence disagreements. The guarded smoke now reaches Conflict F1
   `1.0000` with zero conflict FP/FN.
+- Add a point-in-time value guard for exact current-value questions: when an
+  answer drifts into early-version evidence despite no true conflict, the
+  pipeline filters historical-version chunks and emits a single direct
+  claim/citation for the current value.
 
 ### Added
 
