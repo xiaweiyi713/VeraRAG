@@ -46,6 +46,8 @@ All notable changes to VeraRAG are recorded here.
 - Add a checkpoint repair helper for long VeraBench runs that backs up JSONL
   checkpoints and removes transient errored rows so resume reruns only failed
   questions, exposed as `verarag-repair-checkpoint`.
+- Add `verarag-benchmark-status`, a read-only checkpoint/report progress
+  summary CLI for long VeraBench runs.
 - Normalize pipeline and loaded report confidence values into finite `[0, 1]`
   probabilities before calibration and aggregate reporting.
 - Rebuild runtime pipeline confidence as a behavior-level fusion of verifier

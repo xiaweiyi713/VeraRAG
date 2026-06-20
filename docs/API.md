@@ -228,6 +228,7 @@ verarag-benchmark --demo
 verarag-analyze results/verabench_full.json --risk-coverage-svg results/risk_coverage.svg --risk-coverage-csv results/risk_coverage.csv
 verarag-rescore results/verabench_full.json --output results/verabench_rescored.json
 verarag-merge-reports results/part-a.json results/part-b.json --output results/full.json
+verarag-benchmark-status --checkpoint results/verabench_full.json.ckpt.jsonl --report results/verabench_full.json
 verarag-repair-checkpoint results/verabench_full.json.ckpt.jsonl --dry-run
 verarag-calibration --input results/verabench_full.json --correctness-field correct --output results/calibration_curve.svg
 verarag-calibrate-report --input results/verabench_full.json --output results/verabench_full_calibrated.json --method platt --group-field actual_behavior

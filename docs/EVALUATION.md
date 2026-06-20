@@ -102,6 +102,9 @@ never overwrites an existing explicit backup path.
 Installed package equivalent:
 
 ```bash
+verarag-benchmark-status \
+  --checkpoint results/verabench_full.json.ckpt.jsonl \
+  --report results/verabench_full.json
 verarag-repair-checkpoint results/verabench_full.json.ckpt.jsonl --dry-run
 ```
 
