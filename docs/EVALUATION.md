@@ -403,6 +403,15 @@ wrong source despite retrieving the right document; use
 `supporting_fact_summary` when the reasoning/verifier claim links fail even
 though the final prose contains plausible citations.
 
+The reasoning agent now includes a deterministic citation guard controlled by
+`reasoning.enforce_answer_citations` (default `true`). After the LLM produces
+`answer_claims[].supporting_evidence`, the guard appends any missing, in-pool
+evidence IDs to the final answer as a compact `引用证据：[D001_c0]` footer. This
+does not invent citations: IDs are copied only from claim-level support that
+already exists in the current evidence pool. The goal is to make the answer text
+and claim metadata agree so `citation_summary` can measure the same support
+chain that `supporting_fact_summary` already sees.
+
 ## Retrieval Diagnostics
 
 Run document-level retrieval evaluation without an LLM:

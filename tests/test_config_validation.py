@@ -153,6 +153,8 @@ def test_config_validation_reports_runtime_shape_errors(tmp_path):
                 "pipeline:",
                 "  max_retrieval_rounds: 0",
                 "  enable_repair: sometimes",
+                "reasoning:",
+                "  enforce_answer_citations: sometimes",
                 "retriever:",
                 "  type: graph",
                 "  retrieval_top_k: 0",
@@ -174,6 +176,10 @@ def test_config_validation_reports_runtime_shape_errors(tmp_path):
     assert ("llm.model", "llm.model must be a non-empty string") in messages
     assert ("pipeline.max_retrieval_rounds", "pipeline.max_retrieval_rounds must be a positive integer") in messages
     assert ("pipeline.enable_repair", "pipeline.enable_repair must be a boolean") in messages
+    assert (
+        "reasoning.enforce_answer_citations",
+        "reasoning.enforce_answer_citations must be a boolean",
+    ) in messages
     assert (
         "retriever.type",
         "retriever.type must be one of bm25, bm25_rerank, dense, dense_rerank, "

@@ -3,6 +3,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -465,6 +467,97 @@ class TestReasoningAgent:
         assert "D011_c0" in answer
         assert claims[0].conflicting_evidence == ["D014_c0", "D011_c0"]
         assert steps[0].evidence_ids == ["D014_c0", "D011_c0"]
+
+    def test_reason_appends_missing_answer_citations_from_supported_claims(self):
+        from src.agents.reasoning_agent import ReasoningAgent
+
+        json_response = '''{
+            "answer": "星辰科技2023年营收为612亿元。",
+            "answer_claims": [
+                {
+                    "claim": "星辰科技2023年营收为612亿元",
+                    "supporting_evidence": ["D011_c0", "D999_c0"],
+                    "conflicting_evidence": [],
+                    "confidence": 0.8,
+                    "claim_type": "factual",
+                    "verifiable": true,
+                    "support_type": "direct"
+                }
+            ],
+            "reasoning_chain": [
+                {"step": 1, "description": "读取财报", "evidence_ids": ["D011_c0"], "confidence": 0.8}
+            ]
+        }'''
+        evidence = [
+            Evidence(
+                evidence_id="D011_c0",
+                source="report",
+                title="2023财报",
+                text_span="星辰科技2023财年全年营收达到612亿元人民币。",
+            )
+        ]
+        agent = ReasoningAgent(llm_client=MockLLM(json_response))
+
+        answer, _claims, _steps = agent.reason(
+            question="星辰科技2023年的营收是多少？",
+            subquestions=self._make_subquestions(),
+            evidence=evidence,
+            conflict_graph=EvidenceConflictGraph(),
+            reasoning_plan=["分析证据"],
+        )
+
+        assert answer.endswith("引用证据：[D011_c0]")
+        assert "D999_c0" not in answer
+
+    def test_reason_can_disable_answer_citation_footer(self):
+        from src.agents.reasoning_agent import ReasoningAgent
+
+        json_response = '''{
+            "answer": "星辰科技2023年营收为612亿元。",
+            "answer_claims": [
+                {
+                    "claim": "星辰科技2023年营收为612亿元",
+                    "supporting_evidence": ["D011_c0"],
+                    "conflicting_evidence": [],
+                    "confidence": 0.8,
+                    "claim_type": "factual",
+                    "verifiable": true,
+                    "support_type": "direct"
+                }
+            ],
+            "reasoning_chain": []
+        }'''
+        evidence = [
+            Evidence(
+                evidence_id="D011_c0",
+                source="report",
+                title="2023财报",
+                text_span="星辰科技2023财年全年营收达到612亿元人民币。",
+            )
+        ]
+        agent = ReasoningAgent(
+            config={"reasoning": {"enforce_answer_citations": False}},
+            llm_client=MockLLM(json_response),
+        )
+
+        answer, _claims, _steps = agent.reason(
+            question="星辰科技2023年的营收是多少？",
+            subquestions=self._make_subquestions(),
+            evidence=evidence,
+            conflict_graph=EvidenceConflictGraph(),
+            reasoning_plan=["分析证据"],
+        )
+
+        assert answer == "星辰科技2023年营收为612亿元。"
+
+    def test_reason_rejects_non_boolean_citation_guard_config(self):
+        from src.agents.reasoning_agent import ReasoningAgent
+
+        with pytest.raises(ValueError, match="enforce_answer_citations"):
+            ReasoningAgent(
+                config={"reasoning": {"enforce_answer_citations": "false"}},
+                llm_client=MockLLM(),
+            )
 
 
 # --- VerifierAgent Tests ---

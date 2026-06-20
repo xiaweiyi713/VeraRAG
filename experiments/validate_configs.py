@@ -182,6 +182,14 @@ def _validate_runtime_config(
         _probability(path, "retriever.dense_weight", retriever.get("dense_weight"), errors)
 
     _mapping_section(path, payload, "pipeline", errors, required=True)
+    reasoning = _mapping_section(path, payload, "reasoning", errors, required=False)
+    if reasoning is not None:
+        _boolean(
+            path,
+            "reasoning.enforce_answer_citations",
+            reasoning.get("enforce_answer_citations"),
+            errors,
+        )
 
 
 def _validate_dataset_config(

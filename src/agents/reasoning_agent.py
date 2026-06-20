@@ -1,6 +1,7 @@
 """Reasoning Agent for VeraRAG."""
 
 import json
+import re
 from typing import Any
 
 from ..utils.data_structures import (
@@ -11,6 +12,8 @@ from ..utils.data_structures import (
     SubQuestion,
 )
 from .base import BaseAgent
+
+_CITATION_PATTERN = re.compile(r"\[([A-Za-z][A-Za-z0-9_-]*)\]")
 
 
 class ReasoningAgent(BaseAgent):
@@ -26,6 +29,11 @@ class ReasoningAgent(BaseAgent):
 
     def __init__(self, config: dict[str, Any] | None = None, llm_client: Any | None = None):
         super().__init__(config, llm_client)
+        reasoning_config = self.config.get("reasoning", {})
+        enforce_answer_citations = reasoning_config.get("enforce_answer_citations", True)
+        if not isinstance(enforce_answer_citations, bool):
+            raise ValueError("reasoning.enforce_answer_citations must be a boolean")
+        self.enforce_answer_citations = enforce_answer_citations
         self.system_prompt = """你是面向复杂知识任务的推理专家，目标是基于给定证据生成准确、有据可依的回答。
 核心准则：宁可拒答，也不臆造。证据不足时必须明确拒答；问题前提与证据矛盾时必须纠正前提；证据相互冲突时必须如实标注冲突。
 所有回答用简体中文。只输出合法 JSON，不要输出其它内容。"""
@@ -149,6 +157,7 @@ class ReasoningAgent(BaseAgent):
                 conflict_graph,
                 evidence,
             )
+            answer = self._ensure_answer_citations(answer, claims, evidence)
             return answer, claims, reasoning
 
         except (json.JSONDecodeError, KeyError):
@@ -267,6 +276,40 @@ class ReasoningAgent(BaseAgent):
         for index, step in enumerate(reasoning, start=1):
             step.step = index
         return answer, claims, reasoning
+
+    def _ensure_answer_citations(
+        self,
+        answer: str,
+        claims: list[AnswerClaim],
+        evidence: list[Evidence],
+    ) -> str:
+        """Attach missing bracketed evidence IDs from supported claims."""
+        if not self.enforce_answer_citations or not answer or not claims:
+            return answer
+
+        available_ids = {item.evidence_id for item in evidence}
+        supporting_ids: list[str] = []
+        for claim in claims:
+            for evidence_id in claim.supporting_evidence:
+                if evidence_id not in available_ids or evidence_id in supporting_ids:
+                    continue
+                supporting_ids.append(evidence_id)
+
+        if not supporting_ids:
+            return answer
+
+        existing_ids = set(_CITATION_PATTERN.findall(answer))
+        missing_ids = [
+            evidence_id for evidence_id in supporting_ids
+            if evidence_id not in existing_ids
+        ]
+        if not missing_ids:
+            return answer
+
+        citation_footer = "引用证据：" + " ".join(f"[{evidence_id}]" for evidence_id in missing_ids)
+        if answer.rstrip().endswith(citation_footer):
+            return answer
+        return f"{answer.rstrip()}\n{citation_footer}"
 
     def _fallback_answer(
         self,

@@ -109,6 +109,10 @@ All notable changes to VeraRAG are recorded here.
   reranking, exposed in pipeline configs and offline retrieval evaluation; the
   guarded BM25+Reranker top-3 adaptive offline run improves macro P/R/F1 to
   `0.4478/0.9342/0.5916`.
+- Add a deterministic answer citation guard:
+  `reasoning.enforce_answer_citations` appends missing in-pool
+  `answer_claims[].supporting_evidence` IDs to the final answer so answer text
+  citations and claim-level supporting facts use the same evidence chain.
 
 ### Added
 
