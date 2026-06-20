@@ -355,6 +355,13 @@ class VeraRAG:
                 question_years,
             ):
                 continue
+            if self._is_redundant_status_nli_conflict(
+                edge,
+                source_claim,
+                target_claim,
+                question,
+            ):
+                continue
             if self._is_historical_version_edge(
                 edge,
                 evidence_by_claim,
@@ -572,6 +579,49 @@ class VeraRAG:
         return any(
             marker in question
             for marker in ("谁", "更高", "更低", "相比", "对比", "比较", "有何不同", "vs", "VS")
+        )
+
+    @staticmethod
+    def _is_premise_validation_question(question: str) -> bool:
+        return any(
+            marker in question
+            for marker in (
+                "对吗",
+                "对吧",
+                "是不是",
+                "是否代表",
+                "是否属实",
+                "是否准确",
+                "既然",
+                "意味着",
+                "真的",
+            )
+        )
+
+    def _is_redundant_status_nli_conflict(
+        self,
+        edge: ConflictEdge,
+        source_claim: Claim | None,
+        target_claim: Claim | None,
+        question: str,
+    ) -> bool:
+        """Drop NLI false positives between compatible status claims.
+
+        Some NLI models over-read two compatible law-status claims as
+        contradictions when one sentence mentions effective dates and the other
+        mentions passage. Ordinary status questions should not surface that as
+        a conflict, while premise-validation questions keep cross-evidence
+        disagreement because the user's false premise is the target.
+        """
+        if "NLI contradiction" not in edge.rationale:
+            return False
+        if self._is_premise_validation_question(question):
+            return False
+        if source_claim is None or target_claim is None:
+            return False
+        return self.conflict_graph_builder._claims_have_compatible_status_polarity(
+            source_claim,
+            target_claim,
         )
 
     @staticmethod

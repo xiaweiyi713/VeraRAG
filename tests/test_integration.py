@@ -581,6 +581,77 @@ class TestPipelineIntegration:
 
         assert len(compared.get_conflicts()) == 1
 
+    def test_status_question_drops_compatible_nli_conflict_but_premise_keeps_it(
+        self,
+        pipeline_config,
+    ):
+        pipeline = _create_pipeline(pipeline_config)
+        reported = Claim(
+            claim_id="C_reported",
+            claim="欧盟AI法案已无限期搁置",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+            source_span="reported_claim",
+        )
+        corrective = Claim(
+            claim_id="C_corrective",
+            claim="实际上，欧盟AI法案不仅已获通过，而且部分条款将于2025年开始生效",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+        )
+        official = Claim(
+            claim_id="C_official",
+            claim="2024年3月13日，欧洲议会正式通过了《人工智能法案》",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+        )
+        evidence_pool = [
+            Evidence(
+                "D006_c0",
+                "blog",
+                "AI监管政策争议",
+                "",
+                claims=[reported, corrective],
+            ),
+            Evidence("D001_c0", "official", "欧盟AI法案", "", claims=[official]),
+        ]
+        edges = [
+            ConflictEdge(
+                "C_corrective",
+                "C_official",
+                ConflictType.REFUTE,
+                0.89,
+                rationale="NLI contradiction: 0.89",
+            ),
+            ConflictEdge(
+                "C_reported",
+                "C_corrective",
+                ConflictType.REFUTE,
+                0.75,
+                rationale="Negation contradiction on shared entities: '通过' vs '搁置'",
+            ),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = list(edges)
+
+        status_filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "欧盟AI法案目前处于什么状态？是否已经通过？",
+        )
+
+        assert [edge.source_id for edge in status_filtered.get_conflicts()] == ["C_reported"]
+
+        premise_graph = EvidenceConflictGraph()
+        premise_graph.edges = list(edges)
+        premise_filtered = pipeline._filter_conflict_graph_for_question(
+            premise_graph,
+            evidence_pool,
+            "欧盟AI法案已被搁置，目前尚未通过，对吗？",
+        )
+
+        assert len(premise_filtered.get_conflicts()) == 2
+
     def test_reported_claim_conflict_dedupe_prefers_stronger_evidence(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
         reported = Claim(

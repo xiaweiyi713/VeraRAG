@@ -723,6 +723,48 @@ Output ONLY valid JSON, no other text."""
 
         return None
 
+    @classmethod
+    def _claims_have_compatible_status_polarity(
+        cls,
+        claim_i: Claim,
+        claim_j: Claim,
+    ) -> bool:
+        polarity_i = cls._claim_status_polarity(claim_i.claim)
+        polarity_j = cls._claim_status_polarity(claim_j.claim)
+        return bool(polarity_i and polarity_i == polarity_j)
+
+    @staticmethod
+    def _claim_status_polarity(claim_text: str) -> str:
+        text = claim_text.lower()
+        negative_passed_markers = (
+            "搁置",
+            "尚未通过",
+            "未通过",
+            "没有通过",
+            "未获通过",
+            "尚未获通过",
+            "not passed",
+            "has not passed",
+            "not approved",
+            "shelved",
+        )
+        if any(marker in text for marker in negative_passed_markers):
+            return "passed_negative"
+
+        positive_passed_markers = (
+            "正式通过",
+            "已获通过",
+            "获通过",
+            "通过了",
+            "通过《",
+            "approved",
+            "passed",
+            "has passed",
+        )
+        if any(marker in text for marker in positive_passed_markers):
+            return "passed_positive"
+        return ""
+
     def _nli_label_indices(self, num_labels: int = 3) -> tuple[int, int, int] | None:
         """Return contradiction, entailment, and neutral label indices."""
         if num_labels < 3:

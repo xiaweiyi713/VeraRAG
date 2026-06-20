@@ -1411,6 +1411,20 @@ class TestNLIConflictDetection(unittest.TestCase):
 
         self.assertIsNone(edge)
 
+    def test_nli_detection_keeps_opposite_passed_status_contradiction(self):
+        builder = self._builder_with_nli(
+            scores=[[5.0, 0.0, 0.0]],
+            id2label={0: "CONTRADICTION", 1: "ENTAILMENT", 2: "NEUTRAL"},
+        )
+
+        edge = builder._nli_detect(
+            _make_claim("C1", "欧盟AI法案已无限期搁置，尚未通过"),
+            _make_claim("C2", "2024年3月13日，欧洲议会正式通过了《人工智能法案》"),
+        )
+
+        self.assertIsNotNone(edge)
+        self.assertEqual(edge.conflict_type, ConflictType.REFUTE)
+
 
 class TestGraphUpdate(unittest.TestCase):
     def test_update_graph_connects_existing_claims_to_new_evidence(self):

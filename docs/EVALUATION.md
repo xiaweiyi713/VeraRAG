@@ -503,18 +503,22 @@ the completed unguarded Stage-3 report.
 The guarded candidate also has a real DeepSeek smoke result on `V001`, `V017`,
 and `V041` with answer-citation enforcement enabled. The refreshed report
 records `retriever_reranker_preserve_base_top_k=1` and
-`reasoning_enforce_answer_citations=true` in metadata. Compared with the
-canonical smoke, guarded BM25+Reranker keeps Evidence Recall and Behavior
-Accuracy at `1.0000`, improves Evidence Precision from `0.1667` to `0.8333`,
-improves Citation F1 from `0.0000` to `0.8889`, and reduces mean latency from
-`57.58s` to `14.40s`. It does not clear the full-run launch bar yet: Answer F1
-drops from `0.5382` to `0.4535`, Brier worsens from `0.4140` to `0.4390`, and
-Supporting-Fact F1 drops from `1.0000` to `0.8889` on this tiny slice. Against
-the unguarded reranker smoke, citation quality improves, but Conflict micro-F1
-drops from `1.0000` to `0.8000` and latency rises from `11.66s` to `14.40s`.
-The current next step is selective fallback or conflict-pair pruning before a
-full 152-question guarded run, not a blind promotion. The paired smoke reports
-are generated under
+`reasoning_enforce_answer_citations=true` in metadata. The follow-up also adds
+question-aware NLI conflict pruning: ordinary status questions drop NLI
+contradictions between two same-polarity "passed/approved" claims, while
+premise-validation questions such as "对吗" keep the cross-evidence
+disagreement. Compared with the canonical smoke, guarded BM25+Reranker keeps
+Evidence Recall and Behavior Accuracy at `1.0000`, improves Evidence Precision
+from `0.1667` to `0.8333`, improves Citation F1 from `0.0000` to `0.8889`,
+improves Conflict micro-F1 from `0.8000` to `1.0000`, and reduces mean latency
+from `57.58s` to `12.29s`. It still does not clear the full-run launch bar:
+Answer F1 drops from `0.5382` to `0.4721`, Brier worsens from `0.4140` to
+`0.4239`, and Supporting-Fact F1 drops from `1.0000` to `0.8889` on this tiny
+slice. Against the unguarded reranker smoke, citation quality improves and
+Conflict micro-F1 stays at `1.0000`, but Answer F1 remains lower and latency is
+slightly higher (`11.66s` to `12.29s`). The current next step is to prune
+over-broad answer/supporting citations and then run a broader guarded gate
+before any full 152-question job. The paired smoke reports are generated under
 `outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_smoke3_vs_canonical.md`
 and
 `outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_smoke3_vs_unguarded.md`.
@@ -561,12 +565,12 @@ The interpretation is deliberately conservative. BM25+Reranker top-3 adaptive
 is a strong precision/latency candidate and proves the Stage-3 precision
 direction, but it should not replace the canonical configuration yet: Evidence
 Recall drops significantly, citation quality drops significantly, and Brier
-score worsens. The first recall/citation safeguards are implemented and smoke
-tested, but the smoke still shows answer/supporting-fact and conflict tradeoffs.
-The next Stage-3 iteration should keep the reranker and add selective fallback
-or conflict-pair pruning before another full run, such as falling back to BM25
-depth-10 when the retained set over-detects conflicts, when answer claims add
-extra supporting evidence, or when reranker confidence is weak.
+score worsens. The first recall/citation safeguards and question-aware conflict
+pruning are implemented and smoke tested, but the smoke still shows
+answer/supporting-fact and calibration tradeoffs. The next Stage-3 iteration
+should keep the reranker and reduce over-broad supporting citations before
+another full run, with selective fallback to BM25 depth-10 reserved for broader
+gate failures.
 
 Run the full candidate with:
 

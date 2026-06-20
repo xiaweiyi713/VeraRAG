@@ -121,6 +121,11 @@ All notable changes to VeraRAG are recorded here.
   `0.0000` to `0.8889`, and Recall/Behavior stay at `1.0000` versus canonical
   smoke, but Answer F1, Brier, Supporting-Fact F1, and conflict behavior still
   block a full-run promotion.
+- Add question-aware NLI conflict pruning for law-status claims: ordinary
+  status questions suppress NLI false positives between same-polarity
+  "passed/approved" claims, while premise-validation questions retain
+  cross-evidence disagreements. The guarded smoke now reaches Conflict F1
+  `1.0000` with zero conflict FP/FN.
 
 ### Added
 
