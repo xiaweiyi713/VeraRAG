@@ -93,8 +93,17 @@ All notable changes to VeraRAG are recorded here.
 - Complete the full 152-question DeepSeek Stage-3 candidate run for
   BM25+Reranker top-3 adaptive retrieval, with zero errors, Evidence Precision
   `0.4934`, Evidence Recall `0.8827`, Conflict F1 `0.5641`, Behavior Accuracy
-  `0.9934`, and mean latency `17.57s`; the canonical full baseline remains the
-  next required paired-comparison step.
+  `0.9934`, and mean latency `17.57s`.
+- Complete the canonical VeraBench v1.1.2 DeepSeek full run with 152/152
+  questions, zero errors, Behavior Accuracy `0.9934`, Answer F1 `0.4031`,
+  Evidence Precision/Recall `0.1244/0.9485`, Conflict F1 `0.5385`,
+  stratified and evidence-cluster bootstrap intervals, and report-level
+  benchmark/config/implementation signatures.
+- Publish the full Stage-3 paired comparison: BM25+Reranker top-3 adaptive
+  improves Evidence Precision by `+0.3690` and mean latency by `-150.90s`, but
+  significantly reduces Evidence Recall (`-0.0658`) and Citation F1
+  (`-0.0425`) while worsening Brier score, so the canonical default remains
+  BM25 fixed-depth pending recall/citation safeguards.
 
 ### Added
 

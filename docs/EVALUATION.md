@@ -500,10 +500,32 @@ Precision `0.4934`, Evidence Recall `0.8827`, Answer F1 `0.4052`, Conflict
 micro-F1 `0.5641`, Behavior Accuracy `0.9934`, and mean latency `17.57s`.
 By type, Behavior Accuracy is `1.0000` for single-evidence, multi-evidence,
 conflict, temporal, and unanswerable rows, and `0.9730` for misleading rows.
-This satisfies the Stage-3 precision/recall target for the candidate itself,
-but it is not yet a paired A/B claim; run the canonical BM25 fixed-depth full
-baseline and then `compare_verabench_reports.py` before changing the canonical
-configuration.
+The paired full-run A/B is now available against the canonical BM25 fixed-depth
+DeepSeek baseline:
+`outputs/remote_results/verabench_v112_retrieval_rerank_top3_comparison.md`.
+The canonical report completed 152/152 with zero errors at
+`outputs/remote_results/verabench_v112_canonical_deepseek.json`.
+
+| Metric | Canonical BM25 fixed | BM25+Reranker top-3 adaptive | Delta | 95% delta CI |
+| --- | ---: | ---: | ---: | ---: |
+| Evidence Precision | 0.1244 | 0.4934 | +0.3690 | [+0.3439, +0.3947] |
+| Evidence Recall | 0.9485 | 0.8827 | -0.0658 | [-0.0954, -0.0395] |
+| Answer F1 | 0.4031 | 0.4052 | +0.0022 | [-0.0230, +0.0274] |
+| Behavior Accuracy | 0.9934 | 0.9934 | +0.0000 | [-0.0197, +0.0197] |
+| Conflict micro-F1 | 0.5385 | 0.5641 | +0.0256 | [-0.1111, +0.1604] |
+| Citation F1 | 0.0491 | 0.0066 | -0.0425 | [-0.0811, -0.0066] |
+| Supporting-fact F1 | 0.7348 | 0.7070 | -0.0278 | [-0.0708, +0.0126] |
+| Brier Score | 0.3561 | 0.3967 | +0.0406 | [+0.0151, +0.0662] |
+| Mean latency | 168.47s | 17.57s | -150.90s | [-295.27s, -69.14s] |
+
+The interpretation is deliberately conservative. BM25+Reranker top-3 adaptive
+is a strong precision/latency candidate and proves the Stage-3 precision
+direction, but it should not replace the canonical configuration yet: Evidence
+Recall drops significantly, citation quality drops significantly, and Brier
+score worsens. The next Stage-3 iteration should keep the reranker but add
+recall/citation safeguards, such as minimum gold-like coverage checks,
+question-type-specific retained-k floors, citation-enforced answer prompting,
+or selective fallback to BM25 depth-10 when reranker confidence is weak.
 
 Run the full candidate with:
 

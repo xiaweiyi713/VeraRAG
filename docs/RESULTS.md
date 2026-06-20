@@ -26,7 +26,7 @@ legacy, non-comparable historical runs. New formal leaderboards should omit
 them and use only complete reports with matching benchmark and metric
 fingerprints.
 
-## VeraBench v1.1.2 Status
+## VeraBench v1.1.2 Canonical Full Run
 
 Current repository data is VeraBench v1.1.2:
 
@@ -34,18 +34,6 @@ Current repository data is VeraBench v1.1.2:
   `bb99ce4d8b4ba7ee5a938595c7c786a8ad33601e4f096bec1bed844c43b6a8f3`
 - Questions SHA-256:
   `c19e7401cbcd2526fb1e085c911d61095c8ce5bd19a664c13698a08024436882`
-
-The full 152-question DeepSeek run below was produced on v1.1 before the V084
-wording clarification and evidence-span traceability patch. A v1.1.2 targeted
-rerun should use:
-
-```bash
-DEEPSEEK_API_KEY=<key> verarag-benchmark \
-  --config configs/verabench_v112_canonical.yaml \
-  --ids V036 V048 V084 \
-  --output results/verabench_v112_targeted_failures.json \
-  --restart
-```
 
 The canonical v1.1.2 full run is fixed in
 `configs/verabench_v112_canonical.yaml`: DeepSeek `deepseek-v4-flash`,
@@ -61,6 +49,70 @@ DEEPSEEK_API_KEY=<key> verarag-benchmark \
   --output outputs/remote_results/verabench_v112_canonical_deepseek.json \
   --restart
 ```
+
+The current canonical run completed on 2026-06-20 with 152/152 questions and
+zero errors. It is the first v1.1.2 flagship result and replaces the historical
+v1.0/v1.1 numbers for current claims. Earlier v1.1.2 targeted rerun commands
+for V036/V048/V084 are now provenance for the repair path only; the full
+canonical run below is the current authority.
+
+| Metric | Estimate | Stratified 95% CI | Evidence-cluster 95% CI |
+| --- | ---: | ---: | ---: |
+| Behavior Accuracy | 0.9934 | [0.9803, 1.0000] | [0.9786, 1.0000] |
+| Answer F1 (`soft-f1-v2`) | 0.4031 | [0.3707, 0.4354] | [0.3683, 0.4386] |
+| Evidence Precision | 0.1244 | [0.1167, 0.1326] | [0.1106, 0.1362] |
+| Evidence Recall | 0.9485 | [0.9254, 0.9704] | [0.9141, 0.9803] |
+| Conflict micro-F1 | 0.5385 | [0.4091, 0.6565] | [0.3077, 0.7097] |
+| Premise-refutation F1 | 0.9195 | [0.8605, 0.9737] | [0.8363, 0.9703] |
+| Citation F1 | 0.0491 | [0.0175, 0.0855] | [0.0207, 0.0797] |
+| Supporting-fact F1 | 0.7348 | [0.6833, 0.7880] | [0.6673, 0.7949] |
+| ECE | 0.4742 | [0.4186, 0.5238] | [0.4094, 0.5294] |
+| Brier Score | 0.3561 | [0.3310, 0.3797] | [0.3239, 0.3801] |
+| Avg latency | 168.47s | [87.08s, 313.78s] | [85.45s, 339.56s] |
+
+By question type, Behavior Accuracy is `1.0000` for single-evidence,
+multi-evidence, conflict, temporal, and unanswerable rows, and `0.9730` for
+misleading rows. The remaining behavior failure is one misleading-premise row
+where the system abstains instead of correcting the premise. Conflict detection
+is still over-detecting: TP/FP/FN is `14/23/1`, precision/recall is
+`0.3784/0.9333`, and the dominant failure mode is `over_detection`.
+
+Run provenance:
+
+- Report: `outputs/remote_results/verabench_v112_canonical_deepseek.json`
+- Benchmark version: `1.1.2`
+- Metric versions: answer `soft-f1-v2`, behavior `behavior-v2`, conflict
+  `gold-evidence-pair-micro-f1-v2`
+- Git commit recorded by the report: `6803e9f`
+- Implementation SHA-256:
+  `f724d043f189509a71a1b5f1eddf45f1ab26d711e660dc493efb334236b5bbd3`
+- Config SHA-256:
+  `9877c7f8e7363991485cecb3977adf141a0567692b6ec26ac785a75abc097622`
+
+## VeraBench v1.1.2 Stage-3 Retrieval A/B
+
+The BM25+Reranker top-3 adaptive candidate completed the same 152-question
+DeepSeek run with zero errors and is compared against the canonical report in
+`outputs/remote_results/verabench_v112_retrieval_rerank_top3_comparison.md`.
+
+| Metric | Direction | Canonical BM25 fixed | BM25+Reranker top-3 adaptive | Delta | 95% delta CI | P(candidate better) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Evidence Precision | higher | 0.1244 | 0.4934 | +0.3690 | [+0.3439, +0.3947] | 1.000 |
+| Evidence Recall | higher | 0.9485 | 0.8827 | -0.0658 | [-0.0954, -0.0395] | 0.000 |
+| Answer F1 | higher | 0.4031 | 0.4052 | +0.0022 | [-0.0230, +0.0274] | 0.567 |
+| Behavior Accuracy | higher | 0.9934 | 0.9934 | +0.0000 | [-0.0197, +0.0197] | 0.337 |
+| Conflict micro-F1 | higher | 0.5385 | 0.5641 | +0.0256 | [-0.1111, +0.1604] | 0.673 |
+| Citation F1 | higher | 0.0491 | 0.0066 | -0.0425 | [-0.0811, -0.0066] | 0.006 |
+| Supporting-fact F1 | higher | 0.7348 | 0.7070 | -0.0278 | [-0.0708, +0.0126] | 0.091 |
+| ECE | lower | 0.4742 | 0.5075 | +0.0333 | [-0.0173, +0.0867] | 0.101 |
+| Brier Score | lower | 0.3561 | 0.3967 | +0.0406 | [+0.0151, +0.0662] | 0.001 |
+| Avg latency | lower | 168.47s | 17.57s | -150.90s | [-295.27s, -69.14s] | 1.000 |
+
+The A/B result is precision-first but not yet a safe canonical replacement.
+It clears the Evidence Precision target and cuts latency sharply, but it
+significantly reduces Evidence Recall and citation quality and worsens Brier
+score. Keep canonical BM25 fixed-depth as the default until the reranked path
+adds recall/citation safeguards.
 
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 
