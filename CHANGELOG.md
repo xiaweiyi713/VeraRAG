@@ -63,6 +63,9 @@ All notable changes to VeraRAG are recorded here.
   `dense_rerank`, `hybrid_rerank`) to offline VeraBench retrieval evaluation,
   using locally cached reranker models by default and recording unavailable
   variants as matrix errors.
+- Add `--matrix-dense-models` so offline retrieval matrices can compare
+  English, Chinese, and multilingual dense checkpoints in one report without
+  duplicating BM25-only variants.
 
 ### Added
 

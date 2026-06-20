@@ -336,6 +336,7 @@ python experiments/evaluate_retrieval.py \
 python experiments/evaluate_retrieval.py \
     --matrix \
     --matrix-retrievers bm25 bm25_rerank hybrid dense \
+    --matrix-dense-models BAAI/bge-base-en-v1.5 sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 \
     --matrix-top-k 3 5 10 \
     --matrix-policies fixed precision_cap complexity_adaptive \
     --output outputs/retrieval_matrix_v112.json

@@ -100,6 +100,41 @@ def _make_retriever(
     raise ValueError(f"Unsupported retriever: {name}")
 
 
+def _dense_model_axis(
+    retriever_name: str,
+    dense_model_names: list[str],
+) -> list[str]:
+    if retriever_name in DENSE_RETRIEVERS:
+        return dense_model_names
+    return [""]
+
+
+def _variant_model_metadata(
+    retriever_name: str,
+    *,
+    dense_model_name: str,
+    dense_local_files_only: bool,
+    reranker_model_name: str,
+    reranker_local_files_only: bool,
+    reranker_candidate_k: int,
+) -> dict[str, Any]:
+    return {
+        "dense_model_name": dense_model_name if retriever_name in DENSE_RETRIEVERS else "",
+        "dense_local_files_only": (
+            dense_local_files_only if retriever_name in DENSE_RETRIEVERS else None
+        ),
+        "reranker_model_name": (
+            reranker_model_name if retriever_name in RERANKER_RETRIEVERS else ""
+        ),
+        "reranker_local_files_only": (
+            reranker_local_files_only if retriever_name in RERANKER_RETRIEVERS else None
+        ),
+        "reranker_candidate_k": (
+            reranker_candidate_k if retriever_name in RERANKER_RETRIEVERS else None
+        ),
+    }
+
+
 def _ndcg_binary(retrieved: list[str], relevant: set[str]) -> float:
     if not relevant:
         return 1.0
@@ -411,6 +446,7 @@ def build_matrix_report(
     max_questions: int | None = None,
     include_no_gold: bool = False,
     dense_model_name: str = "BAAI/bge-base-en-v1.5",
+    dense_model_names: list[str] | None = None,
     dense_device: str = "cpu",
     dense_local_files_only: bool = True,
     reranker_model_name: str = "BAAI/bge-reranker-base",
@@ -429,62 +465,78 @@ def build_matrix_report(
         max_questions=max_questions,
     )
     variants: list[dict[str, Any]] = []
+    dense_model_axis = dense_model_names or [dense_model_name]
     for retriever_name in retriever_names:
-        try:
-            retriever = _make_retriever(
+        for variant_dense_model_name in _dense_model_axis(
+            retriever_name,
+            dense_model_axis,
+        ):
+            model_metadata = _variant_model_metadata(
                 retriever_name,
-                dense_model_name=dense_model_name,
-                dense_device=dense_device,
+                dense_model_name=variant_dense_model_name,
                 dense_local_files_only=dense_local_files_only,
                 reranker_model_name=reranker_model_name,
-                reranker_device=reranker_device,
                 reranker_local_files_only=reranker_local_files_only,
                 reranker_candidate_k=reranker_candidate_k,
             )
-            retriever.index_documents(documents)
-        except Exception as exc:
-            if not continue_on_error:
-                raise
+            try:
+                retriever = _make_retriever(
+                    retriever_name,
+                    dense_model_name=variant_dense_model_name or dense_model_name,
+                    dense_device=dense_device,
+                    dense_local_files_only=dense_local_files_only,
+                    reranker_model_name=reranker_model_name,
+                    reranker_device=reranker_device,
+                    reranker_local_files_only=reranker_local_files_only,
+                    reranker_candidate_k=reranker_candidate_k,
+                )
+                retriever.index_documents(documents)
+            except Exception as exc:
+                if not continue_on_error:
+                    raise
+                for top_k in top_k_values:
+                    for top_k_policy in top_k_policies:
+                        variants.append({
+                            "retriever": retriever_name,
+                            "top_k": top_k,
+                            "top_k_policy": top_k_policy,
+                            **model_metadata,
+                            "status": "error",
+                            "error": str(exc),
+                        })
+                continue
+
             for top_k in top_k_values:
                 for top_k_policy in top_k_policies:
-                    variants.append({
-                        "retriever": retriever_name,
-                        "top_k": top_k,
-                        "top_k_policy": top_k_policy,
-                        "status": "error",
-                        "error": str(exc),
-                    })
-            continue
-
-        for top_k in top_k_values:
-            for top_k_policy in top_k_policies:
-                try:
-                    rows = evaluate_questions(
-                        questions,
-                        retriever,
-                        top_k=top_k,
-                        top_k_policy=top_k_policy,
-                        include_no_gold=include_no_gold,
-                    )
-                    variants.append({
-                        "retriever": retriever_name,
-                        "top_k": top_k,
-                        "top_k_policy": top_k_policy,
-                        "status": "ok",
-                        "evaluated_questions": len(rows),
-                        "summary": _aggregate(rows),
-                        "by_type": _grouped(rows, "question_type"),
-                    })
-                except Exception as exc:
-                    if not continue_on_error:
-                        raise
-                    variants.append({
-                        "retriever": retriever_name,
-                        "top_k": top_k,
-                        "top_k_policy": top_k_policy,
-                        "status": "error",
-                        "error": str(exc),
-                    })
+                    try:
+                        rows = evaluate_questions(
+                            questions,
+                            retriever,
+                            top_k=top_k,
+                            top_k_policy=top_k_policy,
+                            include_no_gold=include_no_gold,
+                        )
+                        variants.append({
+                            "retriever": retriever_name,
+                            "top_k": top_k,
+                            "top_k_policy": top_k_policy,
+                            **model_metadata,
+                            "status": "ok",
+                            "evaluated_questions": len(rows),
+                            "summary": _aggregate(rows),
+                            "by_type": _grouped(rows, "question_type"),
+                        })
+                    except Exception as exc:
+                        if not continue_on_error:
+                            raise
+                        variants.append({
+                            "retriever": retriever_name,
+                            "top_k": top_k,
+                            "top_k_policy": top_k_policy,
+                            **model_metadata,
+                            "status": "error",
+                            "error": str(exc),
+                        })
 
     successful = [variant for variant in variants if variant["status"] == "ok"]
     best_by_macro_f1 = None
@@ -504,6 +556,7 @@ def build_matrix_report(
         "top_k_values": top_k_values,
         "top_k_policies": top_k_policies,
         "dense_model_name": dense_model_name,
+        "dense_model_names": dense_model_axis,
         "dense_local_files_only": dense_local_files_only,
         "reranker_model_name": reranker_model_name,
         "reranker_local_files_only": reranker_local_files_only,
@@ -572,6 +625,14 @@ def main() -> None:
         "--dense-model-name",
         default="BAAI/bge-base-en-v1.5",
         help="SentenceTransformer model for dense/hybrid retrieval.",
+    )
+    parser.add_argument(
+        "--matrix-dense-models",
+        nargs="+",
+        help=(
+            "Dense model names to sweep for dense/hybrid matrix variants. "
+            "Defaults to --dense-model-name."
+        ),
     )
     parser.add_argument(
         "--dense-device",
@@ -648,6 +709,7 @@ def main() -> None:
             max_questions=args.max_questions,
             include_no_gold=args.include_no_gold,
             dense_model_name=args.dense_model_name,
+            dense_model_names=args.matrix_dense_models,
             dense_device=args.dense_device,
             dense_local_files_only=not args.dense_allow_download,
             reranker_model_name=args.reranker_model_name,

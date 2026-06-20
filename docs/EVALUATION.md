@@ -402,6 +402,7 @@ selection policies:
 python experiments/evaluate_retrieval.py \
   --matrix \
   --matrix-retrievers bm25 bm25_rerank hybrid dense \
+  --matrix-dense-models BAAI/bge-base-en-v1.5 sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 \
   --matrix-top-k 3 5 10 \
   --matrix-policies fixed precision_cap complexity_adaptive \
   --output outputs/retrieval_matrix_v112.json
@@ -414,9 +415,12 @@ BM25 only so a fresh checkout does not accidentally load neural models; pass
 `--matrix-retrievers` explicitly for full Stage-3 ablations. Dense, hybrid, and
 reranker variants use locally cached `sentence-transformers` files by default;
 pass `--dense-allow-download` or `--reranker-allow-download` only when an
-intentional online model download is acceptable. In matrix mode unavailable
-model-backed variants are recorded as `status: error` and the remaining
-variants continue unless `--fail-fast` is set.
+intentional online model download is acceptable. `--matrix-dense-models` adds a
+checkpoint axis for dense-backed variants only, so BM25 is not duplicated while
+Dense/Hybrid can compare English, Chinese, and multilingual checkpoints in one
+report. In matrix mode unavailable model-backed variants are recorded as
+`status: error` and the remaining variants continue unless `--fail-fast` is
+set.
 
 Reranked variants first retrieve a larger candidate pool, controlled by
 `--reranker-candidate-k` and defaulting to 20, then use

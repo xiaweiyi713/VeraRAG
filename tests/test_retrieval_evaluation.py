@@ -159,6 +159,56 @@ def test_dense_retriever_variant_can_be_evaluated(sample_bench_dir, monkeypatch)
     assert report["dense_local_files_only"] is True
 
 
+def test_matrix_dense_model_axis_only_expands_dense_backed_variants(
+    sample_bench_dir,
+    monkeypatch,
+):
+    class FakeDenseRetriever:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def index_documents(self, documents):
+            self.documents = documents
+
+        def retrieve(self, query, top_k=10):
+            from src.retriever.base import RetrievalResult
+
+            return [
+                RetrievalResult(
+                    doc_id=document["id"],
+                    content=document["text"],
+                    title=document.get("title", ""),
+                    score=float(len(self.documents) - index),
+                    metadata=document,
+                )
+                for index, document in enumerate(self.documents[:top_k])
+            ]
+
+    monkeypatch.setattr(retrieval_eval, "DenseRetriever", FakeDenseRetriever)
+
+    report = build_matrix_report(
+        data_dir=sample_bench_dir,
+        retriever_names=["bm25", "dense"],
+        top_k_values=[1],
+        top_k_policies=["fixed"],
+        dense_model_names=["english-bge", "multilingual-minilm"],
+    )
+
+    assert report["dense_model_names"] == ["english-bge", "multilingual-minilm"]
+    assert [
+        (
+            variant["retriever"],
+            variant["dense_model_name"],
+            variant["status"],
+        )
+        for variant in report["variants"]
+    ] == [
+        ("bm25", "", "ok"),
+        ("dense", "english-bge", "ok"),
+        ("dense", "multilingual-minilm", "ok"),
+    ]
+
+
 def test_rerank_retriever_variant_records_reranker_metadata(sample_bench_dir, monkeypatch):
     class FakeReranker:
         def __init__(self, **kwargs):
