@@ -66,6 +66,9 @@ All notable changes to VeraRAG are recorded here.
 - Add `--matrix-dense-models` so offline retrieval matrices can compare
   English, Chinese, and multilingual dense checkpoints in one report without
   duplicating BM25-only variants.
+- Make offline retrieval evaluation fail closed when Hybrid degrades to BM25
+  fallback, and record a downloaded-model top-3 adaptive result where
+  `bm25_rerank` becomes the current offline retrieval frontier.
 
 ### Added
 

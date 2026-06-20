@@ -427,6 +427,9 @@ Reranked variants first retrieve a larger candidate pool, controlled by
 `BAAI/bge-reranker-base` to reorder the final top-k results. The default is
 designed for reproducibility audits: if the CrossEncoder is not already cached,
 the variant records an error rather than silently downloading weights.
+If Hugging Face downloads fail with `Invalid port: ':1'`, temporarily remove
+bare IPv6 loopback entries from proxy bypass variables for that command, for
+example `NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost ...`.
 
 Current full offline matrix over BM25, Dense (`BAAI/bge-base-en-v1.5`,
 local-files-only), and Hybrid at top-k `3/5/10` shows BM25 still dominates this
@@ -437,6 +440,35 @@ F1 `0.5771`. Hybrid top-3 with `complexity_adaptive` scores
 `0.3141/0.6576/0.4147`. These numbers make dense retrieval a model-selection
 problem rather than an automatic win; Chinese/multilingual dense checkpoints
 should be tested before replacing BM25 in the canonical run.
+
+A focused downloaded-model top-3 `complexity_adaptive` run over BM25,
+BM25+Reranker (`--reranker-candidate-k 5`), Dense, and Hybrid with
+`BAAI/bge-base-en-v1.5` plus
+`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` finds a stronger
+offline frontier: `bm25_rerank` scores macro precision `0.4456`, recall
+`0.9320`, and F1 `0.5893`. Multilingual Hybrid scores
+`0.4376/0.9150/0.5785`, slightly above plain BM25 top-3 adaptive, while
+multilingual Dense scores `0.4240/0.8912/0.5612`. English BGE remains behind on
+this Chinese benchmark: Hybrid `0.3889/0.8039/0.5113` and Dense
+`0.3141/0.6576/0.4147`. This makes BM25+Reranker the current best offline
+retrieval candidate, but it still needs end-to-end behavior validation before
+changing the canonical run.
+
+The focused run command was:
+
+```bash
+NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost \
+python experiments/evaluate_retrieval.py \
+  --matrix \
+  --matrix-retrievers bm25 bm25_rerank dense hybrid \
+  --matrix-dense-models BAAI/bge-base-en-v1.5 sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 \
+  --matrix-top-k 3 \
+  --matrix-policies complexity_adaptive \
+  --dense-allow-download \
+  --reranker-allow-download \
+  --reranker-candidate-k 5 \
+  --output outputs/retrieval_matrix_v112_top3_dense_rerank.json
+```
 
 Current bundled VeraBench v1.1.2 BM25 top-10 baseline evaluates 147 rows and
 scores macro precision `0.1293`, macro recall `0.9830`, macro F1 `0.2244`,

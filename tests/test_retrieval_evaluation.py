@@ -281,6 +281,34 @@ def test_matrix_records_reranker_variant_errors(sample_bench_dir, monkeypatch):
     assert "reranker model unavailable" in by_retriever["bm25_rerank"]["error"]
 
 
+def test_matrix_marks_hybrid_dense_fallback_as_error(sample_bench_dir, monkeypatch):
+    class FallbackHybridRetriever:
+        def __init__(self, **kwargs):
+            self._dense_available = False
+
+        def index_documents(self, documents):
+            self.documents = documents
+
+        def retrieve(self, query, top_k=10):
+            from src.retriever.base import RetrievalResult
+
+            return [
+                RetrievalResult(doc_id="D001", content="fallback", score=1.0)
+            ][:top_k]
+
+    monkeypatch.setattr(retrieval_eval, "HybridRetriever", FallbackHybridRetriever)
+
+    report = build_matrix_report(
+        data_dir=sample_bench_dir,
+        retriever_names=["hybrid"],
+        top_k_values=[1],
+        top_k_policies=["fixed"],
+    )
+
+    assert report["variants"][0]["status"] == "error"
+    assert "refusing to score BM25 fallback" in report["variants"][0]["error"]
+
+
 def test_evaluate_retrieval_cli_writes_json_with_sweep(sample_bench_dir, tmp_path):
     output = tmp_path / "retrieval.json"
 

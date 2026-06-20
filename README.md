@@ -341,13 +341,15 @@ python experiments/evaluate_retrieval.py \
     --matrix-policies fixed precision_cap complexity_adaptive \
     --output outputs/retrieval_matrix_v112.json
 
-# 离线 top-k 策略前沿：BM25 top-3 + complexity_adaptive 当前 macro P/R/F1 =
-# 0.4365/0.9138/0.5771；BM25 top-10 + complexity_adaptive 为
-# 0.3500/0.9456/0.4977。
+# 离线 top-k 策略前沿：BM25+Reranker top-3 + complexity_adaptive 当前 macro P/R/F1 =
+# 0.4456/0.9320/0.5893；无 reranker 的 BM25 top-3 + complexity_adaptive 为
+# 0.4365/0.9138/0.5771。
 python experiments/evaluate_retrieval.py \
-    --retriever bm25 \
+    --retriever bm25_rerank \
     --top-k 3 \
-    --top-k-policy complexity_adaptive
+    --top-k-policy complexity_adaptive \
+    --reranker-candidate-k 5 \
+    --reranker-allow-download
 
 # 端到端 pipeline 中可通过 retriever.retrieval_top_k + top_k_policy 显式启用；
 # canonical v1.1.2 配置仍保持 fixed/depth-10，直到端到端消融证明无行为回退。

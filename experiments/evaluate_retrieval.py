@@ -135,6 +135,21 @@ def _variant_model_metadata(
     }
 
 
+def _assert_retriever_variant_ready(
+    retriever_name: str,
+    retriever: BaseRetriever,
+) -> None:
+    """Fail closed when a model-backed evaluation variant silently degraded."""
+    candidate = retriever
+    if isinstance(candidate, RerankingRetriever):
+        candidate = candidate.base_retriever
+    if isinstance(candidate, HybridRetriever) and not candidate._dense_available:
+        raise RuntimeError(
+            "Hybrid dense retriever unavailable; refusing to score BM25 fallback "
+            f"as {retriever_name}"
+        )
+
+
 def _ndcg_binary(retrieved: list[str], relevant: set[str]) -> float:
     if not relevant:
         return 1.0
@@ -329,6 +344,7 @@ def build_report(
         reranker_candidate_k=reranker_candidate_k,
     )
     retriever.index_documents(documents)
+    _assert_retriever_variant_ready(retriever_name, retriever)
 
     questions = benchmark.questions
     if question_types:
@@ -491,6 +507,7 @@ def build_matrix_report(
                     reranker_candidate_k=reranker_candidate_k,
                 )
                 retriever.index_documents(documents)
+                _assert_retriever_variant_ready(retriever_name, retriever)
             except Exception as exc:
                 if not continue_on_error:
                     raise
