@@ -226,12 +226,14 @@ def test_rerank_retriever_variant_records_reranker_metadata(sample_bench_dir, mo
         reranker_model_name="fake-reranker",
         reranker_local_files_only=True,
         reranker_candidate_k=3,
+        reranker_preserve_base_top_k=1,
     )
 
     assert report["retriever"] == "bm25_rerank"
     assert report["reranker_model_name"] == "fake-reranker"
     assert report["reranker_local_files_only"] is True
     assert report["reranker_candidate_k"] == 3
+    assert report["reranker_preserve_base_top_k"] == 1
     assert report["evaluated_questions"] == 2
 
 

@@ -104,6 +104,11 @@ All notable changes to VeraRAG are recorded here.
   significantly reduces Evidence Recall (`-0.0658`) and Citation F1
   (`-0.0425`) while worsening Brier score, so the canonical default remains
   BM25 fixed-depth pending recall/citation safeguards.
+- Add a recall-guarded reranking candidate: `reranker_preserve_base_top_k`
+  preserves top base-retriever candidates as anchors after CrossEncoder
+  reranking, exposed in pipeline configs and offline retrieval evaluation; the
+  guarded BM25+Reranker top-3 adaptive offline run improves macro P/R/F1 to
+  `0.4478/0.9342/0.5916`.
 
 ### Added
 

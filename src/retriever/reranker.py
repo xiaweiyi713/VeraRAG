@@ -132,12 +132,16 @@ class RerankingRetriever(BaseRetriever):
         reranker: Reranker | None = None,
         *,
         candidate_k: int = 20,
+        preserve_base_top_k: int = 0,
         config: dict[str, Any] | None = None,
     ):
         super().__init__(config)
         self.base_retriever = base_retriever
         self.reranker = reranker or Reranker(top_k=candidate_k)
         self.candidate_k = self._validate_top_k(candidate_k)
+        if preserve_base_top_k < 0:
+            raise ValueError("preserve_base_top_k must be non-negative")
+        self.preserve_base_top_k = preserve_base_top_k
 
     def index_documents(self, documents: list[dict[str, Any]]) -> None:
         self.base_retriever.index_documents(documents)
@@ -152,7 +156,39 @@ class RerankingRetriever(BaseRetriever):
         top_k = self._validate_top_k(top_k)
         candidate_k = max(top_k, self.candidate_k)
         candidates = self.base_retriever.retrieve(query, top_k=candidate_k, **kwargs)
-        return self.reranker.rerank(query, candidates, top_k=top_k)
+        reranked = self.reranker.rerank(query, candidates, top_k=candidate_k)
+        return self._apply_recall_guard(candidates, reranked, top_k)
+
+    def _apply_recall_guard(
+        self,
+        candidates: list[RetrievalResult],
+        reranked: list[RetrievalResult],
+        top_k: int,
+    ) -> list[RetrievalResult]:
+        """Preserve a small base-retriever anchor set after reranking."""
+        if top_k == 0:
+            return []
+        if self.preserve_base_top_k == 0:
+            return reranked[:top_k]
+
+        required = self._dedupe_by_doc_id(candidates[: min(self.preserve_base_top_k, top_k)])
+        required_ids = {result.doc_id for result in required}
+        fill = [
+            result for result in self._dedupe_by_doc_id(reranked)
+            if result.doc_id not in required_ids
+        ]
+        return (required + fill)[:top_k]
+
+    @staticmethod
+    def _dedupe_by_doc_id(results: list[RetrievalResult]) -> list[RetrievalResult]:
+        deduped: list[RetrievalResult] = []
+        seen: set[str] = set()
+        for result in results:
+            if result.doc_id in seen:
+                continue
+            seen.add(result.doc_id)
+            deduped.append(result)
+        return deduped
 
 
 class EvidenceAwareReranker(Reranker):

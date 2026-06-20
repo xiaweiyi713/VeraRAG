@@ -480,6 +480,17 @@ this Chinese benchmark: Hybrid `0.3889/0.8039/0.5113` and Dense
 retrieval candidate, but it still needs full end-to-end behavior validation
 before changing the canonical run.
 
+After the full A/B showed a recall/citation regression, the reranked retriever
+added an optional base-retriever recall anchor:
+`reranker_preserve_base_top_k`. With
+`--reranker-preserve-base-top-k 1`, the final retained evidence set keeps the
+top BM25 candidate and fills the remaining slots by reranker score. On the same
+offline VeraBench v1.1.2 top-3 `complexity_adaptive` setup, this guarded
+candidate scores macro precision `0.4478`, recall `0.9342`, and F1 `0.5916`,
+slightly improving the unguarded `0.4456/0.9320/0.5893` without increasing the
+retained depth. This is a launch gate for a new full A/B, not a replacement for
+the completed unguarded Stage-3 report.
+
 A three-question end-to-end smoke A/B over `V001`, `V017`, and `V041`
 validates the reranked candidate in the real DeepSeek pipeline before full-run
 spend. Compared with canonical BM25 fixed-depth retrieval on the same questions,
@@ -631,6 +642,11 @@ over-abstention or behavior regressions. For that A/B, use
 v1.1.2 DeepSeek run except for `retriever.type`,
 `retriever.retrieval_top_k`, `retriever.top_k_policy`, adaptive policy limits,
 reranker settings, and its run/output identity.
+The guarded follow-up candidate lives at
+`configs/verabench_v112_retrieval_rerank_top3_guarded.yaml` and adds
+`retriever.reranker_preserve_base_top_k: 1` so the top BM25 candidate is always
+kept as a recall/citation anchor before reranked candidates fill the remaining
+slots.
 The older `configs/verabench_v112_retrieval_adaptive.yaml` remains available as
 a policy-only depth-10 sensitivity check, and
 `configs/verabench_v112_retrieval_adaptive_top3.yaml` remains available as a

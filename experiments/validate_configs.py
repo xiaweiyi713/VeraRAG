@@ -158,6 +158,12 @@ def _validate_runtime_config(
             "reranker_batch_size",
         ):
             _positive_int(path, f"retriever.{field}", retriever.get(field), errors, required=False)
+        _non_negative_int(
+            path,
+            "retriever.reranker_preserve_base_top_k",
+            retriever.get("reranker_preserve_base_top_k"),
+            errors,
+        )
         _string(
             path,
             "retriever.reranker_model_name",
@@ -356,6 +362,18 @@ def _positive_int(
         return
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         errors.append(ConfigIssue(path, field, f"{field} must be a positive integer"))
+
+
+def _non_negative_int(
+    path: str,
+    field: str,
+    value: Any,
+    errors: list[ConfigIssue],
+) -> None:
+    if value is None:
+        return
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        errors.append(ConfigIssue(path, field, f"{field} must be a non-negative integer"))
 
 
 def _number_range(

@@ -341,19 +341,20 @@ python experiments/evaluate_retrieval.py \
     --matrix-policies fixed precision_cap complexity_adaptive \
     --output outputs/retrieval_matrix_v112.json
 
-# 离线 top-k 策略前沿：BM25+Reranker top-3 + complexity_adaptive 当前 macro P/R/F1 =
-# 0.4456/0.9320/0.5893；无 reranker 的 BM25 top-3 + complexity_adaptive 为
-# 0.4365/0.9138/0.5771。
+# 离线 top-k 策略前沿：BM25+Reranker top-3 + complexity_adaptive + BM25 recall anchor
+# 当前 macro P/R/F1 = 0.4478/0.9342/0.5916；不加 anchor 为 0.4456/0.9320/0.5893；
+# 无 reranker 的 BM25 top-3 + complexity_adaptive 为 0.4365/0.9138/0.5771。
 python experiments/evaluate_retrieval.py \
     --retriever bm25_rerank \
     --top-k 3 \
     --top-k-policy complexity_adaptive \
     --reranker-candidate-k 5 \
+    --reranker-preserve-base-top-k 1 \
     --reranker-allow-download
 
 # 端到端 pipeline 中可通过 bm25_rerank + retriever.retrieval_top_k + top_k_policy 显式启用；
 # canonical v1.1.2 配置仍保持 fixed/depth-10，直到端到端消融证明无行为回退。
-# 离线最优候选配置：configs/verabench_v112_retrieval_rerank_top3.yaml
+# 下一轮 recall-guarded 候选配置：configs/verabench_v112_retrieval_rerank_top3_guarded.yaml
 python experiments/plan_retrieval_ablation.py --restart \
     --output outputs/remote_results/verabench_v112_retrieval_ablation_plan.json
 # 或 verarag-plan-retrieval-ablation --restart --output outputs/remote_results/verabench_v112_retrieval_ablation_plan.json

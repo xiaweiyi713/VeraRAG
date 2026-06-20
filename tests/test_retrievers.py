@@ -420,12 +420,14 @@ class TestPipelineRetrieverConfig:
                 "reranker_candidate_k": 5,
                 "reranker_batch_size": 4,
                 "reranker_local_files_only": True,
+                "reranker_preserve_base_top_k": 1,
             },
         })
 
         assert isinstance(pipeline.retriever, RerankingRetriever)
         assert isinstance(pipeline.retriever.base_retriever, BM25Retriever)
         assert pipeline.retriever.candidate_k == 5
+        assert pipeline.retriever.preserve_base_top_k == 1
         assert pipeline.retriever.reranker.model_name == "fake-reranker"
         assert pipeline.retriever.reranker.batch_size == 4
         assert pipeline.retriever.reranker.local_files_only is True
@@ -565,6 +567,33 @@ class TestReranker:
             "query-3",
         ]
         assert [result.doc_id for result in results] == ["query-3", "query-2"]
+
+    def test_reranking_retriever_preserves_base_recall_anchors(self):
+        from src.retriever.reranker import RerankingRetriever
+
+        base = _RecordingRetriever()
+        reranker = _FakeReranker()
+        retriever = RerankingRetriever(
+            base,
+            reranker=reranker,
+            candidate_k=5,
+            preserve_base_top_k=1,
+        )
+
+        results = retriever.retrieve("query", top_k=3)
+
+        assert base.calls == [("query", 5, {})]
+        assert [result.doc_id for result in results] == [
+            "query-0",
+            "query-4",
+            "query-3",
+        ]
+
+    def test_reranking_retriever_rejects_negative_preserve_base_top_k(self):
+        from src.retriever.reranker import RerankingRetriever
+
+        with pytest.raises(ValueError, match="preserve_base_top_k"):
+            RerankingRetriever(_RecordingRetriever(), preserve_base_top_k=-1)
 
 
 class _FakeCrossEncoder:

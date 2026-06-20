@@ -20,6 +20,7 @@ def test_config_validation_accepts_repository_configs():
     assert "configs/verabench_v112_retrieval_adaptive.yaml" in audit.files
     assert "configs/verabench_v112_retrieval_adaptive_top3.yaml" in audit.files
     assert "configs/verabench_v112_retrieval_rerank_top3.yaml" in audit.files
+    assert "configs/verabench_v112_retrieval_rerank_top3_guarded.yaml" in audit.files
 
 
 def test_canonical_verabench_config_freezes_authoritative_run_identity():
@@ -115,6 +116,30 @@ def test_retrieval_rerank_top3_config_matches_offline_frontier_candidate():
     assert rerank["retriever"]["reranker_local_files_only"] is False
 
 
+def test_retrieval_rerank_top3_guarded_config_preserves_base_recall_anchor():
+    canonical = yaml.safe_load(
+        Path("configs/verabench_v112_canonical.yaml").read_text(encoding="utf-8")
+    )
+    guarded = yaml.safe_load(
+        Path("configs/verabench_v112_retrieval_rerank_top3_guarded.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert (
+        guarded["canonical_run"]["name"]
+        == "verabench_v112_retrieval_rerank_top3_guarded_deepseek"
+    )
+    assert guarded["canonical_run"]["benchmark_version"] == canonical["canonical_run"]["benchmark_version"]
+    assert guarded["llm"] == canonical["llm"]
+    assert guarded["pipeline"] == canonical["pipeline"]
+    assert guarded["retriever"]["type"] == "bm25_rerank"
+    assert guarded["retriever"]["retrieval_top_k"] == 3
+    assert guarded["retriever"]["top_k_policy"] == "complexity_adaptive"
+    assert guarded["retriever"]["reranker_candidate_k"] == 5
+    assert guarded["retriever"]["reranker_preserve_base_top_k"] == 1
+
+
 def test_config_validation_reports_runtime_shape_errors(tmp_path):
     config = tmp_path / "bad.yaml"
     config.write_text(
@@ -132,6 +157,7 @@ def test_config_validation_reports_runtime_shape_errors(tmp_path):
                 "  type: graph",
                 "  retrieval_top_k: 0",
                 "  top_k_policy: vibes",
+                "  reranker_preserve_base_top_k: -1",
                 "conflict_graph:",
                 "  nli_threshold: 1.5",
             ]
@@ -157,6 +183,10 @@ def test_config_validation_reports_runtime_shape_errors(tmp_path):
     assert (
         "retriever.top_k_policy",
         "retriever.top_k_policy must be one of complexity_adaptive, fixed, precision_cap",
+    ) in messages
+    assert (
+        "retriever.reranker_preserve_base_top_k",
+        "retriever.reranker_preserve_base_top_k must be a non-negative integer",
     ) in messages
     assert ("conflict_graph.nli_threshold", "conflict_graph.nli_threshold must be a probability in [0, 1]") in messages
 

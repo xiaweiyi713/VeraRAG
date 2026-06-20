@@ -59,6 +59,7 @@ def _make_retriever(
     reranker_device: str = "cpu",
     reranker_local_files_only: bool = True,
     reranker_candidate_k: int = 20,
+    reranker_preserve_base_top_k: int = 0,
 ) -> BaseRetriever:
     if name in RERANKER_RETRIEVERS:
         base_name = name.removesuffix("_rerank")
@@ -71,6 +72,7 @@ def _make_retriever(
             reranker_device=reranker_device,
             reranker_local_files_only=reranker_local_files_only,
             reranker_candidate_k=reranker_candidate_k,
+            reranker_preserve_base_top_k=reranker_preserve_base_top_k,
         )
         reranker = Reranker(
             model_name=reranker_model_name,
@@ -82,6 +84,7 @@ def _make_retriever(
             base_retriever,
             reranker=reranker,
             candidate_k=reranker_candidate_k,
+            preserve_base_top_k=reranker_preserve_base_top_k,
         )
     if name == "bm25":
         return BM25Retriever()
@@ -117,6 +120,7 @@ def _variant_model_metadata(
     reranker_model_name: str,
     reranker_local_files_only: bool,
     reranker_candidate_k: int,
+    reranker_preserve_base_top_k: int,
 ) -> dict[str, Any]:
     return {
         "dense_model_name": dense_model_name if retriever_name in DENSE_RETRIEVERS else "",
@@ -131,6 +135,11 @@ def _variant_model_metadata(
         ),
         "reranker_candidate_k": (
             reranker_candidate_k if retriever_name in RERANKER_RETRIEVERS else None
+        ),
+        "reranker_preserve_base_top_k": (
+            reranker_preserve_base_top_k
+            if retriever_name in RERANKER_RETRIEVERS
+            else None
         ),
     }
 
@@ -329,6 +338,7 @@ def build_report(
     reranker_device: str = "cpu",
     reranker_local_files_only: bool = True,
     reranker_candidate_k: int = 20,
+    reranker_preserve_base_top_k: int = 0,
 ) -> dict[str, Any]:
     loader = VeraBenchLoader(data_dir)
     benchmark = loader.load()
@@ -342,6 +352,7 @@ def build_report(
         reranker_device=reranker_device,
         reranker_local_files_only=reranker_local_files_only,
         reranker_candidate_k=reranker_candidate_k,
+        reranker_preserve_base_top_k=reranker_preserve_base_top_k,
     )
     retriever.index_documents(documents)
     _assert_retriever_variant_ready(retriever_name, retriever)
@@ -401,6 +412,11 @@ def build_report(
         ),
         "reranker_candidate_k": (
             reranker_candidate_k if retriever_name in RERANKER_RETRIEVERS else None
+        ),
+        "reranker_preserve_base_top_k": (
+            reranker_preserve_base_top_k
+            if retriever_name in RERANKER_RETRIEVERS
+            else None
         ),
         "include_no_gold": include_no_gold,
         "benchmark": {
@@ -469,6 +485,7 @@ def build_matrix_report(
     reranker_device: str = "cpu",
     reranker_local_files_only: bool = True,
     reranker_candidate_k: int = 20,
+    reranker_preserve_base_top_k: int = 0,
     continue_on_error: bool = True,
 ) -> dict[str, Any]:
     loader = VeraBenchLoader(data_dir)
@@ -494,6 +511,7 @@ def build_matrix_report(
                 reranker_model_name=reranker_model_name,
                 reranker_local_files_only=reranker_local_files_only,
                 reranker_candidate_k=reranker_candidate_k,
+                reranker_preserve_base_top_k=reranker_preserve_base_top_k,
             )
             try:
                 retriever = _make_retriever(
@@ -505,6 +523,7 @@ def build_matrix_report(
                     reranker_device=reranker_device,
                     reranker_local_files_only=reranker_local_files_only,
                     reranker_candidate_k=reranker_candidate_k,
+                    reranker_preserve_base_top_k=reranker_preserve_base_top_k,
                 )
                 retriever.index_documents(documents)
                 _assert_retriever_variant_ready(retriever_name, retriever)
@@ -578,6 +597,7 @@ def build_matrix_report(
         "reranker_model_name": reranker_model_name,
         "reranker_local_files_only": reranker_local_files_only,
         "reranker_candidate_k": reranker_candidate_k,
+        "reranker_preserve_base_top_k": reranker_preserve_base_top_k,
         "include_no_gold": include_no_gold,
         "benchmark": {
             "version": benchmark.version,
@@ -689,6 +709,16 @@ def main() -> None:
         help="Candidate pool size retrieved before CrossEncoder reranking.",
     )
     parser.add_argument(
+        "--reranker-preserve-base-top-k",
+        type=int,
+        default=0,
+        help=(
+            "For *_rerank variants, force the final retained set to include this "
+            "many top base-retriever candidates as recall anchors. 0 disables "
+            "the guard."
+        ),
+    )
+    parser.add_argument(
         "--top-k-policy",
         choices=TOP_K_POLICIES,
         default="fixed",
@@ -733,6 +763,7 @@ def main() -> None:
             reranker_device=args.reranker_device,
             reranker_local_files_only=not args.reranker_allow_download,
             reranker_candidate_k=args.reranker_candidate_k,
+            reranker_preserve_base_top_k=args.reranker_preserve_base_top_k,
             continue_on_error=not args.fail_fast,
         )
     else:
@@ -753,6 +784,7 @@ def main() -> None:
             reranker_device=args.reranker_device,
             reranker_local_files_only=not args.reranker_allow_download,
             reranker_candidate_k=args.reranker_candidate_k,
+            reranker_preserve_base_top_k=args.reranker_preserve_base_top_k,
         )
     payload = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     if args.output:

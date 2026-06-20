@@ -193,6 +193,9 @@ class VeraRAG:
                 base_retriever,
                 reranker=reranker,
                 candidate_k=candidate_k,
+                preserve_base_top_k=int(
+                    retriever_config.get("reranker_preserve_base_top_k", 0)
+                ),
                 config=retriever_config,
             )
         if retriever_type == "bm25":
