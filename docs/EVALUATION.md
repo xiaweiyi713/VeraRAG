@@ -466,6 +466,29 @@ Behavior Accuracy at `1.0000`, and reduced mean per-question latency from
 and is intentionally not a publication claim; it is the launch gate for the
 full v1.1.2 A/B.
 
+The full candidate run has also completed on all 152 VeraBench v1.1.2
+questions with zero errors:
+`outputs/remote_results/verabench_v112_retrieval_rerank_top3_deepseek.json`.
+As a standalone candidate report, BM25+Reranker top-3 adaptive scores Evidence
+Precision `0.4934`, Evidence Recall `0.8827`, Answer F1 `0.4052`, Conflict
+micro-F1 `0.5641`, Behavior Accuracy `0.9934`, and mean latency `17.57s`.
+By type, Behavior Accuracy is `1.0000` for single-evidence, multi-evidence,
+conflict, temporal, and unanswerable rows, and `0.9730` for misleading rows.
+This satisfies the Stage-3 precision/recall target for the candidate itself,
+but it is not yet a paired A/B claim; run the canonical BM25 fixed-depth full
+baseline and then `compare_verabench_reports.py` before changing the canonical
+configuration.
+
+Run the full candidate with:
+
+```bash
+python experiments/run_verabench.py \
+  --config configs/verabench_v112_retrieval_rerank_top3.yaml \
+  --output outputs/remote_results/verabench_v112_retrieval_rerank_top3_deepseek.json \
+  --checkpoint outputs/remote_results/verabench_v112_retrieval_rerank_top3_deepseek.json.ckpt.jsonl \
+  --restart
+```
+
 Reproduce the smoke A/B with:
 
 ```bash

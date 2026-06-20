@@ -79,6 +79,11 @@ All notable changes to VeraRAG are recorded here.
   the BM25+Reranker top-3 adaptive candidate preserved recall and behavior,
   improved evidence precision and conflict F1, and cut mean latency versus the
   canonical BM25 fixed-depth smoke.
+- Complete the full 152-question DeepSeek Stage-3 candidate run for
+  BM25+Reranker top-3 adaptive retrieval, with zero errors, Evidence Precision
+  `0.4934`, Evidence Recall `0.8827`, Conflict F1 `0.5641`, Behavior Accuracy
+  `0.9934`, and mean latency `17.57s`; the canonical full baseline remains the
+  next required paired-comparison step.
 
 ### Added
 
