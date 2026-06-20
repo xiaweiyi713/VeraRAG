@@ -444,6 +444,19 @@ class TestReranker:
 
         assert [[result.doc_id for result in results] for results in batch] == [["D1"], ["D2"]]
 
+    def test_reranker_respects_explicit_zero_top_k(self):
+        from src.retriever.reranker import Reranker
+
+        reranker = Reranker(top_k=5)
+        reranker._load_model = lambda: None
+        reranker.model = _FakeCrossEncoder([1.0, 0.5])
+        results = [
+            RetrievalResult(doc_id="D1", content="one"),
+            RetrievalResult(doc_id="D2", content="two"),
+        ]
+
+        assert reranker.rerank("query", results, top_k=0) == []
+
     def test_evidence_aware_reranker_score_adjustment(self):
         """EvidenceAwareReranker should adjust scores based on metadata."""
         from src.retriever.reranker import EvidenceAwareReranker
@@ -512,6 +525,25 @@ class TestReranker:
         results = reranker.rerank("query", [], top_k=5)
         assert results == []
 
+    def test_reranking_retriever_uses_candidate_pool_before_truncation(self):
+        from src.retriever.reranker import RerankingRetriever
+
+        base = _RecordingRetriever()
+        reranker = _FakeReranker()
+        retriever = RerankingRetriever(base, reranker=reranker, candidate_k=4)
+
+        results = retriever.retrieve("query", top_k=2)
+
+        assert base.calls == [("query", 4, {})]
+        assert reranker.calls[0][0] == "query"
+        assert [result.doc_id for result in reranker.calls[0][1]] == [
+            "query-0",
+            "query-1",
+            "query-2",
+            "query-3",
+        ]
+        assert [result.doc_id for result in results] == ["query-3", "query-2"]
+
 
 class _FakeCrossEncoder:
     def __init__(self, scores):
@@ -521,6 +553,15 @@ class _FakeCrossEncoder:
     def predict(self, pairs, **kwargs):
         self.calls.append((pairs, kwargs))
         return np.array(self.scores[: len(pairs)], dtype=float)
+
+
+class _FakeReranker:
+    def __init__(self):
+        self.calls = []
+
+    def rerank(self, query, results, top_k=None):
+        self.calls.append((query, results, top_k))
+        return list(reversed(results))[:top_k]
 
 
 class _RecordingRetriever(BaseRetriever):

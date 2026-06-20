@@ -401,20 +401,28 @@ selection policies:
 ```bash
 python experiments/evaluate_retrieval.py \
   --matrix \
-  --matrix-retrievers bm25 hybrid dense \
+  --matrix-retrievers bm25 bm25_rerank hybrid dense \
   --matrix-top-k 3 5 10 \
   --matrix-policies fixed precision_cap complexity_adaptive \
   --output outputs/retrieval_matrix_v112.json
 ```
 
-The single-report mode supports `--retriever bm25`, `--retriever dense`, and
-`--retriever hybrid`. Matrix mode defaults to BM25 only so a fresh checkout does
-not accidentally load dense models; pass `--matrix-retrievers` explicitly for
-full Stage-3 ablations. Dense and hybrid variants use locally cached
-`sentence-transformers` files by default; pass `--dense-allow-download` when an
+The single-report mode supports `--retriever bm25`, `--retriever dense`,
+`--retriever hybrid`, and the CrossEncoder reranked variants
+`bm25_rerank`, `dense_rerank`, and `hybrid_rerank`. Matrix mode defaults to
+BM25 only so a fresh checkout does not accidentally load neural models; pass
+`--matrix-retrievers` explicitly for full Stage-3 ablations. Dense, hybrid, and
+reranker variants use locally cached `sentence-transformers` files by default;
+pass `--dense-allow-download` or `--reranker-allow-download` only when an
 intentional online model download is acceptable. In matrix mode unavailable
-dense variants are recorded as `status: error` and the remaining variants
-continue unless `--fail-fast` is set.
+model-backed variants are recorded as `status: error` and the remaining
+variants continue unless `--fail-fast` is set.
+
+Reranked variants first retrieve a larger candidate pool, controlled by
+`--reranker-candidate-k` and defaulting to 20, then use
+`BAAI/bge-reranker-base` to reorder the final top-k results. The default is
+designed for reproducibility audits: if the CrossEncoder is not already cached,
+the variant records an error rather than silently downloading weights.
 
 Current full offline matrix over BM25, Dense (`BAAI/bge-base-en-v1.5`,
 local-files-only), and Hybrid at top-k `3/5/10` shows BM25 still dominates this

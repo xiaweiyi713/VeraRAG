@@ -159,6 +159,32 @@ def test_dense_retriever_variant_can_be_evaluated(sample_bench_dir, monkeypatch)
     assert report["dense_local_files_only"] is True
 
 
+def test_rerank_retriever_variant_records_reranker_metadata(sample_bench_dir, monkeypatch):
+    class FakeReranker:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def rerank(self, query, results, top_k=None):
+            return list(reversed(results))[:top_k]
+
+    monkeypatch.setattr(retrieval_eval, "Reranker", FakeReranker)
+
+    report = build_report(
+        data_dir=sample_bench_dir,
+        retriever_name="bm25_rerank",
+        top_k=2,
+        reranker_model_name="fake-reranker",
+        reranker_local_files_only=True,
+        reranker_candidate_k=3,
+    )
+
+    assert report["retriever"] == "bm25_rerank"
+    assert report["reranker_model_name"] == "fake-reranker"
+    assert report["reranker_local_files_only"] is True
+    assert report["reranker_candidate_k"] == 3
+    assert report["evaluated_questions"] == 2
+
+
 def test_build_matrix_report_compares_retriever_policy_grid(sample_bench_dir):
     report = build_matrix_report(
         data_dir=sample_bench_dir,
@@ -180,6 +206,29 @@ def test_build_matrix_report_compares_retriever_policy_grid(sample_bench_dir):
         (3, "fixed"),
         (3, "complexity_adaptive"),
     }
+
+
+def test_matrix_records_reranker_variant_errors(sample_bench_dir, monkeypatch):
+    class FailingReranker:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def rerank(self, query, results, top_k=None):
+            raise OSError("reranker model unavailable")
+
+    monkeypatch.setattr(retrieval_eval, "Reranker", FailingReranker)
+
+    report = build_matrix_report(
+        data_dir=sample_bench_dir,
+        retriever_names=["bm25", "bm25_rerank"],
+        top_k_values=[1],
+        top_k_policies=["fixed"],
+    )
+
+    by_retriever = {variant["retriever"]: variant for variant in report["variants"]}
+    assert by_retriever["bm25"]["status"] == "ok"
+    assert by_retriever["bm25_rerank"]["status"] == "error"
+    assert "reranker model unavailable" in by_retriever["bm25_rerank"]["error"]
 
 
 def test_evaluate_retrieval_cli_writes_json_with_sweep(sample_bench_dir, tmp_path):

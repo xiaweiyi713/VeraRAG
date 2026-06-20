@@ -20,9 +20,12 @@ from src.retriever.base import BaseRetriever  # noqa: E402
 from src.retriever.bm25 import BM25Retriever  # noqa: E402
 from src.retriever.dense import DenseRetriever  # noqa: E402
 from src.retriever.hybrid import HybridRetriever  # noqa: E402
+from src.retriever.reranker import Reranker, RerankingRetriever  # noqa: E402
 
-RETRIEVERS = ("bm25", "dense", "hybrid")
+RETRIEVERS = ("bm25", "dense", "hybrid", "bm25_rerank", "dense_rerank", "hybrid_rerank")
 TOP_K_POLICIES = ("fixed", "precision_cap", "complexity_adaptive")
+RERANKER_RETRIEVERS = {"bm25_rerank", "dense_rerank", "hybrid_rerank"}
+DENSE_RETRIEVERS = {"dense", "hybrid", "dense_rerank", "hybrid_rerank"}
 
 
 def _sha256(path: Path) -> str:
@@ -52,7 +55,34 @@ def _make_retriever(
     dense_model_name: str = "BAAI/bge-base-en-v1.5",
     dense_device: str = "cpu",
     dense_local_files_only: bool = True,
+    reranker_model_name: str = "BAAI/bge-reranker-base",
+    reranker_device: str = "cpu",
+    reranker_local_files_only: bool = True,
+    reranker_candidate_k: int = 20,
 ) -> BaseRetriever:
+    if name in RERANKER_RETRIEVERS:
+        base_name = name.removesuffix("_rerank")
+        base_retriever = _make_retriever(
+            base_name,
+            dense_model_name=dense_model_name,
+            dense_device=dense_device,
+            dense_local_files_only=dense_local_files_only,
+            reranker_model_name=reranker_model_name,
+            reranker_device=reranker_device,
+            reranker_local_files_only=reranker_local_files_only,
+            reranker_candidate_k=reranker_candidate_k,
+        )
+        reranker = Reranker(
+            model_name=reranker_model_name,
+            device=reranker_device,
+            top_k=reranker_candidate_k,
+            local_files_only=reranker_local_files_only,
+        )
+        return RerankingRetriever(
+            base_retriever,
+            reranker=reranker,
+            candidate_k=reranker_candidate_k,
+        )
     if name == "bm25":
         return BM25Retriever()
     if name == "dense":
@@ -245,6 +275,10 @@ def build_report(
     dense_model_name: str = "BAAI/bge-base-en-v1.5",
     dense_device: str = "cpu",
     dense_local_files_only: bool = True,
+    reranker_model_name: str = "BAAI/bge-reranker-base",
+    reranker_device: str = "cpu",
+    reranker_local_files_only: bool = True,
+    reranker_candidate_k: int = 20,
 ) -> dict[str, Any]:
     loader = VeraBenchLoader(data_dir)
     benchmark = loader.load()
@@ -254,6 +288,10 @@ def build_report(
         dense_model_name=dense_model_name,
         dense_device=dense_device,
         dense_local_files_only=dense_local_files_only,
+        reranker_model_name=reranker_model_name,
+        reranker_device=reranker_device,
+        reranker_local_files_only=reranker_local_files_only,
+        reranker_candidate_k=reranker_candidate_k,
     )
     retriever.index_documents(documents)
 
@@ -300,9 +338,18 @@ def build_report(
         "retriever": retriever_name,
         "top_k": top_k,
         "top_k_policy": top_k_policy,
-        "dense_model_name": dense_model_name if retriever_name in {"dense", "hybrid"} else "",
+        "dense_model_name": dense_model_name if retriever_name in DENSE_RETRIEVERS else "",
         "dense_local_files_only": (
-            dense_local_files_only if retriever_name in {"dense", "hybrid"} else None
+            dense_local_files_only if retriever_name in DENSE_RETRIEVERS else None
+        ),
+        "reranker_model_name": (
+            reranker_model_name if retriever_name in RERANKER_RETRIEVERS else ""
+        ),
+        "reranker_local_files_only": (
+            reranker_local_files_only if retriever_name in RERANKER_RETRIEVERS else None
+        ),
+        "reranker_candidate_k": (
+            reranker_candidate_k if retriever_name in RERANKER_RETRIEVERS else None
         ),
         "include_no_gold": include_no_gold,
         "benchmark": {
@@ -366,6 +413,10 @@ def build_matrix_report(
     dense_model_name: str = "BAAI/bge-base-en-v1.5",
     dense_device: str = "cpu",
     dense_local_files_only: bool = True,
+    reranker_model_name: str = "BAAI/bge-reranker-base",
+    reranker_device: str = "cpu",
+    reranker_local_files_only: bool = True,
+    reranker_candidate_k: int = 20,
     continue_on_error: bool = True,
 ) -> dict[str, Any]:
     loader = VeraBenchLoader(data_dir)
@@ -385,6 +436,10 @@ def build_matrix_report(
                 dense_model_name=dense_model_name,
                 dense_device=dense_device,
                 dense_local_files_only=dense_local_files_only,
+                reranker_model_name=reranker_model_name,
+                reranker_device=reranker_device,
+                reranker_local_files_only=reranker_local_files_only,
+                reranker_candidate_k=reranker_candidate_k,
             )
             retriever.index_documents(documents)
         except Exception as exc:
@@ -450,6 +505,9 @@ def build_matrix_report(
         "top_k_policies": top_k_policies,
         "dense_model_name": dense_model_name,
         "dense_local_files_only": dense_local_files_only,
+        "reranker_model_name": reranker_model_name,
+        "reranker_local_files_only": reranker_local_files_only,
+        "reranker_candidate_k": reranker_candidate_k,
         "include_no_gold": include_no_gold,
         "benchmark": {
             "version": benchmark.version,
@@ -474,8 +532,8 @@ def main() -> None:
         choices=RETRIEVERS,
         default="bm25",
         help=(
-            "Retriever variant to evaluate. Hybrid falls back to BM25 if dense "
-            "is unavailable."
+            "Retriever variant to evaluate. *_rerank variants retrieve a "
+            "larger candidate pool and rerank it with a CrossEncoder."
         ),
     )
     parser.add_argument(
@@ -529,6 +587,30 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--reranker-model-name",
+        default="BAAI/bge-reranker-base",
+        help="CrossEncoder model for *_rerank retriever variants.",
+    )
+    parser.add_argument(
+        "--reranker-device",
+        default="cpu",
+        help="Device for reranker CrossEncoder variants.",
+    )
+    parser.add_argument(
+        "--reranker-allow-download",
+        action="store_true",
+        help=(
+            "Allow reranker variants to download missing models. By default "
+            "offline evaluation uses local cached model files only."
+        ),
+    )
+    parser.add_argument(
+        "--reranker-candidate-k",
+        type=int,
+        default=20,
+        help="Candidate pool size retrieved before CrossEncoder reranking.",
+    )
+    parser.add_argument(
         "--top-k-policy",
         choices=TOP_K_POLICIES,
         default="fixed",
@@ -568,6 +650,10 @@ def main() -> None:
             dense_model_name=args.dense_model_name,
             dense_device=args.dense_device,
             dense_local_files_only=not args.dense_allow_download,
+            reranker_model_name=args.reranker_model_name,
+            reranker_device=args.reranker_device,
+            reranker_local_files_only=not args.reranker_allow_download,
+            reranker_candidate_k=args.reranker_candidate_k,
             continue_on_error=not args.fail_fast,
         )
     else:
@@ -584,6 +670,10 @@ def main() -> None:
             dense_model_name=args.dense_model_name,
             dense_device=args.dense_device,
             dense_local_files_only=not args.dense_allow_download,
+            reranker_model_name=args.reranker_model_name,
+            reranker_device=args.reranker_device,
+            reranker_local_files_only=not args.reranker_allow_download,
+            reranker_candidate_k=args.reranker_candidate_k,
         )
     payload = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
     if args.output:

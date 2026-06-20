@@ -4,7 +4,7 @@ from typing import Any
 
 import numpy as np
 
-from .base import RetrievalResult
+from .base import BaseRetriever, RetrievalResult
 
 
 class Reranker:
@@ -20,12 +20,14 @@ class Reranker:
         model_name: str = "BAAI/bge-reranker-base",
         device: str = "cpu",
         batch_size: int = 16,
-        top_k: int = 20
+        top_k: int = 20,
+        local_files_only: bool = False,
     ):
         self.model_name = model_name
         self.device = device
         self.batch_size = batch_size
         self.top_k = top_k
+        self.local_files_only = local_files_only
         self.model: Any = None
 
     def _load_model(self):
@@ -34,7 +36,8 @@ class Reranker:
             from sentence_transformers import CrossEncoder
             self.model = CrossEncoder(
                 self.model_name,
-                device=self.device
+                device=self.device,
+                local_files_only=self.local_files_only,
             )
 
     def rerank(
@@ -57,8 +60,12 @@ class Reranker:
         if not results:
             return results
 
-        top_k = top_k or self.top_k
+        top_k = self.top_k if top_k is None else top_k
         top_k = min(top_k, len(results))
+        if top_k < 0:
+            raise ValueError("top_k must be non-negative")
+        if top_k == 0:
+            return []
 
         # Load model
         self._load_model()
@@ -116,6 +123,38 @@ class Reranker:
         ]
 
 
+class RerankingRetriever(BaseRetriever):
+    """Retriever wrapper that reranks a larger candidate pool before truncation."""
+
+    def __init__(
+        self,
+        base_retriever: BaseRetriever,
+        reranker: Reranker | None = None,
+        *,
+        candidate_k: int = 20,
+        config: dict[str, Any] | None = None,
+    ):
+        super().__init__(config)
+        self.base_retriever = base_retriever
+        self.reranker = reranker or Reranker(top_k=candidate_k)
+        self.candidate_k = self._validate_top_k(candidate_k)
+
+    def index_documents(self, documents: list[dict[str, Any]]) -> None:
+        self.base_retriever.index_documents(documents)
+
+    def retrieve(
+        self,
+        query: str,
+        top_k: int = 10,
+        **kwargs,
+    ) -> list[RetrievalResult]:
+        query = self._validate_query(query)
+        top_k = self._validate_top_k(top_k)
+        candidate_k = max(top_k, self.candidate_k)
+        candidates = self.base_retriever.retrieve(query, top_k=candidate_k, **kwargs)
+        return self.reranker.rerank(query, candidates, top_k=top_k)
+
+
 class EvidenceAwareReranker(Reranker):
     """
     Reranker that considers evidence quality factors.
@@ -152,8 +191,12 @@ class EvidenceAwareReranker(Reranker):
         if not results:
             return results
 
-        top_k = top_k or self.top_k
+        top_k = self.top_k if top_k is None else top_k
         top_k = min(top_k, len(results))
+        if top_k < 0:
+            raise ValueError("top_k must be non-negative")
+        if top_k == 0:
+            return []
 
         # Get base relevance scores
         self._load_model()

@@ -59,6 +59,10 @@ All notable changes to VeraRAG are recorded here.
   plus a VeraBench v1.1.2 BM25 top-3 complexity-adaptive candidate config and
   ablation plan metadata so the strongest offline retrieval matrix point can be
   tested end-to-end.
+- Add CrossEncoder reranked retrieval variants (`bm25_rerank`,
+  `dense_rerank`, `hybrid_rerank`) to offline VeraBench retrieval evaluation,
+  using locally cached reranker models by default and recording unavailable
+  variants as matrix errors.
 
 ### Added
 
