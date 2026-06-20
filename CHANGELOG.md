@@ -113,6 +113,14 @@ All notable changes to VeraRAG are recorded here.
   `reasoning.enforce_answer_citations` appends missing in-pool
   `answer_claims[].supporting_evidence` IDs to the final answer so answer text
   citations and claim-level supporting facts use the same evidence chain.
+- Record guarded rerank and citation-guard switches in VeraBench report
+  metadata (`retriever_reranker_preserve_base_top_k` and
+  `reasoning_enforce_answer_citations`) so Stage-3 reports remain auditable.
+- Run the guarded+citation DeepSeek smoke on `V001`, `V017`, and `V041`:
+  Evidence Precision improves from `0.1667` to `0.8333`, Citation F1 from
+  `0.0000` to `0.8889`, and Recall/Behavior stay at `1.0000` versus canonical
+  smoke, but Answer F1, Brier, Supporting-Fact F1, and conflict behavior still
+  block a full-run promotion.
 
 ### Added
 

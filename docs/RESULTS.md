@@ -114,6 +114,20 @@ significantly reduces Evidence Recall and citation quality and worsens Brier
 score. Keep canonical BM25 fixed-depth as the default until the reranked path
 adds recall/citation safeguards.
 
+A guarded follow-up config,
+`configs/verabench_v112_retrieval_rerank_top3_guarded.yaml`, now records both
+`retriever_reranker_preserve_base_top_k=1` and
+`reasoning_enforce_answer_citations=true` in new reports. On the three-question
+DeepSeek smoke (`V001`, `V017`, `V041`), it keeps Evidence Recall and Behavior
+Accuracy at `1.0000`, improves Citation F1 from `0.0000` to `0.8889` versus
+the canonical smoke, and improves Evidence Precision from `0.1667` to
+`0.8333`. It is still not ready for full-run promotion: Answer F1 drops to
+`0.4535` from canonical smoke `0.5382`, Brier worsens to `0.4390`, and
+Supporting-Fact F1 drops to `0.8889`. Compared with the unguarded reranker
+smoke, Conflict micro-F1 drops from `1.0000` to `0.8000`. The next retrieval
+candidate should add selective fallback or conflict-pair pruning before a
+152-question rerun.
+
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 
 The learned conflict detector is not enabled by default. On 2026-06-15, the

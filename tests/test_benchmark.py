@@ -634,6 +634,7 @@ class TestVeraBenchEvaluator:
                     "  reranker_candidate_k: 5",
                     "  reranker_batch_size: 16",
                     "  reranker_local_files_only: false",
+                    "  reranker_preserve_base_top_k: 1",
                 ]
             )
             + "\n",
@@ -647,6 +648,7 @@ class TestVeraBenchEvaluator:
             "model": "deepseek-v4-flash",
             "temperature": 0,
             "max_tokens": 4000,
+            "reasoning_enforce_answer_citations": True,
             "retriever_type": "bm25_rerank",
             "retriever_retrieval_top_k": 3,
             "retriever_top_k_policy": "complexity_adaptive",
@@ -657,6 +659,7 @@ class TestVeraBenchEvaluator:
             "retriever_reranker_candidate_k": 5,
             "retriever_reranker_batch_size": 16,
             "retriever_reranker_local_files_only": False,
+            "retriever_reranker_preserve_base_top_k": 1,
         }
 
     def test_config_run_metadata_records_read_failure(self, tmp_path):

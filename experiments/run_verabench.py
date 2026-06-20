@@ -169,11 +169,17 @@ def _read_config_run_metadata(config_path: str) -> dict[str, Any]:
         retriever = cfg.get("retriever", {}) or {}
         if not isinstance(retriever, dict):
             raise ValueError("retriever config is not a mapping")
+        reasoning = cfg.get("reasoning", {}) or {}
+        if not isinstance(reasoning, dict):
+            raise ValueError("reasoning config is not a mapping")
         metadata = {
             "model": llm.get("model", ""),
             "provider": llm.get("provider", ""),
             "temperature": llm.get("temperature", ""),
             "max_tokens": llm.get("max_tokens", ""),
+            "reasoning_enforce_answer_citations": reasoning.get(
+                "enforce_answer_citations", True
+            ),
         }
         for key in (
             "type",
@@ -187,6 +193,7 @@ def _read_config_run_metadata(config_path: str) -> dict[str, Any]:
             "reranker_candidate_k",
             "reranker_batch_size",
             "reranker_local_files_only",
+            "reranker_preserve_base_top_k",
         ):
             if key in retriever:
                 metadata[f"retriever_{key}"] = retriever[key]

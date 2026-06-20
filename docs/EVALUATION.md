@@ -500,6 +500,25 @@ slightly improving the unguarded `0.4456/0.9320/0.5893` without increasing the
 retained depth. This is a launch gate for a new full A/B, not a replacement for
 the completed unguarded Stage-3 report.
 
+The guarded candidate also has a real DeepSeek smoke result on `V001`, `V017`,
+and `V041` with answer-citation enforcement enabled. The refreshed report
+records `retriever_reranker_preserve_base_top_k=1` and
+`reasoning_enforce_answer_citations=true` in metadata. Compared with the
+canonical smoke, guarded BM25+Reranker keeps Evidence Recall and Behavior
+Accuracy at `1.0000`, improves Evidence Precision from `0.1667` to `0.8333`,
+improves Citation F1 from `0.0000` to `0.8889`, and reduces mean latency from
+`57.58s` to `14.40s`. It does not clear the full-run launch bar yet: Answer F1
+drops from `0.5382` to `0.4535`, Brier worsens from `0.4140` to `0.4390`, and
+Supporting-Fact F1 drops from `1.0000` to `0.8889` on this tiny slice. Against
+the unguarded reranker smoke, citation quality improves, but Conflict micro-F1
+drops from `1.0000` to `0.8000` and latency rises from `11.66s` to `14.40s`.
+The current next step is selective fallback or conflict-pair pruning before a
+full 152-question guarded run, not a blind promotion. The paired smoke reports
+are generated under
+`outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_smoke3_vs_canonical.md`
+and
+`outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_smoke3_vs_unguarded.md`.
+
 A three-question end-to-end smoke A/B over `V001`, `V017`, and `V041`
 validates the reranked candidate in the real DeepSeek pipeline before full-run
 spend. Compared with canonical BM25 fixed-depth retrieval on the same questions,
@@ -509,8 +528,8 @@ to `0.6282`, improved Conflict micro-F1 from `0.8000` to `1.0000`, preserved
 Behavior Accuracy at `1.0000`, and reduced mean per-question latency from
 `57.58s` to `11.66s`. The paired smoke report is generated under
 `outputs/remote_results/verabench_v112_retrieval_rerank_top3_smoke3_comparison.md`
-and is intentionally not a publication claim; it is the launch gate for the
-full v1.1.2 A/B.
+and is intentionally not a publication claim; it was the launch gate for the
+completed full v1.1.2 A/B.
 
 The full candidate run has also completed on all 152 VeraBench v1.1.2
 questions with zero errors:
@@ -542,10 +561,12 @@ The interpretation is deliberately conservative. BM25+Reranker top-3 adaptive
 is a strong precision/latency candidate and proves the Stage-3 precision
 direction, but it should not replace the canonical configuration yet: Evidence
 Recall drops significantly, citation quality drops significantly, and Brier
-score worsens. The next Stage-3 iteration should keep the reranker but add
-recall/citation safeguards, such as minimum gold-like coverage checks,
-question-type-specific retained-k floors, citation-enforced answer prompting,
-or selective fallback to BM25 depth-10 when reranker confidence is weak.
+score worsens. The first recall/citation safeguards are implemented and smoke
+tested, but the smoke still shows answer/supporting-fact and conflict tradeoffs.
+The next Stage-3 iteration should keep the reranker and add selective fallback
+or conflict-pair pruning before another full run, such as falling back to BM25
+depth-10 when the retained set over-detects conflicts, when answer claims add
+extra supporting evidence, or when reranker confidence is weak.
 
 Run the full candidate with:
 
@@ -641,6 +662,7 @@ retriever:
   reranker_candidate_k: 5
   reranker_batch_size: 16
   reranker_local_files_only: false
+  reranker_preserve_base_top_k: 1
 ```
 
 Pipeline defaults and the canonical v1.1.2 run keep `top_k_policy: fixed` and
