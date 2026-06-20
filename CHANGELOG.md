@@ -72,6 +72,12 @@ All notable changes to VeraRAG are recorded here.
 - Make offline retrieval evaluation fail closed when Hybrid degrades to BM25
   fallback, and record a downloaded-model top-3 adaptive result where
   `bm25_rerank` becomes the current offline retrieval frontier.
+- Add precision/recall-aware threshold selection to Conflict CrossEncoder
+  training and wire the Windows GPU launchers to pass those objectives for
+  reproducible false-positive-sensitive experiments.
+- Run a precision-first Windows GPU conflict-training matrix; it improved only
+  seed 13 and was still rejected by the promotion audit, confirming that the
+  learned detector needs stronger data or objectives before pipeline use.
 - Add end-to-end pipeline support for reranked retriever types
   (`bm25_rerank`, `dense_rerank`, `hybrid_rerank`) and a VeraBench v1.1.2
   BM25+Reranker top-3 adaptive candidate config for full behavior A/B runs.

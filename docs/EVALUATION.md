@@ -681,12 +681,16 @@ python experiments/train_conflict_cross_encoder.py \
 ```
 
 Full training writes `training_metadata.json` and `training_metrics.json` under
-the output directory. The metrics file records default-threshold and
-validation-selected precision, recall, and F1 for validation/test splits.
-It also hashes `val_predictions.jsonl` and `test_predictions.jsonl`, which
-contain row-level labels, probabilities, predictions, and dependency-component
-identities. Pair metrics include a dependency-component bootstrap interval;
-hard-negative links are included when constructing those components.
+the output directory. The metrics file records the threshold-selection
+objective, default-threshold metrics, and validation-selected precision,
+recall, and F1 for validation/test splits. The default objective is validation
+F1; use `--threshold-objective precision` with
+`--min-threshold-precision` for research runs that treat learned-conflict false
+positives as more damaging than missed learned edges. It also hashes
+`val_predictions.jsonl` and `test_predictions.jsonl`, which contain row-level
+labels, probabilities, predictions, and dependency-component identities. Pair
+metrics include a dependency-component bootstrap interval; hard-negative links
+are included when constructing those components.
 Training oversamples positives in the loader by default; the raw validation and
 test splits remain unchanged for evaluation. Use
 `compare_conflict_detectors.py --split test` for a held-out gold-evidence A/B;

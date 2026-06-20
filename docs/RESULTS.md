@@ -74,6 +74,21 @@ with `scripts/start_windows_conflict_training_matrix.sh`:
 | 17 | 0.604 | 0.333 | 0.000 | 0.000 | 0.000 |
 | 23 | 0.302 | 0.400 | 0.188 | 1.000 | 0.316 |
 
+On 2026-06-20, a precision-first threshold matrix
+(`VERARAG_GPU_THRESHOLD_OBJECTIVE=precision`,
+`VERARAG_GPU_MIN_THRESHOLD_PRECISION=1.0`) tested whether false positives could
+be controlled without changing the pair dataset:
+
+| Seed | Selected threshold | Validation P/R/F1 | Test P/R/F1 | Test TP / FP / FN |
+| ---: | ---: | ---: | ---: | ---: |
+| 13 | 0.769 | 1.000 / 0.333 / 0.500 | 0.333 / 0.667 / 0.444 | 2 / 4 / 1 |
+| 17 | 0.604 | 0.333 / 0.333 / 0.333 | 0.000 / 0.000 / 0.000 | 0 / 3 / 3 |
+| 23 | 0.302 | 0.286 / 0.667 / 0.400 | 0.188 / 1.000 / 0.316 | 3 / 13 / 0 |
+
+The precision-first audit again rejected promotion. The best seed improved
+from F1 `0.316` to `0.444`, but the three-seed result remains unstable and
+still adds false positives in the held-out gold-evidence A/B.
+
 The held-out gold-evidence detector A/B on the seed-13 model showed no gain:
 rules and rules+learned both reached precision `0.750`, recall `1.000`, F1
 `0.857`, and TP/FP/FN `3/1/0`. The report-only promotion audit rejected the

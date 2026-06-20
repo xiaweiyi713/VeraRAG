@@ -18,9 +18,12 @@ The training flow uses VeraBench evidence-pair annotations:
 4. The trained artifact is written under `outputs/conflict_cross_encoder/`,
    alongside `training_metadata.json`, `training_metrics.json`, and hashed
    validation/test row-level prediction files.
-5. `training_metrics.json` reports validation/test precision, recall, F1, and
-   the selected threshold from validation F1, plus dependency-component
-   bootstrap intervals.
+5. `training_metrics.json` reports validation/test precision, recall, F1, the
+   threshold-selection objective, the selected threshold, and
+   dependency-component bootstrap intervals. Validation F1 remains the default
+   selection objective; precision-first selection is available for supplemental
+   learned layers where false positives are more damaging than missed learned
+   edges.
 6. Positive examples are oversampled in the training loader by default so hard
    negatives do not dominate; pass `--no-balance-train` to disable this.
 7. Set `VERARAG_CONFLICT_MODEL=outputs/conflict_cross_encoder` or configure
@@ -96,6 +99,33 @@ The matrix workflow's internal held-out report-only audit rejected on
 `minimum_ablation_sample`, and `heldout_ablation_improvement`.
 It does pass split verification, shared-manifest, prediction-hash,
 prediction/metric consistency, and distinct-seed checks.
+
+A follow-up precision-first matrix on 2026-06-20 used:
+
+```bash
+VERARAG_GPU_TMUX_SESSION=verarag-conflict-train-precision \
+VERARAG_GPU_OUTPUT_PREFIX=outputs/conflict_cross_encoder_v112_precision \
+VERARAG_GPU_DATASET_DIR=outputs/conflict_pairs_v112_precision \
+VERARAG_GPU_ABLATION_OUTPUT=outputs/conflict_detector_v112_precision_matrix_test.json \
+VERARAG_GPU_AUDIT_OUTPUT=outputs/conflict_model_promotion_audit_precision.json \
+VERARAG_GPU_THRESHOLD_OBJECTIVE=precision \
+VERARAG_GPU_MIN_THRESHOLD_PRECISION=1.0 \
+scripts/start_windows_conflict_training_matrix.sh
+```
+
+It improved only seed 13 and remained unstable across seeds:
+
+| Seed | Selected threshold | Validation P/R/F1 | Test P/R/F1 | Test TP / FP / FN |
+| ---: | ---: | ---: | ---: | ---: |
+| 13 | 0.769 | 1.000 / 0.333 / 0.500 | 0.333 / 0.667 / 0.444 | 2 / 4 / 1 |
+| 17 | 0.604 | 0.333 / 0.333 / 0.333 | 0.000 / 0.000 / 0.000 | 0 / 3 / 3 |
+| 23 | 0.302 | 0.286 / 0.667 / 0.400 | 0.188 / 1.000 / 0.316 | 3 / 13 / 0 |
+
+The report-only promotion audit again rejected the learned model. The
+precision-first run confirms that the bottleneck is not just threshold tuning;
+stage-1 work should add stronger hard negatives, more independently labeled
+conflict pairs, or a different training target before enabling a learned
+detector in the pipeline.
 
 On the held-out dependency-aware test split, only three conflict-bearing
 questions and three gold pairs are available. Gold-evidence pipeline A/B gives
