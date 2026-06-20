@@ -35,6 +35,9 @@ All notable changes to VeraRAG are recorded here.
   McNemar behavior test, plus paired evidence-cluster sensitivity intervals.
 - Include citation and supporting-fact precision/recall/F1 in paired report
   comparisons when both reports expose those current VeraBench fields.
+- Include per-question `latency_seconds` in paired report comparisons as a
+  lower-is-better metric, so retrieval and routing A/B reports capture cost
+  changes alongside behavior and evidence quality.
 - Fix ECE binning so confidence values exactly equal to 1.0 are included in the
   final calibration bin.
 - Make VeraBench checkpoint resume validate saved rows against the current
@@ -72,6 +75,10 @@ All notable changes to VeraRAG are recorded here.
 - Add end-to-end pipeline support for reranked retriever types
   (`bm25_rerank`, `dense_rerank`, `hybrid_rerank`) and a VeraBench v1.1.2
   BM25+Reranker top-3 adaptive candidate config for full behavior A/B runs.
+- Run the first real DeepSeek Stage-3 smoke A/B on `V001`, `V017`, and `V041`:
+  the BM25+Reranker top-3 adaptive candidate preserved recall and behavior,
+  improved evidence precision and conflict F1, and cut mean latency versus the
+  canonical BM25 fixed-depth smoke.
 
 ### Added
 

@@ -19,6 +19,7 @@ def _report(
     mode="pipeline",
     citation_scores=None,
     supporting_scores=None,
+    latency_scores=None,
 ):
     rows = []
     for index, score in enumerate(answer_scores, start=1):
@@ -40,6 +41,8 @@ def _report(
             "conflict_false_negatives": 0,
             "dependency_group": f"component-{(index + 1) // 2}",
         }
+        if latency_scores is not None:
+            row["latency_seconds"] = latency_scores[index - 1]
         if citation_scores is not None:
             citation_score = citation_scores[index - 1]
             row.update({
@@ -130,6 +133,29 @@ def test_compare_reports_includes_citation_and_supporting_fact_metrics():
     markdown = render_markdown(payload)
     assert "| citation_f1 |" in markdown
     assert "| supporting_fact_f1 |" in markdown
+
+
+def test_compare_reports_includes_latency_as_lower_is_better():
+    payload = compare_reports(
+        _report([0.5, 0.5], latency_scores=[10.0, 20.0]),
+        _report([0.5, 0.5], latency_scores=[5.0, 8.0]),
+        resamples=100,
+        seed=3,
+    )
+
+    latency = payload["comparison"]["metrics"]["latency_seconds"]
+    assert latency["baseline"] == 15.0
+    assert latency["candidate"] == 6.5
+    assert latency["delta_candidate_minus_baseline"] == -8.5
+    assert latency["direction"] == "lower_is_better"
+    assert latency["probability_candidate_better"] == 1.0
+    assert latency["paired_outcomes"] == {
+        "candidate_wins": 2,
+        "ties": 0,
+        "candidate_losses": 0,
+    }
+    markdown = render_markdown(payload)
+    assert "| latency_seconds |" in markdown
 
 
 def test_compare_reports_rejects_mismatched_benchmark():

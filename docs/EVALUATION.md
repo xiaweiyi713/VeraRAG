@@ -451,8 +451,45 @@ offline frontier: `bm25_rerank` scores macro precision `0.4456`, recall
 multilingual Dense scores `0.4240/0.8912/0.5612`. English BGE remains behind on
 this Chinese benchmark: Hybrid `0.3889/0.8039/0.5113` and Dense
 `0.3141/0.6576/0.4147`. This makes BM25+Reranker the current best offline
-retrieval candidate, but it still needs end-to-end behavior validation before
-changing the canonical run.
+retrieval candidate, but it still needs full end-to-end behavior validation
+before changing the canonical run.
+
+A three-question end-to-end smoke A/B over `V001`, `V017`, and `V041`
+validates the reranked candidate in the real DeepSeek pipeline before full-run
+spend. Compared with canonical BM25 fixed-depth retrieval on the same questions,
+`bm25_rerank` top-3 adaptive kept Evidence Recall at `1.0000`, improved
+Evidence Precision from `0.1667` to `0.8333`, improved Answer F1 from `0.5382`
+to `0.6282`, improved Conflict micro-F1 from `0.8000` to `1.0000`, preserved
+Behavior Accuracy at `1.0000`, and reduced mean per-question latency from
+`57.58s` to `11.66s`. The paired smoke report is generated under
+`outputs/remote_results/verabench_v112_retrieval_rerank_top3_smoke3_comparison.md`
+and is intentionally not a publication claim; it is the launch gate for the
+full v1.1.2 A/B.
+
+Reproduce the smoke A/B with:
+
+```bash
+python experiments/run_verabench.py \
+  --config configs/verabench_v112_canonical.yaml \
+  --ids V001 V017 V041 \
+  --output outputs/remote_results/verabench_v112_canonical_smoke3.json \
+  --checkpoint outputs/remote_results/verabench_v112_canonical_smoke3.ckpt.jsonl \
+  --restart
+
+python experiments/run_verabench.py \
+  --config configs/verabench_v112_retrieval_rerank_top3.yaml \
+  --ids V001 V017 V041 \
+  --output outputs/remote_results/verabench_v112_retrieval_rerank_top3_smoke3.json \
+  --checkpoint outputs/remote_results/verabench_v112_retrieval_rerank_top3_smoke3.ckpt.jsonl \
+  --restart
+
+python experiments/compare_verabench_reports.py \
+  outputs/remote_results/verabench_v112_canonical_smoke3.json \
+  outputs/remote_results/verabench_v112_retrieval_rerank_top3_smoke3.json \
+  --baseline-label bm25:fixed:smoke3 \
+  --candidate-label bm25_rerank:adaptive_top3:smoke3 \
+  --output outputs/remote_results/verabench_v112_retrieval_rerank_top3_smoke3_comparison.md
+```
 
 The focused run command was:
 

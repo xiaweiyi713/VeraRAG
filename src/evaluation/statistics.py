@@ -15,11 +15,12 @@ DEFAULT_CONFIDENCE_LEVEL = 0.95
 DEFAULT_RESAMPLES = 2000
 DEFAULT_SEED = 1729
 
-_LOWER_IS_BETTER = {"ece", "brier_score"}
+_LOWER_IS_BETTER = {"ece", "brier_score", "latency_seconds"}
 _MEAN_FIELD_METRICS = {
     "answer_f1": "answer_f1",
     "evidence_recall": "evidence_recall",
     "evidence_precision": "evidence_precision",
+    "latency_seconds": "latency_seconds",
     "citation_precision": "citation_precision",
     "citation_recall": "citation_recall",
     "citation_f1": "citation_f1",
