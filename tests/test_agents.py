@@ -94,6 +94,26 @@ class TestDynamicRetrievalAgent:
 
         assert retriever.top_k_calls[0] == 10
 
+    def test_original_question_anchor_uses_configured_retrieval_depth(self):
+        from src.agents.retrieval_agent import DynamicRetrievalAgent
+
+        retriever = self.RecordingRetriever()
+        agent = DynamicRetrievalAgent(
+            retriever=retriever,  # type: ignore[arg-type]
+            config={"retriever": {"retrieval_top_k": 3}},
+        )
+        subquestions = [
+            SubQuestion(id="sq_original", question="原始问题", requires_counter_evidence=False),
+            *[
+                SubQuestion(id=f"sq{i}", question=f"子问题{i}", requires_counter_evidence=False)
+                for i in range(10)
+            ],
+        ]
+
+        agent.dynamic_retrieve(subquestions, [], max_rounds=1, budget_per_round=50)
+
+        assert retriever.top_k_calls[0] == 3
+
     def test_precision_cap_keeps_retrieval_depth_but_limits_output(self):
         from src.agents.retrieval_agent import DynamicRetrievalAgent
 
@@ -135,6 +155,32 @@ class TestDynamicRetrievalAgent:
 
         assert len(simple) == 2
         assert len(conflict) == 5
+
+    def test_complexity_adaptive_top3_caps_complex_output_at_retrieval_depth(self):
+        from src.agents.retrieval_agent import DynamicRetrievalAgent
+
+        retriever = self.RecordingRetriever()
+        agent = DynamicRetrievalAgent(
+            retriever=retriever,  # type: ignore[arg-type]
+            config={
+                "retriever": {
+                    "retrieval_top_k": 3,
+                    "top_k_policy": "complexity_adaptive",
+                }
+            },
+        )
+
+        conflict = agent.retrieve_for_subquestion(
+            SubQuestion(
+                id="sq_conflict",
+                question="冲突问题",
+                required_evidence_type="conflict",
+            ),
+            top_k=agent.retrieval_top_k,
+        )
+
+        assert retriever.top_k_calls == [3]
+        assert len(conflict) == 3
 
     def test_compact_entity_group_expands_retrieval_queries(self):
         from src.agents.retrieval_agent import DynamicRetrievalAgent

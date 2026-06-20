@@ -348,9 +348,9 @@ python experiments/evaluate_retrieval.py \
     --top-k 3 \
     --top-k-policy complexity_adaptive
 
-# 端到端 pipeline 中可通过 retriever.top_k_policy 显式启用；
-# canonical v1.1.2 配置仍保持 fixed，直到端到端消融证明无行为回退。
-# 对应 A/B 配置：configs/verabench_v112_retrieval_adaptive.yaml
+# 端到端 pipeline 中可通过 retriever.retrieval_top_k + top_k_policy 显式启用；
+# canonical v1.1.2 配置仍保持 fixed/depth-10，直到端到端消融证明无行为回退。
+# 离线最优候选配置：configs/verabench_v112_retrieval_adaptive_top3.yaml
 python experiments/plan_retrieval_ablation.py --restart \
     --output outputs/remote_results/verabench_v112_retrieval_ablation_plan.json
 # 或 verarag-plan-retrieval-ablation --restart --output outputs/remote_results/verabench_v112_retrieval_ablation_plan.json

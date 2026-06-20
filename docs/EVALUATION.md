@@ -454,21 +454,28 @@ temporal/misleading rows, and five for multi-hop/conflict rows; it scores macro
 precision `0.3500`, recall `0.9456`, and F1 `0.4977`. These are offline
 retrieval-selection diagnostics, not end-to-end behavior claims.
 
-The same policy can be enabled in the pipeline through the `retriever` config
-section:
+The same retrieval-depth and retained-evidence policy can be enabled in the
+pipeline through the `retriever` config section:
 
 ```yaml
 retriever:
   type: bm25
+  retrieval_top_k: 3
   top_k_policy: complexity_adaptive
+  adaptive_simple_top_k: 2
+  adaptive_medium_top_k: 4
+  adaptive_complex_top_k: 5
 ```
 
-Pipeline defaults and the canonical v1.1.2 run keep `top_k_policy: fixed` until
-an end-to-end ablation proves that the smaller evidence set improves Evidence
-Precision without causing over-abstention or behavior regressions.
-For that A/B, use `configs/verabench_v112_retrieval_adaptive.yaml`; it mirrors
-the canonical v1.1.2 DeepSeek run except for `retriever.top_k_policy` and its
-run/output identity.
+Pipeline defaults and the canonical v1.1.2 run keep `top_k_policy: fixed` and
+the default retrieval depth of 10 until an end-to-end ablation proves that the
+smaller evidence set improves Evidence Precision without causing
+over-abstention or behavior regressions. For that A/B, use
+`configs/verabench_v112_retrieval_adaptive_top3.yaml`; it mirrors the
+canonical v1.1.2 DeepSeek run except for `retriever.retrieval_top_k`,
+`retriever.top_k_policy`, adaptive policy limits, and its run/output identity.
+The older `configs/verabench_v112_retrieval_adaptive.yaml` remains available as
+a policy-only depth-10 sensitivity check.
 
 Generate the fixed-vs-adaptive run plan before launching remote jobs:
 
@@ -479,8 +486,9 @@ python experiments/plan_retrieval_ablation.py \
 ```
 
 The plan validates that benchmark version, LLM settings, pipeline settings, and
-retriever type match, and that only `retriever.top_k_policy` differs. It emits
-the baseline run command, candidate run command, and paired comparison command.
+retriever type match, then records the intentional `retriever.retrieval_top_k`
+and `retriever.top_k_policy` differences. It emits the baseline run command,
+candidate run command, and paired comparison command.
 
 ## Calibration Diagnostics
 

@@ -55,6 +55,10 @@ All notable changes to VeraRAG are recorded here.
 - Make offline dense/hybrid retrieval evaluation use locally cached
   SentenceTransformer files by default, with `--dense-allow-download` as an
   explicit opt-in for model downloads.
+- Add configurable pipeline retrieval depth via `retriever.retrieval_top_k`,
+  plus a VeraBench v1.1.2 BM25 top-3 complexity-adaptive candidate config and
+  ablation plan metadata so the strongest offline retrieval matrix point can be
+  tested end-to-end.
 
 ### Added
 

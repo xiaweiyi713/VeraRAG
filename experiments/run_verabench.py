@@ -177,6 +177,7 @@ def _read_config_run_metadata(config_path: str) -> dict[str, Any]:
         }
         for key in (
             "type",
+            "retrieval_top_k",
             "top_k_policy",
             "precision_cap_top_k",
             "adaptive_simple_top_k",

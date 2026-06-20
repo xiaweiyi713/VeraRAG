@@ -127,6 +127,13 @@ def _validate_runtime_config(
             )
         _positive_int(path, "retriever.top_k", retriever.get("top_k"), errors, required=False)
         _positive_int(path, "retriever.fetch_k", retriever.get("fetch_k"), errors, required=False)
+        _positive_int(
+            path,
+            "retriever.retrieval_top_k",
+            retriever.get("retrieval_top_k"),
+            errors,
+            required=False,
+        )
         _choice(
             path,
             "retriever.top_k_policy",

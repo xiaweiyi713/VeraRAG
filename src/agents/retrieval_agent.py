@@ -80,10 +80,21 @@ Your goal is to create queries that will find relevant evidence.
 Output ONLY valid JSON, no other text."""
         retriever_config = self.config.get("retriever", {})
         self.top_k_policy = str(retriever_config.get("top_k_policy", "fixed"))
+        self.retrieval_top_k = self._positive_config_int(
+            retriever_config.get("retrieval_top_k", 10),
+            "retriever.retrieval_top_k",
+        )
         self.precision_cap_top_k = int(retriever_config.get("precision_cap_top_k", 4))
         self.adaptive_simple_top_k = int(retriever_config.get("adaptive_simple_top_k", 2))
         self.adaptive_medium_top_k = int(retriever_config.get("adaptive_medium_top_k", 4))
         self.adaptive_complex_top_k = int(retriever_config.get("adaptive_complex_top_k", 5))
+
+    @staticmethod
+    def _positive_config_int(value: Any, field: str) -> int:
+        parsed = int(value)
+        if parsed <= 0:
+            raise ValueError(f"{field} must be a positive integer")
+        return parsed
 
     def retrieve_for_subquestion(
         self,
@@ -216,7 +227,11 @@ Output ONLY valid JSON, no other text."""
             target = self._select_highest_uncertainty_subquestion(unresolved, evidence_pool)
 
             # Retrieve for this sub-question
-            top_k = 10 if target.id == "sq_original" else max(1, min(10, budget_per_round // len(unresolved)))
+            top_k = (
+                self.retrieval_top_k
+                if target.id == "sq_original"
+                else max(1, min(self.retrieval_top_k, budget_per_round // len(unresolved)))
+            )
             results = self.retrieve_for_subquestion(
                 target,
                 top_k=top_k

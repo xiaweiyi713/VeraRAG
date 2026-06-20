@@ -17,7 +17,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 
 DEFAULT_BASELINE_CONFIG = "configs/verabench_v112_canonical.yaml"
-DEFAULT_CANDIDATE_CONFIG = "configs/verabench_v112_retrieval_adaptive.yaml"
+DEFAULT_CANDIDATE_CONFIG = "configs/verabench_v112_retrieval_adaptive_top3.yaml"
 
 
 def _load_config(path: str | Path) -> dict[str, Any]:
@@ -85,6 +85,8 @@ def build_plan(
     ]
     baseline_policy = str(baseline_retriever.get("top_k_policy", "fixed"))
     candidate_policy = str(candidate_retriever.get("top_k_policy", "fixed"))
+    baseline_retrieval_top_k = baseline_retriever.get("retrieval_top_k", 10)
+    candidate_retrieval_top_k = candidate_retriever.get("retrieval_top_k", 10)
     if baseline_policy == candidate_policy:
         raise ValueError(
             "baseline and candidate use the same retriever.top_k_policy; "
@@ -95,6 +97,14 @@ def build_plan(
         "status": "differs",
         "baseline": baseline_policy,
         "candidate": candidate_policy,
+    })
+    checks.append({
+        "name": "retriever.retrieval_top_k",
+        "status": "differs"
+        if baseline_retrieval_top_k != candidate_retrieval_top_k
+        else "matched",
+        "baseline": baseline_retrieval_top_k,
+        "candidate": candidate_retrieval_top_k,
     })
 
     comparison_output = comparison_output or (
@@ -143,6 +153,7 @@ def build_plan(
             "output": baseline_run["output"],
             "checkpoint": baseline_run["checkpoint"],
             "top_k_policy": baseline_policy,
+            "retrieval_top_k": baseline_retrieval_top_k,
         },
         "candidate": {
             "config": candidate_config_path,
@@ -150,6 +161,7 @@ def build_plan(
             "output": candidate_run["output"],
             "checkpoint": candidate_run["checkpoint"],
             "top_k_policy": candidate_policy,
+            "retrieval_top_k": candidate_retrieval_top_k,
         },
         "checks": checks,
         "commands": {

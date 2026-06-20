@@ -18,6 +18,7 @@ def test_config_validation_accepts_repository_configs():
     assert "configs/deepseek_rules_only.yaml" in audit.files
     assert "configs/verabench_v112_canonical.yaml" in audit.files
     assert "configs/verabench_v112_retrieval_adaptive.yaml" in audit.files
+    assert "configs/verabench_v112_retrieval_adaptive_top3.yaml" in audit.files
 
 
 def test_canonical_verabench_config_freezes_authoritative_run_identity():
@@ -61,6 +62,32 @@ def test_retrieval_adaptive_config_preserves_canonical_except_policy():
     assert canonical["retriever"]["top_k_policy"] == "fixed"
 
 
+def test_retrieval_adaptive_top3_config_matches_offline_best_candidate():
+    canonical = yaml.safe_load(
+        Path("configs/verabench_v112_canonical.yaml").read_text(encoding="utf-8")
+    )
+    top3 = yaml.safe_load(
+        Path("configs/verabench_v112_retrieval_adaptive_top3.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert (
+        top3["canonical_run"]["name"]
+        == "verabench_v112_retrieval_adaptive_top3_deepseek"
+    )
+    assert top3["canonical_run"]["benchmark_version"] == canonical["canonical_run"]["benchmark_version"]
+    assert top3["llm"] == canonical["llm"]
+    assert top3["pipeline"] == canonical["pipeline"]
+    assert top3["retriever"]["type"] == canonical["retriever"]["type"]
+    assert top3["retriever"]["retrieval_top_k"] == 3
+    assert top3["retriever"]["top_k_policy"] == "complexity_adaptive"
+    assert top3["retriever"]["adaptive_simple_top_k"] == 2
+    assert top3["retriever"]["adaptive_medium_top_k"] == 4
+    assert top3["retriever"]["adaptive_complex_top_k"] == 5
+    assert "retrieval_top_k" not in canonical["retriever"]
+
+
 def test_config_validation_reports_runtime_shape_errors(tmp_path):
     config = tmp_path / "bad.yaml"
     config.write_text(
@@ -76,6 +103,7 @@ def test_config_validation_reports_runtime_shape_errors(tmp_path):
                 "  enable_repair: sometimes",
                 "retriever:",
                 "  type: graph",
+                "  retrieval_top_k: 0",
                 "  top_k_policy: vibes",
                 "conflict_graph:",
                 "  nli_threshold: 1.5",
@@ -94,6 +122,7 @@ def test_config_validation_reports_runtime_shape_errors(tmp_path):
     assert ("pipeline.max_retrieval_rounds", "pipeline.max_retrieval_rounds must be a positive integer") in messages
     assert ("pipeline.enable_repair", "pipeline.enable_repair must be a boolean") in messages
     assert ("retriever.type", "retriever.type must be one of bm25, hybrid, dense") in messages
+    assert ("retriever.retrieval_top_k", "retriever.retrieval_top_k must be a positive integer") in messages
     assert (
         "retriever.top_k_policy",
         "retriever.top_k_policy must be one of complexity_adaptive, fixed, precision_cap",
