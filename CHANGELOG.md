@@ -43,6 +43,9 @@ All notable changes to VeraRAG are recorded here.
 - Make VeraBench checkpoint resume validate saved rows against the current
   question text, type, ground truth, and expected behavior, skipping stale or
   out-of-scope rows so filtered or edited runs cannot reuse polluted results.
+- Add a checkpoint repair helper for long VeraBench runs that backs up JSONL
+  checkpoints and removes transient errored rows so resume reruns only failed
+  questions.
 - Normalize pipeline and loaded report confidence values into finite `[0, 1]`
   probabilities before calibration and aggregate reporting.
 - Rebuild runtime pipeline confidence as a behavior-level fusion of verifier

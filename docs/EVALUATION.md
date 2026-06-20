@@ -82,6 +82,23 @@ the same command without `--restart` to resume. Checkpoint reuse is rejected
 when benchmark, config, implementation, question filter, or maximum-question
 signatures differ.
 
+If a long real run finishes with transient API failures, remove errored
+checkpoint rows and resume without `--restart` so only failed questions rerun:
+
+```bash
+python experiments/repair_verabench_checkpoint.py \
+  outputs/remote_results/verabench_v112_canonical_deepseek.json.ckpt.jsonl \
+  --dry-run
+python experiments/repair_verabench_checkpoint.py \
+  outputs/remote_results/verabench_v112_canonical_deepseek.json.ckpt.jsonl
+DEEPSEEK_API_KEY=<key> python experiments/run_verabench.py \
+  --config configs/verabench_v112_canonical.yaml \
+  --output outputs/remote_results/verabench_v112_canonical_deepseek.json
+```
+
+The repair command creates a timestamped backup before replacing the JSONL and
+never overwrites an existing explicit backup path.
+
 ## Offline Rescoring
 
 Reports record metric implementations in `metadata.metric_versions`. When an
