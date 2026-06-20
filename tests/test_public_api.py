@@ -99,6 +99,7 @@ def test_console_scripts_are_registered():
     assert 'verarag-validate-external-conflicts = "experiments.validate_external_conflict_set:main"' in pyproject
     assert 'verarag-rescore = "experiments.rescore_verabench:main"' in pyproject
     assert 'verarag-merge-reports = "experiments.merge_verabench_reports:main"' in pyproject
+    assert 'verarag-repair-checkpoint = "experiments.repair_verabench_checkpoint:main"' in pyproject
     assert 'verarag-scan-secrets = "experiments.scan_secrets:main"' in pyproject
     assert 'verarag-generate-sbom = "experiments.generate_sbom:main"' in pyproject
     assert 'verarag-release-checksums = "experiments.generate_release_checksums:main"' in pyproject

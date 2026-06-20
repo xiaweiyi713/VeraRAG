@@ -99,6 +99,12 @@ DEEPSEEK_API_KEY=<key> python experiments/run_verabench.py \
 The repair command creates a timestamped backup before replacing the JSONL and
 never overwrites an existing explicit backup path.
 
+Installed package equivalent:
+
+```bash
+verarag-repair-checkpoint results/verabench_full.json.ckpt.jsonl --dry-run
+```
+
 ## Offline Rescoring
 
 Reports record metric implementations in `metadata.metric_versions`. When an
