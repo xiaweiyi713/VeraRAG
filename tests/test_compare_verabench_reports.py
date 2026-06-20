@@ -156,6 +156,7 @@ def test_compare_reports_includes_latency_as_lower_is_better():
     }
     markdown = render_markdown(payload)
     assert "| latency_seconds |" in markdown
+    assert "| latency_seconds | lower_is_better |" in markdown
 
 
 def test_compare_reports_rejects_mismatched_benchmark():

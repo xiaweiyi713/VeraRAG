@@ -192,14 +192,16 @@ def render_markdown(payload: dict[str, Any]) -> str:
         "## Metric Deltas",
         "",
         (
-            "| Metric | Baseline | Candidate | Delta (candidate - baseline) | "
+            "| Metric | Direction | Baseline | Candidate | "
+            "Delta (candidate - baseline) | "
             f"{confidence:.1f}% delta CI | P(candidate better) |"
         ),
-        "| --- | ---: | ---: | ---: | ---: | ---: |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
     ]
     for name, metric in sorted(comparison["metrics"].items()):
         lines.append(
-            f"| {name} | {metric['baseline']:.4f} | "
+            f"| {name} | {metric.get('direction', 'higher_is_better')} | "
+            f"{metric['baseline']:.4f} | "
             f"{metric['candidate']:.4f} | "
             f"{metric['delta_candidate_minus_baseline']:+.4f} | "
             f"[{metric['delta_lower']:+.4f}, {metric['delta_upper']:+.4f}] | "
