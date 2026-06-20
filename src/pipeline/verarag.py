@@ -18,6 +18,7 @@ from ..evidence.extractor import EvidenceExtractor
 from ..evidence.normalizer import EvidenceNormalizer
 from ..retriever.bm25 import BM25Retriever
 from ..retriever.hybrid import HybridRetriever
+from ..retriever.reranker import Reranker, RerankingRetriever
 from ..uncertainty.controller import Action, UncertaintyController
 from ..utils.data_structures import (
     AnswerClaim,
@@ -135,26 +136,7 @@ class VeraRAG:
 
         # Retriever — BM25 is the low-dependency default for reproducible evals.
         retriever_config = self.config.get("retriever", {})
-        retriever_type = str(retriever_config.get("type", "hybrid")).lower()
-        if retriever_type == "bm25":
-            self.retriever = BM25Retriever(config=retriever_config)
-        elif retriever_type == "hybrid":
-            try:
-                self.retriever = HybridRetriever(
-                    config=retriever_config,
-                    sparse_weight=retriever_config.get("sparse_weight", 0.3),
-                    dense_weight=retriever_config.get("dense_weight", 0.7)
-                )
-            except ImportError:
-                self.retriever = BM25Retriever(config=retriever_config)
-                import logging
-                logging.getLogger("verarag").warning("sentence-transformers not installed, using BM25 only")
-        elif retriever_type == "dense":
-            from ..retriever.dense import DenseRetriever
-            dense_config = retriever_config.get("dense", retriever_config)
-            self.retriever = DenseRetriever(config=dense_config)
-        else:
-            raise ValueError(f"Unknown retriever.type: {retriever_type}")
+        self.retriever = self._build_retriever(retriever_config)
 
         # Agents
         self.task_analyzer = TaskAnalyzer(self.config, self.llm_client)
@@ -185,6 +167,54 @@ class VeraRAG:
         self.enable_uncertainty = pipeline_config.get("enable_uncertainty", True)
         self.enable_verification = pipeline_config.get("enable_verification", True)
         self.enable_repair = pipeline_config.get("enable_repair", True)
+
+    def _build_retriever(self, retriever_config: dict[str, Any]):
+        retriever_type = str(retriever_config.get("type", "hybrid")).lower()
+        if retriever_type.endswith("_rerank"):
+            base_config = dict(retriever_config)
+            base_config["type"] = retriever_type.removesuffix("_rerank")
+            base_retriever = self._build_retriever(base_config)
+            candidate_k = int(retriever_config.get("reranker_candidate_k", 20))
+            reranker = Reranker(
+                model_name=str(
+                    retriever_config.get(
+                        "reranker_model_name",
+                        "BAAI/bge-reranker-base",
+                    )
+                ),
+                device=str(retriever_config.get("reranker_device", "cpu")),
+                batch_size=int(retriever_config.get("reranker_batch_size", 16)),
+                top_k=candidate_k,
+                local_files_only=bool(
+                    retriever_config.get("reranker_local_files_only", False)
+                ),
+            )
+            return RerankingRetriever(
+                base_retriever,
+                reranker=reranker,
+                candidate_k=candidate_k,
+                config=retriever_config,
+            )
+        if retriever_type == "bm25":
+            return BM25Retriever(config=retriever_config)
+        if retriever_type == "hybrid":
+            try:
+                return HybridRetriever(
+                    config=retriever_config,
+                    sparse_weight=retriever_config.get("sparse_weight", 0.3),
+                    dense_weight=retriever_config.get("dense_weight", 0.7),
+                )
+            except ImportError:
+                import logging
+                logging.getLogger("verarag").warning(
+                    "sentence-transformers not installed, using BM25 only"
+                )
+                return BM25Retriever(config=retriever_config)
+        if retriever_type == "dense":
+            from ..retriever.dense import DenseRetriever
+            dense_config = retriever_config.get("dense", retriever_config)
+            return DenseRetriever(config=dense_config)
+        raise ValueError(f"Unknown retriever.type: {retriever_type}")
 
     def index_documents(self, documents: list[dict[str, Any]]) -> None:
         """

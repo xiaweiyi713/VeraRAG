@@ -19,7 +19,14 @@ RUNTIME_CONFIG_NAMES = {
     "deepseek_rules_only.yaml",
     "verabench_v112_canonical.yaml",
 }
-RETRIEVER_TYPES = {"bm25", "hybrid", "dense"}
+RETRIEVER_TYPES = {
+    "bm25",
+    "hybrid",
+    "dense",
+    "bm25_rerank",
+    "hybrid_rerank",
+    "dense_rerank",
+}
 TOP_K_POLICIES = {"fixed", "precision_cap", "complexity_adaptive"}
 
 
@@ -122,7 +129,8 @@ def _validate_runtime_config(
                 ConfigIssue(
                     path,
                     "retriever.type",
-                    "retriever.type must be one of bm25, hybrid, dense",
+                    "retriever.type must be one of bm25, bm25_rerank, dense, "
+                    "dense_rerank, hybrid, hybrid_rerank",
                 )
             )
         _positive_int(path, "retriever.top_k", retriever.get("top_k"), errors, required=False)
@@ -146,8 +154,24 @@ def _validate_runtime_config(
             "adaptive_simple_top_k",
             "adaptive_medium_top_k",
             "adaptive_complex_top_k",
+            "reranker_candidate_k",
+            "reranker_batch_size",
         ):
             _positive_int(path, f"retriever.{field}", retriever.get(field), errors, required=False)
+        _string(
+            path,
+            "retriever.reranker_model_name",
+            retriever.get("reranker_model_name"),
+            errors,
+            required=False,
+        )
+        _string(path, "retriever.reranker_device", retriever.get("reranker_device"), errors, required=False)
+        _boolean(
+            path,
+            "retriever.reranker_local_files_only",
+            retriever.get("reranker_local_files_only"),
+            errors,
+        )
         _probability(path, "retriever.sparse_weight", retriever.get("sparse_weight"), errors)
         _probability(path, "retriever.dense_weight", retriever.get("dense_weight"), errors)
 

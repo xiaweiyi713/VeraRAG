@@ -19,6 +19,7 @@ def test_config_validation_accepts_repository_configs():
     assert "configs/verabench_v112_canonical.yaml" in audit.files
     assert "configs/verabench_v112_retrieval_adaptive.yaml" in audit.files
     assert "configs/verabench_v112_retrieval_adaptive_top3.yaml" in audit.files
+    assert "configs/verabench_v112_retrieval_rerank_top3.yaml" in audit.files
 
 
 def test_canonical_verabench_config_freezes_authoritative_run_identity():
@@ -88,6 +89,32 @@ def test_retrieval_adaptive_top3_config_matches_offline_best_candidate():
     assert "retrieval_top_k" not in canonical["retriever"]
 
 
+def test_retrieval_rerank_top3_config_matches_offline_frontier_candidate():
+    canonical = yaml.safe_load(
+        Path("configs/verabench_v112_canonical.yaml").read_text(encoding="utf-8")
+    )
+    rerank = yaml.safe_load(
+        Path("configs/verabench_v112_retrieval_rerank_top3.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert (
+        rerank["canonical_run"]["name"]
+        == "verabench_v112_retrieval_rerank_top3_deepseek"
+    )
+    assert rerank["canonical_run"]["benchmark_version"] == canonical["canonical_run"]["benchmark_version"]
+    assert rerank["llm"] == canonical["llm"]
+    assert rerank["pipeline"] == canonical["pipeline"]
+    assert rerank["retriever"]["type"] == "bm25_rerank"
+    assert rerank["retriever"]["retrieval_top_k"] == 3
+    assert rerank["retriever"]["top_k_policy"] == "complexity_adaptive"
+    assert rerank["retriever"]["reranker_model_name"] == "BAAI/bge-reranker-base"
+    assert rerank["retriever"]["reranker_candidate_k"] == 5
+    assert rerank["retriever"]["reranker_batch_size"] == 16
+    assert rerank["retriever"]["reranker_local_files_only"] is False
+
+
 def test_config_validation_reports_runtime_shape_errors(tmp_path):
     config = tmp_path / "bad.yaml"
     config.write_text(
@@ -121,7 +148,11 @@ def test_config_validation_reports_runtime_shape_errors(tmp_path):
     assert ("llm.model", "llm.model must be a non-empty string") in messages
     assert ("pipeline.max_retrieval_rounds", "pipeline.max_retrieval_rounds must be a positive integer") in messages
     assert ("pipeline.enable_repair", "pipeline.enable_repair must be a boolean") in messages
-    assert ("retriever.type", "retriever.type must be one of bm25, hybrid, dense") in messages
+    assert (
+        "retriever.type",
+        "retriever.type must be one of bm25, bm25_rerank, dense, dense_rerank, "
+        "hybrid, hybrid_rerank",
+    ) in messages
     assert ("retriever.retrieval_top_k", "retriever.retrieval_top_k must be a positive integer") in messages
     assert (
         "retriever.top_k_policy",

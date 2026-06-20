@@ -408,6 +408,28 @@ class TestPipelineRetrieverConfig:
 
         assert isinstance(pipeline.retriever, BM25Retriever)
 
+    def test_verarag_respects_bm25_rerank_retriever_type(self):
+        from src.pipeline.verarag import VeraRAG
+        from src.retriever.reranker import RerankingRetriever
+
+        pipeline = VeraRAG({
+            "llm": {"provider": "openai", "api_key": "test-key"},
+            "retriever": {
+                "type": "bm25_rerank",
+                "reranker_model_name": "fake-reranker",
+                "reranker_candidate_k": 5,
+                "reranker_batch_size": 4,
+                "reranker_local_files_only": True,
+            },
+        })
+
+        assert isinstance(pipeline.retriever, RerankingRetriever)
+        assert isinstance(pipeline.retriever.base_retriever, BM25Retriever)
+        assert pipeline.retriever.candidate_k == 5
+        assert pipeline.retriever.reranker.model_name == "fake-reranker"
+        assert pipeline.retriever.reranker.batch_size == 4
+        assert pipeline.retriever.reranker.local_files_only is True
+
 
 class TestReranker:
     def test_reranker_orders_by_cross_encoder_score(self):

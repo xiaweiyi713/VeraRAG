@@ -69,6 +69,9 @@ All notable changes to VeraRAG are recorded here.
 - Make offline retrieval evaluation fail closed when Hybrid degrades to BM25
   fallback, and record a downloaded-model top-3 adaptive result where
   `bm25_rerank` becomes the current offline retrieval frontier.
+- Add end-to-end pipeline support for reranked retriever types
+  (`bm25_rerank`, `dense_rerank`, `hybrid_rerank`) and a VeraBench v1.1.2
+  BM25+Reranker top-3 adaptive candidate config for full behavior A/B runs.
 
 ### Added
 

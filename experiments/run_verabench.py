@@ -183,6 +183,10 @@ def _read_config_run_metadata(config_path: str) -> dict[str, Any]:
             "adaptive_simple_top_k",
             "adaptive_medium_top_k",
             "adaptive_complex_top_k",
+            "reranker_model_name",
+            "reranker_candidate_k",
+            "reranker_batch_size",
+            "reranker_local_files_only",
         ):
             if key in retriever:
                 metadata[f"retriever_{key}"] = retriever[key]

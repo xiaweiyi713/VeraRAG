@@ -3,11 +3,12 @@
 from .bm25 import BM25Retriever
 from .dense import DenseRetriever
 from .hybrid import HybridRetriever
-from .reranker import Reranker
+from .reranker import Reranker, RerankingRetriever
 
 __all__ = [
     "BM25Retriever",
     "DenseRetriever",
     "HybridRetriever",
-    "Reranker"
+    "Reranker",
+    "RerankingRetriever",
 ]

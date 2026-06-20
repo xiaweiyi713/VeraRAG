@@ -624,12 +624,16 @@ class TestVeraBenchEvaluator:
                     "  temperature: 0",
                     "  max_tokens: 4000",
                     "retriever:",
-                    "  type: bm25",
+                    "  type: bm25_rerank",
                     "  retrieval_top_k: 3",
                     "  top_k_policy: complexity_adaptive",
                     "  adaptive_simple_top_k: 2",
                     "  adaptive_medium_top_k: 4",
                     "  adaptive_complex_top_k: 5",
+                    "  reranker_model_name: BAAI/bge-reranker-base",
+                    "  reranker_candidate_k: 5",
+                    "  reranker_batch_size: 16",
+                    "  reranker_local_files_only: false",
                 ]
             )
             + "\n",
@@ -643,12 +647,16 @@ class TestVeraBenchEvaluator:
             "model": "deepseek-v4-flash",
             "temperature": 0,
             "max_tokens": 4000,
-            "retriever_type": "bm25",
+            "retriever_type": "bm25_rerank",
             "retriever_retrieval_top_k": 3,
             "retriever_top_k_policy": "complexity_adaptive",
             "retriever_adaptive_simple_top_k": 2,
             "retriever_adaptive_medium_top_k": 4,
             "retriever_adaptive_complex_top_k": 5,
+            "retriever_reranker_model_name": "BAAI/bge-reranker-base",
+            "retriever_reranker_candidate_k": 5,
+            "retriever_reranker_batch_size": 16,
+            "retriever_reranker_local_files_only": False,
         }
 
     def test_config_run_metadata_records_read_failure(self, tmp_path):

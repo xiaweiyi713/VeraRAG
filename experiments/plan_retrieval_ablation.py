@@ -17,7 +17,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 
 DEFAULT_BASELINE_CONFIG = "configs/verabench_v112_canonical.yaml"
-DEFAULT_CANDIDATE_CONFIG = "configs/verabench_v112_retrieval_adaptive_top3.yaml"
+DEFAULT_CANDIDATE_CONFIG = "configs/verabench_v112_retrieval_rerank_top3.yaml"
 
 
 def _load_config(path: str | Path) -> dict[str, Any]:
@@ -77,20 +77,28 @@ def build_plan(
             baseline_config.get("pipeline"),
             candidate_config.get("pipeline"),
         ),
-        _assert_equal(
-            "retriever.type",
-            baseline_retriever.get("type"),
-            candidate_retriever.get("type"),
-        ),
     ]
+    baseline_retriever_type = str(baseline_retriever.get("type", "hybrid"))
+    candidate_retriever_type = str(candidate_retriever.get("type", "hybrid"))
+    checks.append({
+        "name": "retriever.type",
+        "status": "differs"
+        if baseline_retriever_type != candidate_retriever_type
+        else "matched",
+        "baseline": baseline_retriever_type,
+        "candidate": candidate_retriever_type,
+    })
     baseline_policy = str(baseline_retriever.get("top_k_policy", "fixed"))
     candidate_policy = str(candidate_retriever.get("top_k_policy", "fixed"))
     baseline_retrieval_top_k = baseline_retriever.get("retrieval_top_k", 10)
     candidate_retrieval_top_k = candidate_retriever.get("retrieval_top_k", 10)
-    if baseline_policy == candidate_policy:
+    if (
+        baseline_retriever_type == candidate_retriever_type
+        and baseline_policy == candidate_policy
+    ):
         raise ValueError(
-            "baseline and candidate use the same retriever.top_k_policy; "
-            "this is not a retrieval-policy ablation"
+            "baseline and candidate use the same retriever.type and "
+            "retriever.top_k_policy; this is not a retrieval ablation"
         )
     checks.append({
         "name": "retriever.top_k_policy",
@@ -108,7 +116,7 @@ def build_plan(
     })
 
     comparison_output = comparison_output or (
-        "outputs/remote_results/verabench_v112_retrieval_adaptive_comparison.md"
+        "outputs/remote_results/verabench_v112_retrieval_rerank_top3_comparison.md"
     )
     baseline_run_args = [
         "python",
@@ -139,9 +147,9 @@ def build_plan(
         str(baseline_run["output"]),
         str(candidate_run["output"]),
         "--baseline-label",
-        baseline_policy,
+        f"{baseline_retriever_type}:{baseline_policy}",
         "--candidate-label",
-        candidate_policy,
+        f"{candidate_retriever_type}:{candidate_policy}",
         "--output",
         comparison_output,
     ]
@@ -152,6 +160,7 @@ def build_plan(
             "run_name": baseline_run["name"],
             "output": baseline_run["output"],
             "checkpoint": baseline_run["checkpoint"],
+            "retriever_type": baseline_retriever_type,
             "top_k_policy": baseline_policy,
             "retrieval_top_k": baseline_retrieval_top_k,
         },
@@ -160,6 +169,7 @@ def build_plan(
             "run_name": candidate_run["name"],
             "output": candidate_run["output"],
             "checkpoint": candidate_run["checkpoint"],
+            "retriever_type": candidate_retriever_type,
             "top_k_policy": candidate_policy,
             "retrieval_top_k": candidate_retrieval_top_k,
         },
