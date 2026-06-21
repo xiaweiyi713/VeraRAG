@@ -643,10 +643,22 @@ and calibration. A post-guard `citation_support_sync` stage now runs after
 repair and deterministic answer guards, keeping in-pool answer citations and
 `answer_claims[].supporting_evidence` aligned before final confidence
 estimation. Runtime behavior-prior confidence calibration is also enabled in
-the targeted guarded config and recorded in future report metadata. The next
-Stage-3 iteration should rerun gate18 with the reranker, targeted retrieval,
-answer guards, citation/support sync, and runtime calibration enabled, with
-BM25 depth-10 reserved for broader gate failures.
+the targeted guarded config and recorded in report metadata. The calibrated
+rerun,
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_calibrated_gate18.json`,
+completed 18/18 with zero errors. Against top-3 guarded it improves Answer F1
+(`0.4102` to `0.4420`), Evidence Recall (`0.6944` to `0.7963`), Evidence
+Precision (`0.5463` to `0.5861`), Citation F1 (`0.6593` to `0.6855`),
+Supporting-Fact F1 (`0.6278` to `0.6352`), correctness accuracy (`0.7222` to
+`0.8333`), and Brier (`0.3756` to `0.2978`) while preserving Behavior Accuracy
+at `1.0000`. Against the previous targeted gate, ECE improves from `0.5375` to
+`0.3803` and Brier from `0.4070` to `0.2978`, but correctness falls from
+`0.8889` to `0.8333` on generated-answer regressions in `V020` and `V081`.
+Against canonical BM25 gate18 it still loses Evidence Recall and
+Supporting-Fact F1, so it is promoted only as the next reranked candidate to
+harden, not as a canonical replacement. The next Stage-3 iteration should fix
+the unstable conflict/temporal answer regressions and then run a full 152-row
+candidate A/B if the gate remains above top-3 guarded.
 
 Run the full candidate with:
 

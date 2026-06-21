@@ -174,6 +174,14 @@ All notable changes to VeraRAG are recorded here.
   predicted-behavior priors before applying failure-mode caps and uncertainty
   penalties, and VeraBench report metadata records the calibration switch,
   blend weight, max adjustment, and priors.
+- Run the calibrated targeted guarded gate18. Versus top-3 guarded it improves
+  Answer F1 (`0.4102` to `0.4420`), Evidence Recall (`0.6944` to `0.7963`),
+  Evidence Precision (`0.5463` to `0.5861`), Citation F1 (`0.6593` to
+  `0.6855`), Supporting-Fact F1 (`0.6278` to `0.6352`), correctness accuracy
+  (`0.7222` to `0.8333`), and Brier (`0.3756` to `0.2978`) with Behavior
+  Accuracy still `1.0000`; it remains below canonical BM25 on Recall and
+  Supporting-Fact F1 and shows `V020`/`V081` generated-answer regressions
+  versus the previous targeted gate.
 
 ### Added
 

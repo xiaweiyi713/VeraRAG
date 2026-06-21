@@ -169,8 +169,23 @@ estimated. This makes the guarded answer/citation/supporting-fact contract
 auditable. The targeted guarded config also enables runtime behavior-prior
 confidence calibration, blending the fused runtime confidence with conservative
 behavior-level priors before the existing failure-mode caps and uncertainty
-penalty. The metric effect still needs a gate18 rerun before updating the
-public Stage-3 table.
+penalty.
+
+The calibrated targeted gate18 rerun completed 18/18 questions with zero
+errors at
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_calibrated_gate18.json`.
+Compared with top-3 guarded, it improves Answer F1 (`0.4102` to `0.4420`),
+Evidence Recall (`0.6944` to `0.7963`), Evidence Precision (`0.5463` to
+`0.5861`), Citation F1 (`0.6593` to `0.6855`), Supporting-Fact F1 (`0.6278` to
+`0.6352`), correctness accuracy (`0.7222` to `0.8333`), and Brier (`0.3756` to
+`0.2978`) while keeping Behavior Accuracy at `1.0000`. Compared with the
+previous targeted gate, calibration and citation/support sync improve ECE
+(`0.5375` to `0.3803`) and Brier (`0.4070` to `0.2978`), but correctness drops
+from `0.8889` to `0.8333` due to two generated-answer regressions (`V020`,
+`V081`). Compared with canonical BM25 gate18, the candidate is much faster and
+has higher Evidence Precision and Citation F1, but Evidence Recall and
+Supporting-Fact F1 remain lower. This makes it a better Stage-3 candidate than
+top-3 guarded, not yet a canonical replacement.
 
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 
