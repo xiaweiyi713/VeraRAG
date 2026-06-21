@@ -155,6 +155,15 @@ All notable changes to VeraRAG are recorded here.
   targeted Answer F1 regression to `0.3786`, keeps Behavior Accuracy at
   `1.0000`, and improves Evidence Precision to `0.5583`, but still remains
   below top-3 guarded Answer F1 (`0.4102`), so it is not promoted to a full run.
+- Add narrow answer guards for simple numeric answers, abstention answers with
+  unrelated conflict preambles, and premise-verification answers that repeat
+  unreliable reports without correction. On gate18, the targeted guarded
+  candidate now improves over top-3 guarded on Answer F1 (`0.4102` to
+  `0.4362`), Evidence Recall (`0.6944` to `0.7407`), Evidence Precision
+  (`0.5463` to `0.5583`), and correctness accuracy (`0.7222` to `0.8889`) while
+  keeping Behavior Accuracy at `1.0000`; it still regresses Citation F1,
+  Supporting-Fact F1, latency, and calibration, so full-run promotion remains
+  blocked pending citation/support synchronization and recalibration.
 
 ### Added
 

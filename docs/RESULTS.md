@@ -151,13 +151,16 @@ top-3 guarded first pass and appends at most two extra chunks only for
 under-covered medium/complex retrieval needs. It now also enables
 `reasoning.claim_slot_selection_enabled`, which compresses the reasoning prompt
 to the strongest answer evidence slots while retaining the full evidence pool
-for verification and scoring. On gate18 it improves over top-3 guarded on
-Evidence Recall (`0.6944` to `0.7407`) and Evidence Precision (`0.5463` to
-`0.5583`), keeps Citation F1 essentially flat (`0.6593` to `0.6574`), and
-keeps Behavior Accuracy at `1.0000`. The claim-slot selector mitigates the
-previous uncompressed targeted Answer F1 regression (`0.3109` to `0.3786`),
-but the candidate is still held back because it remains below top-3 guarded
-Answer F1 (`0.4102`) and supporting-fact F1 is flat (`0.6278` to `0.6259`).
+for verification and scoring. It also adds narrow answer guards for simple
+numeric answers, abstention conflict preambles, and premise-verification
+answers that repeat unreliable reports without correcting them. On gate18 it
+improves over top-3 guarded on Answer F1 (`0.4102` to `0.4362`), Evidence
+Recall (`0.6944` to `0.7407`), Evidence Precision (`0.5463` to `0.5583`), and
+correctness accuracy (`0.7222` to `0.8889`) while keeping Behavior Accuracy at
+`1.0000`. It is still held back because Citation F1 (`0.6593` to `0.6204`),
+Supporting-Fact F1 (`0.6278` to `0.5889`), latency (`15.75s` to `21.58s`),
+ECE (`0.4334` to `0.5375`), and Brier (`0.3756` to `0.4070`) regress versus
+top-3 guarded.
 
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 

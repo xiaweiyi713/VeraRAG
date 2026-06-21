@@ -1248,6 +1248,49 @@ class TestPipelineIntegration:
         assert claims[0].claim == "问题中的断言缺乏充分证据支持"
         assert steps[0].description.startswith("识别到这是前提/断言验证问题")
 
+    def test_answerability_guard_corrects_premise_when_answer_repeats_unreliable_report(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D014_c0",
+                source="news",
+                title="媒体对星辰科技的不实报道",
+                text_span="另有报道称该公司目前员工已超过6万人，且星辰科技于2010年成立。",
+                relevance_score=0.8,
+            ),
+            Evidence(
+                evidence_id="D013_c0",
+                source="report",
+                title="星辰科技公司介绍与发展历程",
+                text_span="星辰科技由李明远博士于2012年在北京创立。2019年开始研发AI专用芯片。",
+                relevance_score=0.95,
+            ),
+            Evidence(
+                evidence_id="D010_c0",
+                source="report",
+                title="星辰科技2023财年年报摘要",
+                text_span="截至2023年末，星辰科技员工总数为41000人。",
+                relevance_score=0.9,
+            ),
+        ]
+
+        answer, claims, steps, guard = pipeline._apply_answerability_guard(
+            "星辰科技2010年成立，是中国最早的AI芯片公司，目前员工超过6万人，对吗？",
+            "根据现有证据：媒体报道称星辰科技于2010年成立，是国内最早的AI芯片公司，"
+            "目前员工已超过6万人。以上部分数据需进一步核实，请以公司正式财报为准。",
+            [],
+            [],
+            evidence,
+        )
+
+        assert guard == {"action": "premise_noncorrection_corrected"}
+        assert answer.startswith("该说法不准确")
+        assert "2012年" in answer
+        assert "41000人" in answer
+        assert "D014_c0" not in claims[0].supporting_evidence
+        assert set(claims[0].supporting_evidence) == {"D013_c0", "D010_c0"}
+        assert steps[0].description.startswith("识别到这是前提/断言验证问题")
+
     def test_point_in_time_value_guard_filters_historical_version_noise(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
         evidence = [
@@ -1293,6 +1336,102 @@ class TestPipelineIntegration:
         assert "D002_c0" not in answer
         assert claims[0].supporting_evidence == ["D001_c0"]
         assert steps[0].evidence_ids == ["D001_c0"]
+
+    def test_concise_value_guard_compresses_simple_numeric_answer(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D078_c0",
+                source="report",
+                title="嫦娥六号任务样本",
+                text_span="嫦娥六号于2024年6月完成人类首次月球背面采样返回，带回约1935.3克月壤样本。",
+                relevance_score=0.95,
+            ),
+            Evidence(
+                evidence_id="D079_c0",
+                source="report",
+                title="嫦娥六号科研进展",
+                text_span="后续研究将分析月球背面样本的矿物组成。",
+                relevance_score=0.7,
+            ),
+        ]
+
+        answer, claims, steps, guard = pipeline._apply_concise_value_answer_guard(
+            "嫦娥六号带回的月壤样本大约有多少克？",
+            "嫦娥六号带回的月壤样本大约为1935.3克。引用证据：[D078_c0]",
+            [],
+            [],
+            evidence,
+            EvidenceConflictGraph(),
+        )
+
+        assert guard == {
+            "action": "concise_value_answer",
+            "selected_evidence": "D078_c0",
+        }
+        assert answer == "约1935.3克。引用证据：[D078_c0]"
+        assert claims[0].claim == "约1935.3克"
+        assert claims[0].supporting_evidence == ["D078_c0"]
+        assert steps[0].evidence_ids == ["D078_c0"]
+
+    def test_concise_value_guard_handles_irrelevant_conflict_preamble_for_simple_value(
+        self,
+        pipeline_config,
+    ):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D073_c0",
+                source="paper",
+                title="RAG系统幻觉率评估基准HAAG",
+                text_span="HAAG基准包含2000个问题-答案对，覆盖6个领域。",
+                relevance_score=0.95,
+            ),
+            Evidence(
+                evidence_id="D064_c0",
+                source="paper",
+                title="Agentic RAG综述",
+                text_span="Agentic RAG成为复杂任务的新方向。",
+                relevance_score=0.6,
+            ),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.add_edge(ConflictEdge("C_haag", "C_rag", ConflictType.REFUTE, 0.7))
+
+        answer, claims, steps, guard = pipeline._apply_concise_value_answer_guard(
+            "RAG系统幻觉率评估基准HAAG包含多少个问题-答案对？",
+            "证据存在冲突：D073_c0 与 D064_c0 内容不一致。综合判断，HAAG基准包含2000个问题-答案对。",
+            [],
+            [],
+            evidence,
+            graph,
+        )
+
+        assert guard == {
+            "action": "concise_value_answer",
+            "selected_evidence": "D073_c0",
+        }
+        assert answer == "2000个问题-答案对。引用证据：[D073_c0]"
+        assert claims[0].supporting_evidence == ["D073_c0"]
+        assert steps[0].evidence_ids == ["D073_c0"]
+
+    def test_abstention_conflict_prefix_guard_strips_unrelated_preamble(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+
+        answer, claims, steps, guard = pipeline._apply_abstention_conflict_prefix_guard(
+            "全球禁止人类生殖细胞基因编辑的70个国家具体是哪些？",
+            "证据存在冲突：D076_c0 提到无关大豆实验，而 D089_c0 提到递送系统优化。"
+            "综合判断，根据现有证据无法回答此问题。证据仅提到已有超过70个国家禁止相关临床应用，"
+            "但未列出具体国家名单。",
+            [],
+            [],
+        )
+
+        assert guard == {"action": "abstention_conflict_prefix_stripped"}
+        assert answer.startswith("根据现有证据无法回答此问题")
+        assert "证据存在冲突" not in answer
+        assert claims == []
+        assert steps[0].description.startswith("识别到答案主体为不可答")
 
     def test_final_confidence_uses_verification_evidence_and_conflicts(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)

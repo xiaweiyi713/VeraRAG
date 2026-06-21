@@ -783,6 +783,9 @@ class VeraRAG:
         if self._should_correct_premise_abstention(question, answer):
             return self._build_premise_correction_answer(question, answer, claims, reasoning)
 
+        if self._should_correct_premise_noncorrection(question, answer, evidence):
+            return self._build_evidence_premise_correction_answer(question, evidence, reasoning)
+
         return answer, claims, reasoning, None
 
     def _apply_point_in_time_value_guard(
@@ -898,6 +901,196 @@ class VeraRAG:
             marker in text for marker in current_markers
         )
 
+    def _apply_concise_value_answer_guard(
+        self,
+        question: str,
+        answer: str,
+        claims: list[AnswerClaim],
+        reasoning: list[ReasoningStep],
+        evidence: list[Evidence],
+        conflict_graph: EvidenceConflictGraph,
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep], dict[str, Any] | None]:
+        """Normalize simple numeric answers to the cited value span."""
+        if not self._should_apply_concise_value_answer_guard(
+            question,
+            answer,
+            evidence,
+            conflict_graph,
+        ):
+            return answer, claims, reasoning, None
+
+        ranked = self._rank_guard_sentences(question, evidence, limit=3)
+        for evidence_id, sentence in ranked:
+            value = self._extract_simple_value_phrase(question, sentence)
+            if not value:
+                continue
+            guarded_answer = f"{value}。引用证据：[{evidence_id}]"
+            guarded_claims = [
+                AnswerClaim(
+                    claim=value,
+                    supporting_evidence=[evidence_id],
+                    confidence=0.88,
+                    claim_type="factual",
+                    verifiable=True,
+                    support_type="direct",
+                )
+            ]
+            guarded_reasoning = [
+                ReasoningStep(
+                    step=1,
+                    description="识别到问题只询问单个数值，压缩答案为证据中的直接数值并保留引用。",
+                    evidence_ids=[evidence_id],
+                    confidence=0.88,
+                ),
+                *reasoning,
+            ]
+            for index, step in enumerate(guarded_reasoning, start=1):
+                step.step = index
+            return (
+                guarded_answer,
+                guarded_claims,
+                guarded_reasoning,
+                {
+                    "action": "concise_value_answer",
+                    "selected_evidence": evidence_id,
+                },
+            )
+        return answer, claims, reasoning, None
+
+    @classmethod
+    def _should_apply_concise_value_answer_guard(
+        cls,
+        question: str,
+        answer: str,
+        evidence: list[Evidence],
+        conflict_graph: EvidenceConflictGraph,
+    ) -> bool:
+        if conflict_graph.get_conflicts() and not answer.startswith("证据存在冲突："):
+            return False
+        if len(evidence) > 3:
+            return False
+        if cls._is_abstention_answer(answer):
+            return False
+        if cls._is_premise_validation_question(question):
+            return False
+        if cls._is_comparison_question(question) and "问题-答案对" not in question:
+            return False
+        if any(marker in question for marker in ("哪些", "分别", "各", "比较", "有哪些", "阶段", "策略", "模式", "哪一年")):
+            return False
+        if not any(marker in question for marker in ("多少", "几", "多重", "多大")):
+            return False
+        return bool(re.search(r"\d", answer))
+
+    @classmethod
+    def _extract_simple_value_phrase(cls, question: str, sentence: str) -> str | None:
+        unit = cls._preferred_value_unit(question)
+        units = (
+            "个问题-答案对",
+            "问题-答案对",
+            "量子比特",
+            "万欧元",
+            "亿美元",
+            "亿元",
+            "万辆",
+            "千克",
+            "公斤",
+            "欧元",
+            "美元",
+            "人民币",
+            "国家",
+            "小时",
+            "分钟",
+            "克",
+            "个",
+            "项",
+            "对",
+            "人",
+            "辆",
+            "篇",
+            "%",
+            "％",
+        )
+        unit_pattern = "|".join(re.escape(item) for item in units)
+        pattern = re.compile(
+            rf"(?:约|大约|超过|不足|近|接近)?\s*\d+(?:\.\d+)?(?:万|亿|千|百)?(?:{unit_pattern})"
+        )
+        matches = [match.group(0).replace(" ", "") for match in pattern.finditer(sentence)]
+        if unit:
+            matches = [match for match in matches if unit in match]
+            if len(matches) == 1:
+                return matches[0]
+        if len(matches) == 1:
+            return matches[0]
+        return None
+
+    @staticmethod
+    def _preferred_value_unit(question: str) -> str | None:
+        for unit in (
+            "个问题-答案对",
+            "问题-答案对",
+            "量子比特",
+            "万欧元",
+            "亿美元",
+            "亿元",
+            "万辆",
+            "千克",
+            "公斤",
+            "欧元",
+            "美元",
+            "人民币",
+            "国家",
+            "小时",
+            "分钟",
+            "克",
+            "个",
+            "项",
+            "对",
+            "人",
+            "辆",
+            "篇",
+            "%",
+            "％",
+        ):
+            if unit in question:
+                return unit
+        return None
+
+    def _apply_abstention_conflict_prefix_guard(
+        self,
+        question: str,
+        answer: str,
+        claims: list[AnswerClaim],
+        reasoning: list[ReasoningStep],
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep], dict[str, Any] | None]:
+        """Remove unrelated conflict preambles from abstention answers."""
+        if not self._should_strip_abstention_conflict_prefix(question, answer):
+            return answer, claims, reasoning, None
+        stripped = re.sub(r"^证据存在冲突：.*?综合判断，", "", answer, count=1, flags=re.S).strip()
+        if not stripped or stripped == answer:
+            return answer, claims, reasoning, None
+        guarded_reasoning = [
+            ReasoningStep(
+                step=1,
+                description="识别到答案主体为不可答，但开头包含与问题无关的冲突前缀，因此移除前缀以保持拒答聚焦。",
+                evidence_ids=[],
+                confidence=0.82,
+            ),
+            *reasoning,
+        ]
+        for index, step in enumerate(guarded_reasoning, start=1):
+            step.step = index
+        return stripped, claims, guarded_reasoning, {"action": "abstention_conflict_prefix_stripped"}
+
+    @classmethod
+    def _should_strip_abstention_conflict_prefix(cls, question: str, answer: str) -> bool:
+        if cls._is_premise_validation_question(question):
+            return False
+        if not answer.startswith("证据存在冲突："):
+            return False
+        if "综合判断，" not in answer:
+            return False
+        return cls._is_abstention_answer(answer)
+
     @classmethod
     def _is_abstention_answer(cls, answer: str) -> bool:
         return any(marker in answer for marker in cls._ABSTENTION_MARKERS)
@@ -914,6 +1107,26 @@ class VeraRAG:
             return False
         correction_markers = ("不准确", "前提有误", "不成立", "不能说明", "不能证明", "缺乏证据支持")
         return not any(marker in answer for marker in correction_markers)
+
+    @classmethod
+    def _should_correct_premise_noncorrection(
+        cls,
+        question: str,
+        answer: str,
+        evidence: list[Evidence],
+    ) -> bool:
+        premise_markers = ("对吗", "是不是", "是吗", "对吧", "既然")
+        if not any(marker in question for marker in premise_markers):
+            return False
+        correction_markers = ("不准确", "前提有误", "不成立", "错误", "不实", "不能说明", "不能证明")
+        if any(marker in answer for marker in correction_markers):
+            return False
+        weak_answer_markers = ("需进一步核实", "非官方", "请以", "不实报道")
+        evidence_markers = ("不实报道", "非官方", "请以", "正式财报", "官方", "纠正")
+        evidence_text = " ".join(f"{item.title} {item.text_span}" for item in evidence)
+        return any(marker in answer for marker in weak_answer_markers) or any(
+            marker in evidence_text for marker in evidence_markers
+        )
 
     @classmethod
     def _should_abstain_on_exact_value_gap(
@@ -1055,6 +1268,47 @@ class VeraRAG:
         for index, step in enumerate(guarded_reasoning, start=1):
             step.step = index
         return answer, claims, guarded_reasoning, {"action": "exact_value_gap_abstain"}
+
+    def _build_evidence_premise_correction_answer(
+        self,
+        question: str,
+        evidence: list[Evidence],
+        reasoning: list[ReasoningStep],
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep], dict[str, Any]]:
+        corrective_evidence = [
+            item for item in evidence
+            if not any(marker in f"{item.title} {item.text_span}" for marker in ("不实报道", "非官方渠道"))
+        ]
+        relevant = self._rank_guard_sentences(question, corrective_evidence or evidence, limit=3)
+        if relevant:
+            evidence_text = "；".join(f"{sentence}（[{evidence_id}]）" for evidence_id, sentence in relevant)
+            evidence_ids = list(dict.fromkeys(evidence_id for evidence_id, _sentence in relevant))
+            answer = f"该说法不准确。现有证据显示：{evidence_text}。"
+        else:
+            evidence_ids = [item.evidence_id for item in evidence[:2]]
+            answer = "该说法不准确。现有证据不支持问题中的断言，应以更可靠来源为准。"
+        claims = [
+            AnswerClaim(
+                claim="问题中的断言不准确或缺乏可靠证据支持",
+                supporting_evidence=evidence_ids,
+                confidence=0.72,
+                claim_type="factual",
+                verifiable=True,
+                support_type="direct",
+            )
+        ]
+        guarded_reasoning = [
+            ReasoningStep(
+                step=1,
+                description="识别到这是前提/断言验证问题，但原回答未显式纠正不准确前提，因此改为基于可靠证据纠正。",
+                evidence_ids=evidence_ids,
+                confidence=0.78,
+            ),
+            *reasoning,
+        ]
+        for index, step in enumerate(guarded_reasoning, start=1):
+            step.step = index
+        return answer, claims, guarded_reasoning, {"action": "premise_noncorrection_corrected"}
 
     @classmethod
     def _build_premise_correction_answer(
@@ -1312,6 +1566,26 @@ class VeraRAG:
                     reasoning_chain,
                     evidence_pool,
                     conflict_graph,
+                )
+            )
+        if not answerability_guard:
+            answer, answer_claims, reasoning_chain, answerability_guard = (
+                self._apply_concise_value_answer_guard(
+                    question,
+                    answer,
+                    answer_claims,
+                    reasoning_chain,
+                    evidence_pool,
+                    conflict_graph,
+                )
+            )
+        if not answerability_guard:
+            answer, answer_claims, reasoning_chain, answerability_guard = (
+                self._apply_abstention_conflict_prefix_guard(
+                    question,
+                    answer,
+                    answer_claims,
+                    reasoning_chain,
                 )
             )
         if answerability_guard:
