@@ -656,9 +656,15 @@ at `1.0000`. Against the previous targeted gate, ECE improves from `0.5375` to
 `0.8889` to `0.8333` on generated-answer regressions in `V020` and `V081`.
 Against canonical BM25 gate18 it still loses Evidence Recall and
 Supporting-Fact F1, so it is promoted only as the next reranked candidate to
-harden, not as a canonical replacement. The next Stage-3 iteration should fix
-the unstable conflict/temporal answer regressions and then run a full 152-row
-candidate A/B if the gate remains above top-3 guarded.
+harden, not as a canonical replacement. The next Stage-3 iteration fixed the
+unstable `V020`/`V081` conflict/temporal answer regressions with a current-
+attribute retrieval refresh, narrow company-attribute conflict answer guard,
+evidence-detail completion guard, and disjoint evidence-attribute NLI pruning.
+The focused two-row smoke at
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stability_v020_v081.json`
+completed with `2/2` correct answers, zero errors, Evidence Recall `1.0000`,
+Behavior Accuracy `1.0000`, and Conflict F1 `1.0000`. This does not replace
+gate18; rerun the guarded gate before spending a full 152-row candidate A/B.
 
 Run the full candidate with:
 

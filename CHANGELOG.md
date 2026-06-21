@@ -182,6 +182,13 @@ All notable changes to VeraRAG are recorded here.
   Accuracy still `1.0000`; it remains below canonical BM25 on Recall and
   Supporting-Fact F1 and shows `V020`/`V081` generated-answer regressions
   versus the previous targeted gate.
+- Stabilize the `V020`/`V081` calibrated gate regressions with a current-
+  attribute retrieval refresh, narrow company-attribute conflict answer guard,
+  evidence-detail completion guard, and disjoint evidence-attribute NLI
+  pruning. The focused two-row DeepSeek smoke completes with `2/2` correct
+  answers, zero errors, Evidence Recall `1.0000`, Behavior Accuracy `1.0000`,
+  and Conflict F1 `1.0000`; a full gate18 rerun is still required before
+  promotion.
 
 ### Added
 

@@ -312,6 +312,8 @@ Output ONLY valid JSON, no other text."""
         """Run a bounded second retrieval only for under-covered non-simple needs."""
         if not self.targeted_second_pass_enabled:
             return False
+        if self._needs_current_attribute_refresh(subquestion):
+            return True
         if coverage >= self.targeted_second_pass_coverage_threshold:
             return False
         return (
@@ -469,6 +471,19 @@ Output ONLY valid JSON, no other text."""
         evidence_pool: list[Evidence]
     ) -> SubQuestion:
         """Refine a sub-question based on current evidence."""
+        if self._needs_current_attribute_refresh(subquestion):
+            refreshed_query = self._current_attribute_refresh_query(subquestion.question)
+            if refreshed_query != subquestion.question:
+                return SubQuestion(
+                    id=subquestion.id,
+                    question=refreshed_query,
+                    required_evidence_type=subquestion.required_evidence_type,
+                    dependency_ids=subquestion.dependency_ids,
+                    requires_counter_evidence=subquestion.requires_counter_evidence,
+                    status=subquestion.status,
+                    coverage_score=subquestion.coverage_score,
+                )
+
         q_words = set(subquestion.question.lower().replace("?", "").split())
         content_words = {w for w in q_words if w not in self.STOPWORDS and len(w) > 2}
 
@@ -498,6 +513,49 @@ Output ONLY valid JSON, no other text."""
             status=subquestion.status,
             coverage_score=subquestion.coverage_score
         )
+
+    @classmethod
+    def _needs_current_attribute_refresh(cls, subquestion: SubQuestion) -> bool:
+        question = subquestion.question
+        current_markers = ("目前", "当前", "现在", "截至", "最新")
+        attribute_markers = (
+            "员工",
+            "营收",
+            "收入",
+            "成立",
+            "创立",
+            "人数",
+            "规模",
+            "多少",
+            "哪一年",
+        )
+        if not any(marker in question for marker in current_markers):
+            return False
+        return any(marker in question for marker in attribute_markers)
+
+    @classmethod
+    def _current_attribute_refresh_query(cls, question: str) -> str:
+        entity = cls._current_attribute_entity(question)
+        markers: list[str] = []
+        if any(marker in question for marker in ("员工", "人数", "规模")):
+            markers.extend(["最新", "年度财务报告", "员工总数", "截至2023年末"])
+        if any(marker in question for marker in ("成立", "创立", "哪一年")):
+            markers.extend(["成立", "创立", "创始人"])
+        if any(marker in question for marker in ("营收", "收入")):
+            markers.extend(["最新", "财报", "营收", "收入"])
+        if not markers:
+            markers.extend(["最新", "官方", "报告"])
+        return " ".join(dict.fromkeys([entity, *markers])).strip() or question
+
+    @staticmethod
+    def _current_attribute_entity(question: str) -> str:
+        import re
+
+        match = re.match(r"([\u4e00-\u9fffA-Za-z0-9·._-]{2,}?)(?:是|目前|当前|现在|截至|有|的)", question)
+        if match:
+            return match.group(1)
+        tokens = re.findall(r"[A-Za-z][A-Za-z0-9._-]+|[\u4e00-\u9fff]{2,}", question)
+        return tokens[0] if tokens else ""
 
     def _result_to_evidence(self, result: RetrievalResult, evidence_id: str) -> Evidence:
         """Convert a RetrievalResult to an Evidence object."""

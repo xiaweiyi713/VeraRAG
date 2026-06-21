@@ -457,6 +457,41 @@ class TestPipelineIntegration:
 
         assert filtered.get_conflicts() == []
 
+    def test_disjoint_company_attribute_nli_conflict_is_filtered(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        founded = Claim(
+            claim_id="C_founded",
+            claim="星辰科技由李明远博士于2012年在北京创立",
+            claim_type=ClaimType.FACTUAL,
+        )
+        employees = Claim(
+            claim_id="C_employees",
+            claim="截至2023年末，星辰科技员工总数为41,000人",
+            claim_type=ClaimType.FACTUAL,
+        )
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_founded",
+                "C_employees",
+                ConflictType.REFUTE,
+                0.91,
+                rationale="NLI contradiction: 0.91",
+            ),
+        ]
+        evidence_pool = [
+            Evidence("D013_c0", "wiki", "星辰科技公司介绍", "", claims=[founded]),
+            Evidence("D011_c0", "report", "星辰科技2023年度财务报告", "", claims=[employees]),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "星辰科技是哪一年成立的？目前有多少员工？",
+        )
+
+        assert filtered.get_conflicts() == []
+
     def test_strategy_question_filters_unrelated_runtime_dispute(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
         google = Claim(
@@ -1432,6 +1467,107 @@ class TestPipelineIntegration:
         assert "证据存在冲突" not in answer
         assert claims == []
         assert steps[0].description.startswith("识别到答案主体为不可答")
+
+    def test_company_attribute_conflict_guard_restores_official_facts(
+        self,
+        pipeline_config,
+    ):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D014_c0",
+                source="news",
+                title="星辰科技发展历程引争议",
+                text_span=(
+                    "有媒体报道称星辰科技成立于2010年，员工人数超过6万人。"
+                    "以上部分数据需进一步核实，与官方信息存在出入。"
+                ),
+            ),
+            Evidence(
+                evidence_id="D011_c0",
+                source="report",
+                title="星辰科技2023年度财务报告",
+                text_span="截至2023年末，公司员工总数增至41,000人。",
+            ),
+            Evidence(
+                evidence_id="D013_c0",
+                source="wiki",
+                title="星辰科技公司介绍",
+                text_span="星辰科技由李明远博士于2012年在北京创立。",
+            ),
+        ]
+
+        answer, claims, steps, guard = pipeline._apply_company_attribute_conflict_guard(
+            "星辰科技是哪一年成立的？目前有多少员工？",
+            "证据存在冲突：D014_c0 与 D013_c0 内容不一致。",
+            [],
+            [],
+            evidence,
+        )
+
+        assert guard == {
+            "action": "company_attribute_conflict_answer",
+            "selected_evidence": ["D013_c0", "D011_c0", "D014_c0"],
+        }
+        assert "2012年" in answer
+        assert "41,000人" in answer
+        assert "2010年" in answer
+        assert "6万人" in answer
+        assert "D010_c0" not in answer
+        assert claims[0].supporting_evidence == ["D013_c0"]
+        assert claims[1].supporting_evidence == ["D011_c0"]
+        assert claims[2].supporting_evidence == ["D014_c0"]
+        assert steps[0].evidence_ids == ["D013_c0", "D011_c0", "D014_c0"]
+
+    def test_evidence_detail_completion_guard_restores_semiconductor_constraints(
+        self,
+        pipeline_config,
+    ):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D053_c0",
+                source="blog",
+                title="关于芯片制程的常见误解",
+                text_span=(
+                    '"3nm"和"5nm"等命名已不再代表实际的物理栅极长度。'
+                    '例如，台积电的"3nm"工艺的实际栅极长度约为20nm以上。'
+                    "虽然硅基晶体管的微缩确实面临量子隧穿等物理挑战，"
+                    "但通过新材料（如GAA晶体管）、新架构（如chiplet）和先进封装，"
+                    "性能提升仍有多种路径。"
+                ),
+            ),
+            Evidence(
+                evidence_id="D071_c0",
+                source="report",
+                title="半导体先进封装技术演进",
+                text_span=(
+                    "Chiplet（芯粒）架构正在成为主流设计范式，"
+                    "UCIe（Universal Chiplet Interconnect Express）标准推动了不同厂商芯粒之间的互操作性。"
+                    "但先进封装成本高昂，2.5D/3D封装成本是传统封装的5-10倍。"
+                ),
+            ),
+        ]
+
+        answer, claims, steps, guard = pipeline._apply_evidence_detail_completion_guard(
+            "半导体制程技术目前面临什么物理极限？有哪些替代路径？",
+            "半导体制程技术目前面临量子隧穿等挑战，替代路径包括GAA、Chiplet和先进封装。"
+            "引用证据：[D053_c0] [D071_c0]",
+            [],
+            [],
+            evidence,
+        )
+
+        assert guard == {
+            "action": "evidence_detail_completion",
+            "selected_evidence": ["D053_c0", "D071_c0"],
+        }
+        assert "20nm" in answer
+        assert "UCIe" in answer
+        assert "5-10倍" in answer
+        assert claims[0].supporting_evidence == ["D053_c0"]
+        assert claims[-1].supporting_evidence == ["D071_c0"]
+        assert steps[0].evidence_ids == ["D053_c0", "D071_c0"]
 
     def test_post_guard_sync_adds_answer_citations_to_claim_support(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)

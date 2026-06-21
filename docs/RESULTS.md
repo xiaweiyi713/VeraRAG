@@ -187,6 +187,16 @@ has higher Evidence Precision and Citation F1, but Evidence Recall and
 Supporting-Fact F1 remain lower. This makes it a better Stage-3 candidate than
 top-3 guarded, not yet a canonical replacement.
 
+A focused stability smoke for the two calibrated regressions now passes:
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stability_v020_v081.json`
+completed `V020` and `V081` with `2/2` correct answers, zero errors, Evidence
+Recall `1.0000`, Behavior Accuracy `1.0000`, and Conflict F1 `1.0000`.
+`V020` uses a current-attribute retrieval refresh plus a narrow company
+attribute conflict guard, while `V081` uses evidence-detail completion for
+omitted process-node and advanced-packaging constraints. This is a targeted
+smoke result only; promotion still requires another gate18 and then a full
+152-question A/B.
+
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 
 The learned conflict detector is not enabled by default. On 2026-06-15, the

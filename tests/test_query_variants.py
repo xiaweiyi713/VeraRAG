@@ -104,6 +104,36 @@ class TestQueryVariants(unittest.TestCase):
         self.assertTrue(any(query.startswith("最新 ") for query in queries))
         self.assertTrue(any("不同观点" in query for query in queries))
 
+    def test_current_attribute_refresh_forces_second_pass_and_latest_report_query(self):
+        agent = DynamicRetrievalAgent(
+            retriever=MagicMock(),
+            config={"retriever": {"targeted_second_pass_enabled": True}},
+        )
+        subquestion = SubQuestion(
+            id="sq0",
+            question="星辰科技是哪一年成立的？目前有多少员工？",
+            required_evidence_type="general",
+        )
+
+        self.assertTrue(agent._should_run_targeted_second_pass(subquestion, coverage=1.0))
+
+        refined = agent._refine_subquestion(
+            subquestion,
+            [
+                Evidence(
+                    evidence_id="D010_c0",
+                    source="report",
+                    title="星辰科技2022年度财务报告",
+                    text_span="截至2022年末，公司员工总数为32,000人。",
+                )
+            ],
+        )
+
+        self.assertIn("星辰科技", refined.question)
+        self.assertIn("年度财务报告", refined.question)
+        self.assertIn("员工总数", refined.question)
+        self.assertIn("截至2023年末", refined.question)
+
 
 class TestSubquestionRefinement(unittest.TestCase):
     """Test subquestion refinement."""
