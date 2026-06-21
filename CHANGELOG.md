@@ -131,6 +131,19 @@ All notable changes to VeraRAG are recorded here.
   answer drifts into early-version evidence despite no true conflict, the
   pipeline filters historical-version chunks and emits a single direct
   claim/citation for the current value.
+- Add `run_verabench.py --ids-file` and `verarag-filter-report` so broader
+  paired gates can reuse fixed question-id lists and slice completed full
+  reports into statistically comparable subsets.
+- Add `configs/verabench_v112_guarded_gate18_ids.txt`, an 18-question
+  Stage-3 guarded gate with three rows per VeraBench type. Top-3 guarded
+  BM25+Reranker improves Evidence Precision (`0.1760` to `0.5463`) and
+  Citation F1 (`0.2111` to `0.6593`) versus canonical on this gate, but
+  Evidence Recall (`0.9722` to `0.6944`) and Supporting-Fact F1
+  (`0.7856` to `0.6278`) reject a full-run promotion.
+- Add and gate-test `configs/verabench_v112_retrieval_rerank_expanded_guarded.yaml`.
+  The naive expanded-depth variant is rejected because Behavior Accuracy falls
+  to `0.9444`, Answer F1 falls to `0.3336`, and Evidence Recall does not
+  improve versus top-3 guarded.
 
 ### Added
 

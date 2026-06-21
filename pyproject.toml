@@ -94,6 +94,7 @@ verarag-build-external-annotation-packet = "experiments.build_external_annotatio
 verarag-compile-external-annotations = "experiments.compile_external_annotations:main"
 verarag-validate-external-conflicts = "experiments.validate_external_conflict_set:main"
 verarag-rescore = "experiments.rescore_verabench:main"
+verarag-filter-report = "experiments.filter_verabench_report:main"
 verarag-merge-reports = "experiments.merge_verabench_reports:main"
 verarag-compare-reports = "experiments.compare_verabench_reports:main"
 verarag-repair-checkpoint = "experiments.repair_verabench_checkpoint:main"

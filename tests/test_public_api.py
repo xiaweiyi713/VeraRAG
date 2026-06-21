@@ -98,6 +98,7 @@ def test_console_scripts_are_registered():
     assert 'verarag-compile-external-annotations = "experiments.compile_external_annotations:main"' in pyproject
     assert 'verarag-validate-external-conflicts = "experiments.validate_external_conflict_set:main"' in pyproject
     assert 'verarag-rescore = "experiments.rescore_verabench:main"' in pyproject
+    assert 'verarag-filter-report = "experiments.filter_verabench_report:main"' in pyproject
     assert 'verarag-merge-reports = "experiments.merge_verabench_reports:main"' in pyproject
     assert 'verarag-repair-checkpoint = "experiments.repair_verabench_checkpoint:main"' in pyproject
     assert 'verarag-benchmark-status = "experiments.verabench_status:main"' in pyproject

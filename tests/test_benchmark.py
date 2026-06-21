@@ -494,6 +494,22 @@ class TestLoadVeraBench:
         assert _unknown_question_ids(["V999", "V001", "V999"], {"V001", "V002"}) == ["V999"]
         assert _unknown_question_ids(None, {"V001"}) == []
 
+    def test_ids_file_merges_with_explicit_ids(self, tmp_path):
+        from experiments.run_verabench import _combine_question_ids
+
+        ids_file = tmp_path / "ids.txt"
+        ids_file.write_text(
+            "# smoke ids\nV002 V003\n\nV004  # inline comment\n",
+            encoding="utf-8",
+        )
+
+        assert _combine_question_ids(["V001"], str(ids_file)) == [
+            "V001",
+            "V002",
+            "V003",
+            "V004",
+        ]
+
     def test_checkpoint_signature_rejects_stale_results(self, tmp_path):
         from experiments.run_verabench import _prepare_checkpoint
 

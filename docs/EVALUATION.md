@@ -520,12 +520,40 @@ the unguarded reranker smoke, it keeps Evidence Precision, Recall, Behavior,
 Conflict, and Supporting-Fact F1 unchanged while improving Answer F1 by
 `+0.0632`, Citation F1 by `+1.0000`, and Brier by `-0.0163`; the cost is
 `+2.26s` mean latency on this tiny slice. This clears the guarded three-question
-smoke gate, but it is still not a publication claim: run a broader guarded
-gate before spending on another full 152-question job. The paired smoke reports
+smoke gate, but it is still not a publication claim. The paired smoke reports
 are generated under
 `outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_smoke3_vs_canonical.md`
 and
 `outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_smoke3_vs_unguarded.md`.
+
+A broader 18-question guarded gate is now fixed in
+`configs/verabench_v112_guarded_gate18_ids.txt` with three questions per
+VeraBench type and high-risk rows from the full Stage-3 A/B. Use
+`run_verabench.py --ids-file` to run the candidate and
+`filter_verabench_report.py --ids-file` to slice a completed full baseline
+report into the same paired subset. On this gate, top-3 guarded BM25+Reranker
+keeps Behavior Accuracy at `1.0000`, improves Evidence Precision from `0.1760`
+to `0.5463`, Citation F1 from `0.2111` to `0.6593`, and mean latency from
+`127.44s` to `15.75s` versus canonical BM25. It is still rejected for full-run
+promotion because Evidence Recall drops from `0.9722` to `0.6944`,
+Supporting-Fact F1 drops from `0.7856` to `0.6278`, and Brier worsens from
+`0.3236` to `0.3756`. Against the unguarded reranker subset, the guards do
+help: Citation F1 improves from `0.0000` to `0.6593`, Supporting-Fact F1 from
+`0.5593` to `0.6278`, and Evidence Recall from `0.6759` to `0.6944`.
+
+The negative control `configs/verabench_v112_retrieval_rerank_expanded_guarded.yaml`
+raises retrieval depth to 5 so adaptive medium/complex caps can actually retain
+4-5 evidence chunks. The same gate rejects this naive expansion: compared with
+top-3 guarded, Answer F1 drops from `0.4102` to `0.3336`, Behavior Accuracy
+drops from `1.0000` to `0.9444`, Evidence Recall does not improve (`0.6944` to
+`0.6852`), and latency rises from `15.75s` to `17.26s`. The Stage-3 path should
+therefore move to targeted second-pass retrieval triggered by low coverage or
+missing fact slots, not global top-k expansion. Paired gate reports are saved
+under
+`outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_gate18_vs_canonical.md`,
+`outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_gate18_vs_unguarded.md`,
+and
+`outputs/remote_results/verabench_v112_retrieval_rerank_expanded_guarded_gate18_vs_top3_guarded.md`.
 
 A three-question end-to-end smoke A/B over `V001`, `V017`, and `V041`
 validates the reranked candidate in the real DeepSeek pipeline before full-run
@@ -570,10 +598,12 @@ is a strong precision/latency candidate and proves the Stage-3 precision
 direction, but it should not replace the canonical configuration yet: Evidence
 Recall drops significantly, citation quality drops significantly, and Brier
 score worsens. The first recall/citation safeguards, question-aware conflict
-pruning, and point-in-time value guard are implemented and pass the current
-three-question smoke gate. The next Stage-3 iteration should keep the reranker
-and test the guarded path on a broader gate before another full run, with
-selective fallback to BM25 depth-10 reserved for broader gate failures.
+pruning, and point-in-time value guard are implemented. They pass the
+three-question smoke gate, but the broader gate18 rejects both top-3 guarded
+and naive expanded guarded variants for full-run promotion. The next Stage-3
+iteration should keep the reranker and add targeted second-pass retrieval for
+multi-evidence, temporal, and conflict rows whose fact-slot coverage is low,
+with selective fallback to BM25 depth-10 reserved for broader gate failures.
 
 Run the full candidate with:
 
@@ -583,6 +613,29 @@ python experiments/run_verabench.py \
   --output outputs/remote_results/verabench_v112_retrieval_rerank_top3_deepseek.json \
   --checkpoint outputs/remote_results/verabench_v112_retrieval_rerank_top3_deepseek.json.ckpt.jsonl \
   --restart
+```
+
+Reproduce the broader guarded gate with:
+
+```bash
+verarag-filter-report \
+  outputs/remote_results/verabench_v112_canonical_deepseek.json \
+  --ids-file configs/verabench_v112_guarded_gate18_ids.txt \
+  --output outputs/remote_results/verabench_v112_canonical_gate18.json
+
+python experiments/run_verabench.py \
+  --config configs/verabench_v112_retrieval_rerank_top3_guarded.yaml \
+  --ids-file configs/verabench_v112_guarded_gate18_ids.txt \
+  --output outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_gate18.json \
+  --checkpoint outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_gate18.ckpt.jsonl \
+  --restart
+
+python experiments/compare_verabench_reports.py \
+  outputs/remote_results/verabench_v112_canonical_gate18.json \
+  outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_gate18.json \
+  --baseline-label "Canonical BM25 gate18" \
+  --candidate-label "Guarded BM25+Reranker gate18" \
+  --output outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_gate18_vs_canonical.md
 ```
 
 Reproduce the smoke A/B with:

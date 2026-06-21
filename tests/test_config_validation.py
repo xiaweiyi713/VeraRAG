@@ -125,6 +125,11 @@ def test_retrieval_rerank_top3_guarded_config_preserves_base_recall_anchor():
             encoding="utf-8"
         )
     )
+    expanded = yaml.safe_load(
+        Path("configs/verabench_v112_retrieval_rerank_expanded_guarded.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
 
     assert (
         guarded["canonical_run"]["name"]
@@ -138,6 +143,21 @@ def test_retrieval_rerank_top3_guarded_config_preserves_base_recall_anchor():
     assert guarded["retriever"]["top_k_policy"] == "complexity_adaptive"
     assert guarded["retriever"]["reranker_candidate_k"] == 5
     assert guarded["retriever"]["reranker_preserve_base_top_k"] == 1
+    assert (
+        expanded["canonical_run"]["name"]
+        == "verabench_v112_retrieval_rerank_expanded_guarded_deepseek"
+    )
+    assert expanded["canonical_run"]["benchmark_version"] == canonical["canonical_run"]["benchmark_version"]
+    assert expanded["llm"] == canonical["llm"]
+    assert expanded["pipeline"] == canonical["pipeline"]
+    assert expanded["retriever"]["type"] == "bm25_rerank"
+    assert expanded["retriever"]["retrieval_top_k"] == 5
+    assert expanded["retriever"]["top_k_policy"] == "complexity_adaptive"
+    assert expanded["retriever"]["adaptive_simple_top_k"] == 2
+    assert expanded["retriever"]["adaptive_medium_top_k"] == 4
+    assert expanded["retriever"]["adaptive_complex_top_k"] == 5
+    assert expanded["retriever"]["reranker_candidate_k"] == 8
+    assert expanded["retriever"]["reranker_preserve_base_top_k"] == 2
 
 
 def test_config_validation_reports_runtime_shape_errors(tmp_path):

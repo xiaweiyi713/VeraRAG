@@ -147,6 +147,30 @@ def _unknown_question_ids(question_ids: list[str] | None, known_ids: set[str]) -
     return sorted(set(question_ids) - known_ids)
 
 
+def _read_question_ids_file(path: str) -> list[str]:
+    """Read whitespace-separated question ids, allowing blank lines and comments."""
+    ids: list[str] = []
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        ids.extend(line.split())
+    return ids
+
+
+def _combine_question_ids(
+    explicit_ids: list[str] | None,
+    ids_file: str | None,
+) -> list[str] | None:
+    """Merge command-line ids and optional ids-file ids while preserving order."""
+    combined: list[str] = []
+    if explicit_ids:
+        combined.extend(explicit_ids)
+    if ids_file:
+        combined.extend(_read_question_ids_file(ids_file))
+    return combined or None
+
+
 def _positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
@@ -224,6 +248,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--ids",
         nargs="+",
         help="Run specific VeraBench question ids, e.g. V036 V048 V084",
+    )
+    parser.add_argument(
+        "--ids-file",
+        help=(
+            "Path to a whitespace-separated question-id list. Blank lines and "
+            "'#' comments are ignored. Values are appended after --ids."
+        ),
     )
     parser.add_argument("--max", type=_positive_int, help="Max number of questions to evaluate")
     parser.add_argument("--output", type=str, help="Output JSON report path")
@@ -406,7 +437,8 @@ def main(argv: list[str] | None = None):
     print(f"  Types: {stats['questions_by_type']}")
     print(f"  Multi-hop: {stats['multi_hop_count']}")
     print(f"  With conflicts: {stats['conflict_count']}")
-    unknown_ids = _unknown_question_ids(args.ids, {q.id for q in benchmark.questions})
+    question_ids = _combine_question_ids(args.ids, args.ids_file)
+    unknown_ids = _unknown_question_ids(question_ids, {q.id for q in benchmark.questions})
     if unknown_ids:
         parser.error(f"unknown VeraBench question id(s): {', '.join(unknown_ids)}")
 
@@ -459,7 +491,7 @@ def main(argv: list[str] | None = None):
         benchmark_metadata=benchmark_metadata,
         config_path=args.config,
         question_types=args.types,
-        question_ids=args.ids,
+        question_ids=question_ids,
         max_questions=args.max,
     )
     if not args.demo and not args.no_checkpoint:
@@ -486,7 +518,7 @@ def main(argv: list[str] | None = None):
     t0 = time.time()
     report = evaluator.evaluate(
         question_types=args.types,
-        question_ids=args.ids,
+        question_ids=question_ids,
         max_questions=args.max,
         callback=print_progress,
         checkpoint_path=checkpoint_path,
@@ -511,7 +543,8 @@ def main(argv: list[str] | None = None):
             "data_dir": args.data_dir or "default",
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "question_types": args.types or "all",
-            "question_ids": args.ids or "all",
+            "question_ids": question_ids or "all",
+            "question_ids_file": args.ids_file or "",
             "max_questions": args.max or "all",
             "benchmark": benchmark_metadata,
             "run_signature": run_signature,

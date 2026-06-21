@@ -1,0 +1,26 @@
+# VeraBench v1.1.2 broader guarded retrieval gate.
+# Three questions per type; selected from the 3-question smoke plus full A/B
+# rows with retrieval/citation/supporting-fact sensitivity.
+V001
+V053
+V108
+
+V011
+V012
+V058
+
+V017
+V020
+V024
+
+V025
+V081
+V129
+
+V085
+V086
+V142
+
+V041
+V042
+V044

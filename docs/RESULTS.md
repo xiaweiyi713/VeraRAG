@@ -128,8 +128,22 @@ same-polarity law-status false positives for ordinary status questions while
 preserving premise-check cross-evidence conflicts; a point-in-time value guard
 also filters early-version evidence when an exact current-value answer drifts
 into historical digressions. The guarded three-question smoke now clears its
-launch gate, but it remains too small for promotion; the next retrieval
-candidate should run a broader guarded gate before a 152-question rerun.
+launch gate, but it remains too small for promotion.
+
+The broader 18-question guarded gate in
+`configs/verabench_v112_guarded_gate18_ids.txt` is a stronger launch gate before
+another full run. Top-3 guarded BM25+Reranker keeps Behavior Accuracy at
+`1.0000`, improves Evidence Precision from `0.1760` to `0.5463`, Citation F1
+from `0.2111` to `0.6593`, and mean latency from `127.44s` to `15.75s` versus
+the canonical gate subset. It is still rejected for full-run promotion because
+Evidence Recall drops from `0.9722` to `0.6944`, Supporting-Fact F1 drops from
+`0.7856` to `0.6278`, and Brier worsens from `0.3236` to `0.3756`. A naive
+expanded-depth variant,
+`configs/verabench_v112_retrieval_rerank_expanded_guarded.yaml`, is also
+rejected on the same gate: Behavior Accuracy falls to `0.9444`, Answer F1 falls
+to `0.3336`, and Evidence Recall does not improve. The next candidate should
+use targeted second-pass retrieval for low-coverage multi-evidence/temporal/
+conflict rows instead of global top-k expansion.
 
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 
