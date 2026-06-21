@@ -211,6 +211,33 @@ F1, Supporting-Fact F1, Conflict F1, and correctness, but ECE regresses
 candidate now passes gate18 for a full 152-question A/B, with calibration and
 premise-refutation diagnostics flagged as watch items.
 
+The full behavior-stabilized targeted run completed 152/152 questions with
+zero errors at
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stabilized_behavior_full.json`.
+It uses the same targeted guarded config plus the V020/V081 stability fixes and
+the premise/implication behavior guards. The report scores Behavior Accuracy
+`0.9934`, Answer F1 `0.4216`, Evidence Recall/Precision `0.9079/0.4583`,
+Citation F1 `0.7604`, Supporting-Fact F1 `0.7161`, Conflict micro-F1 `0.6667`,
+ECE/Brier `0.3800/0.2763`, and mean latency `25.24s`. Compared with canonical
+BM25 full, the paired A/B improves Answer F1 by `+0.0185`, Evidence Precision
+by `+0.3339`, Citation F1 by `+0.7113`, Conflict micro-F1 by `+0.1282`, ECE by
+`-0.0941`, Brier by `-0.0798`, and latency by `-143.23s`, while Evidence
+Recall drops by `-0.0406` and Supporting-Fact Recall drops by `-0.0351`.
+Compared with top-3 BM25+Reranker full, it recovers Evidence Recall by
+`+0.0252`, Citation F1 by `+0.7539`, Supporting-Fact F1 by `+0.0091`, ECE by
+`-0.1274`, and Brier by `-0.1205`; the cost is Evidence Precision `-0.0351`
+and latency `+7.67s`.
+
+The full-run failure audit is now concentrated enough to guide the next
+iteration: the only behavior failure is `V026`, where the system abstains on a
+current-CTO temporal question; low non-abstain evidence recall remains on
+`V095` and `V116`; conflict scoring still over-detects 13 false-positive pairs
+across multi-evidence/misleading rows and misses the `V122` self-conflict
+pair. The paired comparison artifacts are
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stabilized_behavior_full_vs_canonical.md`
+and
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stabilized_behavior_full_vs_top3.md`.
+
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 
 The learned conflict detector is not enabled by default. On 2026-06-15, the

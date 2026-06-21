@@ -1041,10 +1041,10 @@ class VeraBenchEvaluator:
             correction_keywords = [
                 "不正确", "错误", "不准确", "这个前提", "这个说法", "这个推论", "这个理解",
                 "不意味着", "不代表", "不等于", "不能说明", "不能证明", "不能简单",
-                "尚未证实", "并未证实", "未证实", "不完全准确", "不能完全替代",
-                "无法完全替代", "尚未实现",
+                "不能认为", "不能取代", "而非替代", "尚未证实", "并未证实", "未证实",
+                "不完全准确", "不能完全替代", "无法完全替代", "尚未实现",
             ]
-            if any(kw in lower for kw in correction_keywords):
+            if any(kw in lower for kw in correction_keywords) or self._premise_refutation_detected(answer):
                 return "correct_premise"
 
         if (

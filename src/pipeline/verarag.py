@@ -1456,6 +1456,8 @@ class VeraRAG:
         evidence: list[Evidence],
     ) -> bool:
         question_lower = question.lower()
+        if cls._is_premise_validation_question(question) or cls._is_implication_correction_question(question):
+            return False
         if not any(marker in question_lower for marker in cls._EXACT_VALUE_MARKERS):
             return False
         if cls._is_abstention_answer(answer):
@@ -2214,8 +2216,11 @@ class VeraRAG:
             "这个说法",
             "不能说明",
             "不能证明",
+            "不能认为",
             "不意味着",
             "不代表",
+            "不能取代",
+            "而非替代",
         )
         if any(marker in lowered for marker in correction_markers):
             return "correct_premise"

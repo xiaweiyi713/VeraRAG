@@ -940,6 +940,14 @@ class TestVeraBenchEvaluator:
             q,
             "该说法不完全准确，不能完全替代。",
         ) == "correct_premise"
+        assert evaluator._classify_behavior(
+            q,
+            "仅凭目前的7nm生产能力，不能认为中国的芯片制造已达到世界先进水平。",
+        ) == "correct_premise"
+        assert evaluator._classify_behavior(
+            q,
+            "AI系统适合作为辅助诊断工具而非替代医生，因此不能取代医生。",
+        ) == "correct_premise"
 
     def test_report_to_dict(self, temp_bench_dir):
         bench = VeraBenchLoader(temp_bench_dir).load()

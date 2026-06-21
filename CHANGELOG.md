@@ -195,6 +195,22 @@ All notable changes to VeraRAG are recorded here.
   with top-3 guarded it improves the main answer/evidence/citation/conflict
   metrics and passes the gate for a full 152-question A/B, with ECE `0.4937`
   and premise-refutation F1 `0.7500` kept as audit risks.
+- Tighten premise/implication behavior handling for Stage-3 misleading rows:
+  exact-value abstention no longer overrides implication-correction questions,
+  and correction detection now recognizes natural Chinese phrases such as
+  `不能认为`, `不能取代`, and `而非替代`. The focused DeepSeek smoke on `V067`
+  and `V068` completes 2/2 with Behavior Accuracy `1.0000` and Premise
+  Refutation precision/recall `1.0000/1.0000`.
+- Complete the full 152-question behavior-stabilized targeted Stage-3 DeepSeek
+  run after repairing 29 transient connection-error checkpoint rows. The final
+  report has 152/152 completed, zero errors, Behavior Accuracy `0.9934`,
+  Answer F1 `0.4216`, Evidence Recall/Precision `0.9079/0.4583`, Citation F1
+  `0.7604`, Supporting-Fact F1 `0.7161`, Conflict F1 `0.6667`, ECE/Brier
+  `0.3800/0.2763`, and mean latency `25.24s`. Paired comparisons show large
+  citation, precision, conflict, calibration, and latency gains versus
+  canonical BM25, plus recall/citation/calibration recovery versus the earlier
+  top-3 reranker, while leaving V026, V095/V116 low recall, and conflict
+  over-detection/self-conflict as the next targeted failure set.
 
 ### Added
 

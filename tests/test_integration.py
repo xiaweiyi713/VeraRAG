@@ -1301,6 +1301,33 @@ class TestPipelineIntegration:
         assert claims[0].supporting_evidence[0] == "D040_c0"
         assert steps[0].evidence_ids[0] == "D040_c0"
 
+    def test_answerability_guard_keeps_implication_questions_out_of_exact_value_abstention(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                "D060_c0",
+                "paper",
+                "AI医疗诊断研究综述",
+                "多项研究显示AI在部分医学影像任务中的准确率可达到约98%，"
+                "但AI系统仍需要医生复核，适合作为辅助诊断工具而非替代医生。",
+                relevance_score=0.95,
+            )
+        ]
+
+        answer, claims, steps, guard = pipeline._apply_answerability_guard(
+            "AI医疗诊断的准确率已经达到98%，这是否意味着可以取代医生了？",
+            "现有证据显示，AI医疗诊断在部分任务中的准确率约为98%，"
+            "但这并不意味着可以取代医生。",
+            [],
+            [],
+            evidence,
+        )
+
+        assert guard is None
+        assert answer.startswith("现有证据显示")
+        assert claims == []
+        assert steps == []
+
     def test_answerability_guard_turns_assertion_abstention_into_premise_correction(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
 

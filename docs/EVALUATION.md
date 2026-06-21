@@ -680,13 +680,31 @@ gate, it fixes `V020`/`V081`, raises Conflict F1 to `1.0000`, but worsens ECE
 (`0.3803` to `0.4937`). The next promotion step is a full 152-row A/B plus a
 calibration/premise-refutation audit.
 
+The full 152-row behavior-stabilized targeted A/B is now complete at
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stabilized_behavior_full.json`.
+The run was resumed from checkpoint after transient `Connection error` rows:
+`experiments/repair_verabench_checkpoint.py` removed 29 errored rows, then the
+same command without `--restart` reran only the missing questions. The final
+status is 152/152 completed with zero row errors. Aggregate metrics are
+Behavior Accuracy `0.9934`, Answer F1 `0.4216`, Evidence Recall/Precision
+`0.9079/0.4583`, Citation F1 `0.7604`, Supporting-Fact F1 `0.7161`, Conflict
+micro-F1 `0.6667`, ECE/Brier `0.3800/0.2763`, and mean latency `25.24s`.
+Against canonical BM25 full, it improves citation, precision, conflict F1,
+calibration, Brier, and latency while sacrificing `0.0406` absolute Evidence
+Recall. Against the earlier top-3 reranker full run, it recovers Evidence
+Recall, Citation F1, Supporting-Fact F1, ECE, and Brier, at the cost of lower
+Evidence Precision and about `+7.67s` latency. Remaining diagnostics are narrow:
+`V026` is the only behavior failure, `V095` and `V116` are the only
+non-abstain rows with Evidence Recall below `0.5`, and conflict errors are
+dominated by over-detection plus the `V122` self-conflict miss.
+
 Run the full candidate with:
 
 ```bash
 python experiments/run_verabench.py \
-  --config configs/verabench_v112_retrieval_rerank_top3.yaml \
-  --output outputs/remote_results/verabench_v112_retrieval_rerank_top3_deepseek.json \
-  --checkpoint outputs/remote_results/verabench_v112_retrieval_rerank_top3_deepseek.json.ckpt.jsonl \
+  --config configs/verabench_v112_retrieval_rerank_targeted_guarded.yaml \
+  --output outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stabilized_behavior_full.json \
+  --checkpoint outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stabilized_behavior_full.ckpt.jsonl \
   --restart
 ```
 
