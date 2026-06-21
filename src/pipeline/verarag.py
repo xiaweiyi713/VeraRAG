@@ -109,6 +109,12 @@ class VeraRAG:
     _CITATION_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
         r"\[([A-Za-z][A-Za-z0-9_-]*)\]"
     )
+    _CONFIDENCE_BEHAVIORS: ClassVar[set[str]] = {
+        "abstain",
+        "answer_with_citation",
+        "answer_with_conflict_note",
+        "correct_premise",
+    }
 
     def __init__(self, config: dict[str, Any] | None = None):
         """
@@ -162,6 +168,10 @@ class VeraRAG:
         # Uncertainty control
         uncertainty_config = self.config.get("uncertainty", {})
         self.uncertainty_controller = UncertaintyController(uncertainty_config)
+        self.runtime_confidence_calibration = self._runtime_confidence_calibration_config(
+            uncertainty_config
+        )
+        self._last_confidence_calibration: dict[str, Any] = {"enabled": False}
 
         # Pipeline settings
         pipeline_config = self.config.get("pipeline", {})
@@ -1774,6 +1784,7 @@ class VeraRAG:
                 "retrieval_rounds": round_id + 1,
                 "answerability_guard": answerability_guard,
                 "citation_support_sync": citation_sync,
+                "confidence_calibration": self._last_confidence_calibration,
             }
         )
 
@@ -1793,6 +1804,99 @@ class VeraRAG:
             marker in text
             for marker in ("vs", "对比", "相比", "差异", "不同", "仅从", "质疑")
         )
+
+    def _runtime_confidence_calibration_config(
+        self,
+        uncertainty_config: Any,
+    ) -> dict[str, Any]:
+        if not isinstance(uncertainty_config, dict):
+            return {"enabled": False}
+        calibration = uncertainty_config.get("runtime_confidence_calibration", {})
+        if not isinstance(calibration, dict):
+            return {"enabled": False}
+        priors = calibration.get("behavior_priors", {})
+        if not isinstance(priors, dict):
+            priors = {}
+        return {
+            "enabled": calibration.get("enabled", False) is True,
+            "blend_weight": self._clamp01(calibration.get("blend_weight", 0.0)),
+            "max_adjustment": self._clamp01(calibration.get("max_adjustment", 0.35)),
+            "behavior_priors": {
+                behavior: self._clamp01(prior)
+                for behavior, prior in priors.items()
+                if behavior in self._CONFIDENCE_BEHAVIORS
+            },
+        }
+
+    def _apply_runtime_confidence_prior(
+        self,
+        confidence: float,
+        *,
+        answer: str,
+        conflict_graph: EvidenceConflictGraph,
+        stage: str,
+    ) -> float:
+        config = self.runtime_confidence_calibration
+        behavior = self._predicted_behavior_for_confidence(answer, conflict_graph)
+        raw_confidence = self._clamp01(confidence)
+        self._last_confidence_calibration = {
+            "enabled": bool(config.get("enabled", False)),
+            "stage": stage,
+            "predicted_behavior": behavior,
+            "raw_confidence": raw_confidence,
+        }
+        if not config.get("enabled", False):
+            return raw_confidence
+
+        priors = config.get("behavior_priors", {})
+        prior = priors.get(behavior) if isinstance(priors, dict) else None
+        if prior is None:
+            self._last_confidence_calibration["reason"] = "missing_behavior_prior"
+            return raw_confidence
+
+        blend_weight = self._clamp01(config.get("blend_weight", 0.0))
+        max_adjustment = self._clamp01(config.get("max_adjustment", 0.35))
+        delta = (self._clamp01(prior) - raw_confidence) * blend_weight
+        delta = max(-max_adjustment, min(max_adjustment, delta))
+        calibrated = self._clamp01(raw_confidence + delta)
+        self._last_confidence_calibration.update({
+            "behavior_prior": self._clamp01(prior),
+            "blend_weight": blend_weight,
+            "max_adjustment": max_adjustment,
+            "adjustment": delta,
+            "prior_adjusted_confidence": calibrated,
+        })
+        return calibrated
+
+    def _predicted_behavior_for_confidence(
+        self,
+        answer: str,
+        conflict_graph: EvidenceConflictGraph,
+    ) -> str:
+        answer_text = answer or ""
+        lowered = answer_text.lower()
+        if self._is_abstention_answer(answer_text):
+            return "abstain"
+
+        conflict_markers = ("冲突", "矛盾", "不一致", "争议", "不同")
+        if conflict_graph.get_conflicts() and any(marker in lowered for marker in conflict_markers):
+            return "answer_with_conflict_note"
+
+        correction_markers = (
+            "不正确",
+            "不准确",
+            "前提有误",
+            "该说法",
+            "这个说法",
+            "不能说明",
+            "不能证明",
+            "不意味着",
+            "不代表",
+        )
+        if any(marker in lowered for marker in correction_markers):
+            return "correct_premise"
+
+        return "answer_with_citation"
 
     def _estimate_final_confidence(
         self,
@@ -1824,10 +1928,18 @@ class VeraRAG:
                 uncertainty=uncertainty,
                 answerability_guard=answerability_guard,
             )
-            return float(self.uncertainty_controller.calibrator.calibrate_confidence(
+            abstention_confidence = self._apply_runtime_confidence_prior(
+                abstention_confidence,
+                answer=answer,
+                conflict_graph=conflict_graph,
+                stage="abstention",
+            )
+            final_confidence = float(self.uncertainty_controller.calibrator.calibrate_confidence(
                 abstention_confidence,
                 uncertainty,
             ))
+            self._last_confidence_calibration["final_confidence"] = final_confidence
+            return final_confidence
 
         raw_confidence = (
             verification_signal * 0.34
@@ -1836,6 +1948,12 @@ class VeraRAG:
             + uncertainty_signal * 0.14
             + conflict_signal * 0.10
         )
+        raw_confidence = self._apply_runtime_confidence_prior(
+            raw_confidence,
+            answer=answer,
+            conflict_graph=conflict_graph,
+            stage="answer",
+        )
         raw_confidence = self._cap_confidence_for_failure_modes(
             raw_confidence,
             evidence_pool=evidence_pool,
@@ -1843,10 +1961,13 @@ class VeraRAG:
             verification_report=verification_report,
             conflict_graph=conflict_graph,
         )
-        return float(self.uncertainty_controller.calibrator.calibrate_confidence(
+        self._last_confidence_calibration["capped_confidence"] = raw_confidence
+        final_confidence = float(self.uncertainty_controller.calibrator.calibrate_confidence(
             raw_confidence,
             uncertainty,
         ))
+        self._last_confidence_calibration["final_confidence"] = final_confidence
+        return final_confidence
 
     @staticmethod
     def _clamp01(value: Any, default: float = 0.0) -> float:

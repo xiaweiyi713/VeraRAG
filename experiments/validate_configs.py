@@ -28,6 +28,12 @@ RETRIEVER_TYPES = {
     "dense_rerank",
 }
 TOP_K_POLICIES = {"fixed", "precision_cap", "complexity_adaptive"}
+CONFIDENCE_BEHAVIORS = {
+    "abstain",
+    "answer_with_citation",
+    "answer_with_conflict_note",
+    "correct_premise",
+}
 
 
 @dataclass(frozen=True)
@@ -217,6 +223,59 @@ def _validate_runtime_config(
             errors,
             required=False,
         )
+
+    uncertainty = _mapping_section(path, payload, "uncertainty", errors, required=False)
+    if uncertainty is not None:
+        runtime_calibration = _mapping_section(
+            path,
+            uncertainty,
+            "runtime_confidence_calibration",
+            errors,
+            required=False,
+        )
+        if runtime_calibration is not None:
+            _boolean(
+                path,
+                "uncertainty.runtime_confidence_calibration.enabled",
+                runtime_calibration.get("enabled"),
+                errors,
+            )
+            _probability(
+                path,
+                "uncertainty.runtime_confidence_calibration.blend_weight",
+                runtime_calibration.get("blend_weight"),
+                errors,
+            )
+            _probability(
+                path,
+                "uncertainty.runtime_confidence_calibration.max_adjustment",
+                runtime_calibration.get("max_adjustment"),
+                errors,
+            )
+            behavior_priors = _mapping_section(
+                path,
+                runtime_calibration,
+                "behavior_priors",
+                errors,
+                required=False,
+            )
+            if behavior_priors is not None:
+                for behavior, prior in behavior_priors.items():
+                    if behavior not in CONFIDENCE_BEHAVIORS:
+                        errors.append(
+                            ConfigIssue(
+                                path,
+                                f"uncertainty.runtime_confidence_calibration.behavior_priors.{behavior}",
+                                "behavior prior key must be one of "
+                                f"{', '.join(sorted(CONFIDENCE_BEHAVIORS))}",
+                            )
+                        )
+                    _probability(
+                        path,
+                        f"uncertainty.runtime_confidence_calibration.behavior_priors.{behavior}",
+                        prior,
+                        errors,
+                    )
 
 
 def _validate_dataset_config(

@@ -178,6 +178,10 @@ def test_retrieval_rerank_top3_guarded_config_preserves_base_recall_anchor():
     assert targeted["retriever"]["targeted_second_pass_max_new_evidence"] == 2
     assert targeted["reasoning"]["claim_slot_selection_enabled"] is True
     assert targeted["reasoning"]["claim_slot_max_evidence"] == 6
+    calibration = targeted["uncertainty"]["runtime_confidence_calibration"]
+    assert calibration["enabled"] is True
+    assert calibration["blend_weight"] == 0.45
+    assert calibration["behavior_priors"]["answer_with_citation"] == 0.72
 
 
 def test_config_validation_reports_runtime_shape_errors(tmp_path):
@@ -197,6 +201,14 @@ def test_config_validation_reports_runtime_shape_errors(tmp_path):
                 "  enforce_answer_citations: sometimes",
                 "  claim_slot_selection_enabled: sometimes",
                 "  claim_slot_max_evidence: 0",
+                "uncertainty:",
+                "  runtime_confidence_calibration:",
+                "    enabled: sometimes",
+                "    blend_weight: 1.5",
+                "    max_adjustment: -0.1",
+                "    behavior_priors:",
+                "      answer_with_citation: 2",
+                "      hallucinate: 0.5",
                 "retriever:",
                 "  type: graph",
                 "  retrieval_top_k: 0",
@@ -229,6 +241,28 @@ def test_config_validation_reports_runtime_shape_errors(tmp_path):
     assert (
         "reasoning.claim_slot_max_evidence",
         "reasoning.claim_slot_max_evidence must be a positive integer",
+    ) in messages
+    assert (
+        "uncertainty.runtime_confidence_calibration.enabled",
+        "uncertainty.runtime_confidence_calibration.enabled must be a boolean",
+    ) in messages
+    assert (
+        "uncertainty.runtime_confidence_calibration.blend_weight",
+        "uncertainty.runtime_confidence_calibration.blend_weight must be a probability in [0, 1]",
+    ) in messages
+    assert (
+        "uncertainty.runtime_confidence_calibration.max_adjustment",
+        "uncertainty.runtime_confidence_calibration.max_adjustment must be a probability in [0, 1]",
+    ) in messages
+    assert (
+        "uncertainty.runtime_confidence_calibration.behavior_priors.answer_with_citation",
+        "uncertainty.runtime_confidence_calibration.behavior_priors.answer_with_citation "
+        "must be a probability in [0, 1]",
+    ) in messages
+    assert (
+        "uncertainty.runtime_confidence_calibration.behavior_priors.hallucinate",
+        "behavior prior key must be one of abstain, answer_with_citation, "
+        "answer_with_conflict_note, correct_premise",
     ) in messages
     assert (
         "retriever.type",

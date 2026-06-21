@@ -55,6 +55,17 @@ reasoning:
   claim_slot_selection_enabled: true
   claim_slot_max_evidence: 6
 
+uncertainty:
+  runtime_confidence_calibration:
+    enabled: true
+    blend_weight: 0.45
+    max_adjustment: 0.35
+    behavior_priors:
+      abstain: 0.90
+      answer_with_citation: 0.72
+      answer_with_conflict_note: 0.82
+      correct_premise: 0.88
+
 evidence:
   semantic_dedup: true
   semantic_dedup_model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2

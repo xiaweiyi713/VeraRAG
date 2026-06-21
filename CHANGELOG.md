@@ -169,6 +169,11 @@ All notable changes to VeraRAG are recorded here.
   reflected in `answer_claims[].supporting_evidence`, missing claim support IDs
   are appended back to the answer when citation enforcement is enabled, and
   out-of-pool support IDs are dropped before final confidence is estimated.
+- Add configurable runtime behavior-prior confidence calibration. The targeted
+  guarded Stage-3 config now blends fused confidence toward conservative
+  predicted-behavior priors before applying failure-mode caps and uncertainty
+  penalties, and VeraBench report metadata records the calibration switch,
+  blend weight, max adjustment, and priors.
 
 ### Added
 

@@ -1634,6 +1634,92 @@ class TestPipelineIntegration:
         assert unjustified < justified
         assert unjustified < 0.55
 
+    def test_runtime_confidence_behavior_prior_recalibrates_underconfident_answer(
+        self,
+        pipeline_config,
+    ):
+        base_pipeline = _create_pipeline(pipeline_config)
+        calibrated_config = {
+            **pipeline_config,
+            "uncertainty": {
+                "runtime_confidence_calibration": {
+                    "enabled": True,
+                    "blend_weight": 0.50,
+                    "max_adjustment": 0.40,
+                    "behavior_priors": {
+                        "answer_with_citation": 0.90,
+                    },
+                }
+            },
+        }
+        calibrated_pipeline = _create_pipeline(calibrated_config)
+        evidence = [
+            Evidence(
+                evidence_id="E1",
+                source="official",
+                title="直接证据",
+                text_span="Willow 是 2024 年发布的量子处理器。",
+                credibility_score=0.9,
+                recency_score=0.9,
+                relevance_score=0.95,
+            )
+        ]
+        claims = [
+            AnswerClaim(
+                claim="Willow 是 2024 年发布的量子处理器。",
+                supporting_evidence=["E1"],
+                confidence=0.55,
+                verification_status=VerificationStatus.SUPPORTED,
+                support_type="direct",
+            )
+        ]
+        steps = [
+            ReasoningStep(
+                step=1,
+                description="读取证据",
+                evidence_ids=["E1"],
+                confidence=0.55,
+            )
+        ]
+        report = VerificationReport(
+            claim_verifications=[
+                {"claim": claims[0].claim, "status": "SUPPORTED", "confidence": 0.6}
+            ],
+            overall_status=VerificationStatus.SUPPORTED,
+        )
+        uncertainty = base_pipeline.uncertainty_controller.get_uncertainty_breakdown(
+            [], evidence, EvidenceConflictGraph()
+        )
+
+        baseline = base_pipeline._estimate_final_confidence(
+            answer="Willow 是 2024 年发布的量子处理器。引用证据：[E1]",
+            answer_claims=claims,
+            reasoning_chain=steps,
+            evidence_pool=evidence,
+            conflict_graph=EvidenceConflictGraph(),
+            verification_report=report,
+            uncertainty=uncertainty,
+            answerability_guard=None,
+        )
+        calibrated = calibrated_pipeline._estimate_final_confidence(
+            answer="Willow 是 2024 年发布的量子处理器。引用证据：[E1]",
+            answer_claims=claims,
+            reasoning_chain=steps,
+            evidence_pool=evidence,
+            conflict_graph=EvidenceConflictGraph(),
+            verification_report=report,
+            uncertainty=uncertainty,
+            answerability_guard=None,
+        )
+
+        assert calibrated > baseline
+        assert calibrated_pipeline._last_confidence_calibration["enabled"] is True
+        assert (
+            calibrated_pipeline._last_confidence_calibration["predicted_behavior"]
+            == "answer_with_citation"
+        )
+        assert calibrated_pipeline._last_confidence_calibration["behavior_prior"] == 0.90
+
     def test_full_pipeline_run(self, pipeline_config):
         """Test that the full pipeline runs end-to-end with mock LLM."""
         pipeline = _create_pipeline(pipeline_config)

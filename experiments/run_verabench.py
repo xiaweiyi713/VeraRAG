@@ -196,6 +196,15 @@ def _read_config_run_metadata(config_path: str) -> dict[str, Any]:
         reasoning = cfg.get("reasoning", {}) or {}
         if not isinstance(reasoning, dict):
             raise ValueError("reasoning config is not a mapping")
+        uncertainty = cfg.get("uncertainty", {}) or {}
+        if not isinstance(uncertainty, dict):
+            raise ValueError("uncertainty config is not a mapping")
+        runtime_calibration = uncertainty.get("runtime_confidence_calibration", {}) or {}
+        if not isinstance(runtime_calibration, dict):
+            raise ValueError("uncertainty.runtime_confidence_calibration is not a mapping")
+        behavior_priors = runtime_calibration.get("behavior_priors", {}) or {}
+        if not isinstance(behavior_priors, dict):
+            raise ValueError("uncertainty.runtime_confidence_calibration.behavior_priors is not a mapping")
         metadata = {
             "model": llm.get("model", ""),
             "provider": llm.get("provider", ""),
@@ -210,7 +219,18 @@ def _read_config_run_metadata(config_path: str) -> dict[str, Any]:
             "reasoning_claim_slot_max_evidence": reasoning.get(
                 "claim_slot_max_evidence", 6
             ),
+            "uncertainty_runtime_confidence_calibration_enabled": runtime_calibration.get(
+                "enabled", False
+            ),
+            "uncertainty_runtime_confidence_calibration_blend_weight": (
+                runtime_calibration.get("blend_weight", 0.0)
+            ),
+            "uncertainty_runtime_confidence_calibration_max_adjustment": (
+                runtime_calibration.get("max_adjustment", 0.35)
+            ),
         }
+        for behavior, prior in sorted(behavior_priors.items()):
+            metadata[f"uncertainty_runtime_confidence_prior_{behavior}"] = prior
         for key in (
             "type",
             "retrieval_top_k",

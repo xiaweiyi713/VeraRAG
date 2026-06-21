@@ -204,8 +204,15 @@ conflict pressure, and abstention justification are combined before a bounded
 uncertainty penalty is applied. This fixes the code-level root cause where a
 five-dimensional uncertainty aggregate plus multiplicative calibration could
 compress otherwise different outcomes into a narrow low-confidence band. The
-change still requires a canonical v1.1.2 full run before claiming the stage-2
-DoD targets for ECE, confidence AUROC, and risk-coverage.
+targeted guarded Stage-3 config now also enables runtime behavior-prior
+calibration under `uncertainty.runtime_confidence_calibration`: the pipeline
+infers a predicted behavior family from the answer shape and conflict graph,
+blends the fused confidence toward conservative behavior-level priors, then
+applies the existing failure-mode caps and uncertainty penalty. This is meant
+to correct the gate18 underconfidence pattern without using benchmark labels
+at runtime. The change still requires a gate18 and canonical v1.1.2 full run
+before claiming the stage-2 DoD targets for ECE, confidence AUROC, and
+risk-coverage.
 
 For held-out post-hoc calibration, write a calibrated copy of a saved report:
 
@@ -635,10 +642,11 @@ keeps behavior intact. It still trails on citation/supporting-fact alignment
 and calibration. A post-guard `citation_support_sync` stage now runs after
 repair and deterministic answer guards, keeping in-pool answer citations and
 `answer_claims[].supporting_evidence` aligned before final confidence
-estimation. The next Stage-3 iteration should keep the reranker, targeted
-retrieval, answer guards, and citation/support sync, then recalibrate
-confidence and rerun gate18, with BM25 depth-10 reserved for broader gate
-failures.
+estimation. Runtime behavior-prior confidence calibration is also enabled in
+the targeted guarded config and recorded in future report metadata. The next
+Stage-3 iteration should rerun gate18 with the reranker, targeted retrieval,
+answer guards, citation/support sync, and runtime calibration enabled, with
+BM25 depth-10 reserved for broader gate failures.
 
 Run the full candidate with:
 

@@ -166,8 +166,11 @@ adds valid in-pool answer citations to claim-level supporting evidence, appends
 missing claim support IDs back to the answer when citation enforcement is
 enabled, and drops out-of-pool support IDs before final confidence is
 estimated. This makes the guarded answer/citation/supporting-fact contract
-auditable, but the metric effect still needs a gate18 rerun together with
-confidence recalibration.
+auditable. The targeted guarded config also enables runtime behavior-prior
+confidence calibration, blending the fused runtime confidence with conservative
+behavior-level priors before the existing failure-mode caps and uncertainty
+penalty. The metric effect still needs a gate18 rerun before updating the
+public Stage-3 table.
 
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 
