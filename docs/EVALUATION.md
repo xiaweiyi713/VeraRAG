@@ -632,11 +632,13 @@ and naive expanded guarded variants for full-run promotion. A targeted
 second-pass candidate with claim-slot selection and answer guards recovers part
 of the evidence loss, improves Answer F1 over top-3 guarded on gate18, and
 keeps behavior intact. It still trails on citation/supporting-fact alignment
-and calibration. The next Stage-3 iteration should keep the reranker, targeted
-retrieval, and answer guards, then sync deterministic guard claims/citations
-with supporting-fact scoring and recalibrate confidence, with BM25 depth-10
-reserved for
-broader gate failures.
+and calibration. A post-guard `citation_support_sync` stage now runs after
+repair and deterministic answer guards, keeping in-pool answer citations and
+`answer_claims[].supporting_evidence` aligned before final confidence
+estimation. The next Stage-3 iteration should keep the reranker, targeted
+retrieval, answer guards, and citation/support sync, then recalibrate
+confidence and rerun gate18, with BM25 depth-10 reserved for broader gate
+failures.
 
 Run the full candidate with:
 

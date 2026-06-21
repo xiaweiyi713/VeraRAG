@@ -160,7 +160,14 @@ correctness accuracy (`0.7222` to `0.8889`) while keeping Behavior Accuracy at
 `1.0000`. It is still held back because Citation F1 (`0.6593` to `0.6204`),
 Supporting-Fact F1 (`0.6278` to `0.5889`), latency (`15.75s` to `21.58s`),
 ECE (`0.4334` to `0.5375`), and Brier (`0.3756` to `0.4070`) regress versus
-top-3 guarded.
+top-3 guarded. The pipeline now applies a post-guard
+`citation_support_sync` step after repair and deterministic answer guards: it
+adds valid in-pool answer citations to claim-level supporting evidence, appends
+missing claim support IDs back to the answer when citation enforcement is
+enabled, and drops out-of-pool support IDs before final confidence is
+estimated. This makes the guarded answer/citation/supporting-fact contract
+auditable, but the metric effect still needs a gate18 rerun together with
+confidence recalibration.
 
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 

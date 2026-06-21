@@ -164,6 +164,11 @@ All notable changes to VeraRAG are recorded here.
   keeping Behavior Accuracy at `1.0000`; it still regresses Citation F1,
   Supporting-Fact F1, latency, and calibration, so full-run promotion remains
   blocked pending citation/support synchronization and recalibration.
+- Add post-guard citation/support synchronization in the VeraRAG pipeline:
+  after repair and deterministic answer guards, in-pool answer citations are
+  reflected in `answer_claims[].supporting_evidence`, missing claim support IDs
+  are appended back to the answer when citation enforcement is enabled, and
+  out-of-pool support IDs are dropped before final confidence is estimated.
 
 ### Added
 

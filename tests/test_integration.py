@@ -1433,6 +1433,77 @@ class TestPipelineIntegration:
         assert claims == []
         assert steps[0].description.startswith("识别到答案主体为不可答")
 
+    def test_post_guard_sync_adds_answer_citations_to_claim_support(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D073_c0",
+                source="paper",
+                title="RAG系统幻觉率评估基准HAAG",
+                text_span="HAAG基准包含2000个问题-答案对，覆盖6个领域。",
+            ),
+            Evidence(
+                evidence_id="D074_c0",
+                source="paper",
+                title="HAAG覆盖领域",
+                text_span="HAAG覆盖医疗、金融、法律等6个领域。",
+            ),
+        ]
+        claims = [
+            AnswerClaim(
+                claim="HAAG基准包含2000个问题-答案对",
+                supporting_evidence=["D074_c0"],
+                support_type="direct",
+            )
+        ]
+
+        answer, claims, sync = pipeline._sync_answer_citation_support(
+            "HAAG基准包含2000个问题-答案对。引用证据：[D073_c0]",
+            claims,
+            evidence,
+        )
+
+        assert sync["changed"] is True
+        assert sync["added_claim_support_ids"] == ["D073_c0"]
+        assert sync["added_answer_citation_ids"] == ["D074_c0"]
+        assert claims[0].supporting_evidence == ["D074_c0", "D073_c0"]
+        assert answer.endswith("引用证据：[D074_c0]")
+
+    def test_post_guard_sync_drops_out_of_pool_support_without_inventing_citations(
+        self,
+        pipeline_config,
+    ):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D001_c0",
+                source="official",
+                title="欧盟人工智能法案：从提案到立法",
+                text_span="违规者最高可被处以3500万欧元或全球年营业额7%的罚款。",
+            )
+        ]
+        claims = [
+            AnswerClaim(
+                claim="违规罚款上限为3500万欧元或全球年营业额7%",
+                supporting_evidence=["D999_c0", "D001_c0", "D001_c0"],
+                support_type="direct",
+            )
+        ]
+
+        answer, claims, sync = pipeline._sync_answer_citation_support(
+            "违规罚款上限为3500万欧元或全球年营业额7%。",
+            claims,
+            evidence,
+        )
+
+        assert sync["changed"] is True
+        assert sync["dropped_out_of_pool_support_ids"] == ["D999_c0"]
+        assert sync["claim_support_ids"] == ["D001_c0"]
+        assert sync["added_answer_citation_ids"] == ["D001_c0"]
+        assert claims[0].supporting_evidence == ["D001_c0"]
+        assert "[D999_c0]" not in answer
+        assert answer.endswith("引用证据：[D001_c0]")
+
     def test_final_confidence_uses_verification_evidence_and_conflicts(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
         evidence = [

@@ -4,6 +4,7 @@ import math
 import os
 import re
 import time
+from collections.abc import Iterable
 from typing import Any, ClassVar
 
 from ..agents.base import LLMClient
@@ -104,6 +105,9 @@ class VeraRAG:
         "around",
         "about",
         "approximately",
+    )
+    _CITATION_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"\[([A-Za-z][A-Za-z0-9_-]*)\]"
     )
 
     def __init__(self, config: dict[str, Any] | None = None):
@@ -619,9 +623,11 @@ class VeraRAG:
             return False
         if source_claim is None or target_claim is None:
             return False
-        return self.conflict_graph_builder._claims_have_compatible_status_polarity(
-            source_claim,
-            target_claim,
+        return bool(
+            self.conflict_graph_builder._claims_have_compatible_status_polarity(
+                source_claim,
+                target_claim,
+            )
         )
 
     @staticmethod
@@ -1366,6 +1372,121 @@ class VeraRAG:
         conclusion = conclusion.strip(" ，,。？?")
         return f"“{conclusion}”" if conclusion else "问题中的结论"
 
+    def _sync_answer_citation_support(
+        self,
+        answer: str,
+        claims: list[AnswerClaim],
+        evidence: list[Evidence],
+    ) -> tuple[str, list[AnswerClaim], dict[str, Any]]:
+        """Keep final answer citations and claim support aligned after guards."""
+        available_ids = {item.evidence_id for item in evidence}
+        sync_info: dict[str, Any] = {
+            "changed": False,
+            "answer_citation_ids": [],
+            "valid_answer_citation_ids": [],
+            "claim_support_ids": [],
+            "dropped_out_of_pool_support_ids": [],
+            "added_claim_support_ids": [],
+            "added_answer_citation_ids": [],
+        }
+        if not available_ids:
+            return answer, claims, sync_info
+
+        answer_citation_ids = self._dedupe_preserving_order(
+            self._CITATION_PATTERN.findall(answer or "")
+        )
+        valid_answer_citation_ids = [
+            evidence_id for evidence_id in answer_citation_ids
+            if evidence_id in available_ids
+        ]
+        sync_info["answer_citation_ids"] = answer_citation_ids
+        sync_info["valid_answer_citation_ids"] = valid_answer_citation_ids
+
+        if claims:
+            for claim in claims:
+                original_support = list(claim.supporting_evidence)
+                filtered_support = self._dedupe_preserving_order(
+                    evidence_id for evidence_id in original_support
+                    if evidence_id in available_ids
+                )
+                dropped = [
+                    evidence_id for evidence_id in original_support
+                    if evidence_id not in available_ids
+                ]
+                if dropped:
+                    sync_info["dropped_out_of_pool_support_ids"].extend(dropped)
+                if filtered_support != original_support:
+                    claim.supporting_evidence = filtered_support
+                    sync_info["changed"] = True
+
+            supported_ids = self._dedupe_preserving_order(
+                evidence_id
+                for claim in claims
+                for evidence_id in claim.supporting_evidence
+            )
+            missing_claim_support = [
+                evidence_id for evidence_id in valid_answer_citation_ids
+                if evidence_id not in supported_ids
+            ]
+            if missing_claim_support:
+                target_claim = self._claim_for_citation_sync(claims)
+                target_claim.supporting_evidence = self._dedupe_preserving_order([
+                    *target_claim.supporting_evidence,
+                    *missing_claim_support,
+                ])
+                if target_claim.support_type == "none":
+                    target_claim.support_type = "direct"
+                sync_info["added_claim_support_ids"] = missing_claim_support
+                sync_info["changed"] = True
+
+        claim_support_ids = self._dedupe_preserving_order(
+            evidence_id
+            for claim in claims
+            for evidence_id in claim.supporting_evidence
+            if evidence_id in available_ids
+        )
+        sync_info["claim_support_ids"] = claim_support_ids
+
+        enforce_citations = getattr(self.reasoning_agent, "enforce_answer_citations", True)
+        missing_answer_citations = [
+            evidence_id for evidence_id in claim_support_ids
+            if evidence_id not in answer_citation_ids
+        ]
+        if enforce_citations and missing_answer_citations:
+            answer = self._append_answer_citation_footer(answer, missing_answer_citations)
+            sync_info["added_answer_citation_ids"] = missing_answer_citations
+            sync_info["changed"] = True
+
+        return answer, claims, sync_info
+
+    @staticmethod
+    def _dedupe_preserving_order(values: Iterable[str]) -> list[str]:
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for value in values:
+            if value in seen:
+                continue
+            seen.add(value)
+            deduped.append(value)
+        return deduped
+
+    @staticmethod
+    def _claim_for_citation_sync(claims: list[AnswerClaim]) -> AnswerClaim:
+        for claim in claims:
+            if claim.verifiable and claim.support_type != "none":
+                return claim
+        for claim in claims:
+            if claim.verifiable:
+                return claim
+        return claims[0]
+
+    @staticmethod
+    def _append_answer_citation_footer(answer: str, evidence_ids: list[str]) -> str:
+        citation_footer = "引用证据：" + " ".join(f"[{evidence_id}]" for evidence_id in evidence_ids)
+        if answer.rstrip().endswith(citation_footer):
+            return answer
+        return f"{answer.rstrip()}\n{citation_footer}"
+
     def query_stream(
         self,
         question: str,
@@ -1594,6 +1715,14 @@ class VeraRAG:
                 "answer": answer,
             })
 
+        answer, answer_claims, citation_sync = self._sync_answer_citation_support(
+            answer,
+            answer_claims,
+            evidence_pool,
+        )
+        if citation_sync["changed"]:
+            emit("citation_support_sync", citation_sync)
+
         # Stage 9: Final uncertainty and confidence
         uncertainty = UncertaintyBreakdown()
 
@@ -1644,6 +1773,7 @@ class VeraRAG:
                 "elapsed_time": elapsed_time,
                 "retrieval_rounds": round_id + 1,
                 "answerability_guard": answerability_guard,
+                "citation_support_sync": citation_sync,
             }
         )
 
