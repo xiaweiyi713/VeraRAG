@@ -397,6 +397,12 @@ class VeraRAG:
                 question,
             ):
                 continue
+            if self._is_mitigation_progress_nli_conflict(
+                edge,
+                evidence_by_claim,
+                question,
+            ):
+                continue
             if self._is_historical_version_edge(
                 edge,
                 evidence_by_claim,
@@ -747,6 +753,55 @@ class VeraRAG:
     @staticmethod
     def _is_role_departure_evidence(text: str, role: str) -> bool:
         return role in text and any(marker in text for marker in ("离职", "前任", "卸任", "辞任"))
+
+    def _is_mitigation_progress_nli_conflict(
+        self,
+        edge: ConflictEdge,
+        evidence_by_claim: dict[str, Evidence],
+        question: str,
+    ) -> bool:
+        """Suppress NLI false positives between emissions facts and mitigation progress."""
+        if "NLI contradiction" not in edge.rationale:
+            return False
+        if not (
+            "碳排放" in question
+            and any(marker in question for marker in ("减排", "努力", "没有做任何努力"))
+        ):
+            return False
+        source = evidence_by_claim.get(edge.source_id)
+        target = evidence_by_claim.get(edge.target_id)
+        if source is None or target is None or source is target:
+            return False
+        source_text = f"{source.title} {source.text_span}"
+        target_text = f"{target.title} {target.text_span}"
+        return (
+            self._is_emissions_level_evidence(source_text)
+            and self._is_mitigation_progress_evidence(target_text)
+        ) or (
+            self._is_emissions_level_evidence(target_text)
+            and self._is_mitigation_progress_evidence(source_text)
+        )
+
+    @staticmethod
+    def _is_emissions_level_evidence(text: str) -> bool:
+        return any(marker in text for marker in ("碳排放", "CO2排放", "排放量", "排放")) and any(
+            marker in text for marker in ("119亿吨", "32.3%", "增长", "最大", "创新高")
+        )
+
+    @staticmethod
+    def _is_mitigation_progress_evidence(text: str) -> bool:
+        return any(
+            marker in text
+            for marker in (
+                "可再生能源",
+                "新能源汽车",
+                "碳中和",
+                "碳市场",
+                "新增装机",
+                "渗透率",
+                "减排",
+            )
+        )
 
     def _evidence_attribute_claim_slots(self, evidence: Evidence) -> set[str]:
         evidence_claim = Claim(

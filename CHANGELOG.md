@@ -220,6 +220,15 @@ All notable changes to VeraRAG are recorded here.
   `1.0000`, Answer F1 `0.5106`, Evidence Recall `1.0000`, and zero conflict
   failures; a future full run should verify whether this removes the last full
   behavior failure.
+- Add aspect-coverage retrieval refresh for broad multi-facet questions and
+  misleading carbon-emissions premise questions. The second pass now uses the
+  complex evidence budget for those questions and expands toward missing
+  application/maturity or mitigation-action facets; the conflict filter also
+  suppresses NLI false positives between emissions-level facts and mitigation
+  progress. The focused `V095`/`V116` DeepSeek smoke now has Behavior Accuracy
+  `1.0000`, Evidence Recall `1.0000`, Evidence Precision `0.6000`, and zero
+  conflict failures. `V116` still needs a citation/support completeness follow-up
+  for IBM roadmap evidence.
 
 ### Added
 

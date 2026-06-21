@@ -577,6 +577,53 @@ class TestPipelineIntegration:
 
         assert filtered.get_conflicts() == []
 
+    def test_mitigation_progress_nli_conflict_is_filtered(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        emissions = Claim(
+            claim_id="C_emissions",
+            claim="中国排放量约为119亿吨，占全球32.3%，较2022年增长2%",
+            claim_type=ClaimType.FACTUAL,
+        )
+        renewables = Claim(
+            claim_id="C_renewables",
+            claim="中国在可再生能源领域持续领先，2023年新增装机约占全球的58%",
+            claim_type=ClaimType.FACTUAL,
+        )
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_emissions",
+                "C_renewables",
+                ConflictType.REFUTE,
+                0.84,
+                rationale="NLI contradiction: 0.84",
+            ),
+        ]
+        evidence_pool = [
+            Evidence(
+                "D021_c0",
+                "report",
+                "全球碳计划2023年度报告：碳排放创新高",
+                "中国排放量约为119亿吨，占全球32.3%，较2022年增长2%。",
+                claims=[emissions],
+            ),
+            Evidence(
+                "D023_c0",
+                "report",
+                "2024年全球可再生能源发展现状",
+                "中国在可再生能源领域持续领先，2023年新增装机约占全球的58%。",
+                claims=[renewables],
+            ),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "中国是全球最大的碳排放国，所以中国对减排没有做任何努力，对吗？",
+        )
+
+        assert filtered.get_conflicts() == []
+
     def test_strategy_question_filters_unrelated_runtime_dispute(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
         google = Claim(

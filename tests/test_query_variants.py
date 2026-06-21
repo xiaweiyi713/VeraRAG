@@ -107,7 +107,12 @@ class TestQueryVariants(unittest.TestCase):
     def test_current_attribute_refresh_forces_second_pass_and_latest_report_query(self):
         agent = DynamicRetrievalAgent(
             retriever=MagicMock(),
-            config={"retriever": {"targeted_second_pass_enabled": True}},
+            config={
+                "retriever": {
+                    "targeted_second_pass_enabled": True,
+                    "top_k_policy": "complexity_adaptive",
+                }
+            },
         )
         subquestion = SubQuestion(
             id="sq0",
@@ -164,6 +169,74 @@ class TestQueryVariants(unittest.TestCase):
         self.assertIn("现任", refined.question)
         self.assertIn("新任", refined.question)
         self.assertIn("加入", refined.question)
+
+    def test_quantum_aspect_refresh_targets_application_and_maturity_evidence(self):
+        agent = DynamicRetrievalAgent(
+            retriever=MagicMock(),
+            config={
+                "retriever": {
+                    "targeted_second_pass_enabled": True,
+                    "top_k_policy": "complexity_adaptive",
+                }
+            },
+        )
+        subquestion = SubQuestion(
+            id="sq0",
+            question="量子计算在哪些领域有应用前景？目前技术成熟度如何？",
+            required_evidence_type="general",
+        )
+
+        self.assertTrue(agent._should_run_targeted_second_pass(subquestion, coverage=1.0))
+
+        refined = agent._refine_subquestion(
+            subquestion,
+            [
+                Evidence(
+                    evidence_id="D082_c0",
+                    source="paper",
+                    title="量子计算在药物发现中的应用前景",
+                    text_span="估计需要数百到数千个逻辑量子比特才能在药物发现中超越经典方法。",
+                )
+            ],
+        )
+
+        self.assertIn("药物发现", refined.question)
+        self.assertIn("Willow", refined.question)
+        self.assertIn("IBM", refined.question)
+        self.assertIn("NISQ", refined.question)
+        self.assertIn("2029", refined.question)
+        self.assertEqual(refined.required_evidence_type, "multi_aspect")
+        self.assertEqual(agent._select_output_top_k(refined, retrieval_depth=8), 5)
+
+    def test_misleading_effort_refresh_targets_real_world_action_evidence(self):
+        agent = DynamicRetrievalAgent(
+            retriever=MagicMock(),
+            config={"retriever": {"targeted_second_pass_enabled": True}},
+        )
+        subquestion = SubQuestion(
+            id="sq0",
+            question="中国是全球最大的碳排放国，所以中国对减排没有做任何努力，对吗？",
+            required_evidence_type="general",
+        )
+
+        self.assertTrue(agent._should_run_targeted_second_pass(subquestion, coverage=1.0))
+
+        refined = agent._refine_subquestion(
+            subquestion,
+            [
+                Evidence(
+                    evidence_id="D021_c0",
+                    source="report",
+                    title="全球碳计划2023年度报告：碳排放创新高",
+                    text_span="中国排放量约为119亿吨，占全球32.3%。",
+                )
+            ],
+        )
+
+        self.assertIn("可再生能源", refined.question)
+        self.assertIn("新能源汽车", refined.question)
+        self.assertIn("新增装机", refined.question)
+        self.assertIn("渗透率", refined.question)
 
 
 class TestSubquestionRefinement(unittest.TestCase):

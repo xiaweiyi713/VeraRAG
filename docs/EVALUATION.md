@@ -708,6 +708,19 @@ scores Behavior Accuracy `1.0000`, Answer F1 `0.5106`, Evidence Recall
 `1.0000`, and zero conflict failures. Treat this as a regression smoke until a
 new full 152-row run confirms no side effects.
 
+The second post-full targeted repair covers the two low-recall non-abstain
+rows, `V095` and `V116`. Aspect coverage refresh forces a second retrieval pass
+for broad questions such as "which application areas and maturity level?" and
+for misleading carbon-emissions questions that need real mitigation-action
+evidence. It also uses the complex evidence budget for those second-pass
+queries and filters NLI false positives between emissions-level facts and
+mitigation-progress facts. The focused report
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_aspect_refresh_v095_v116.json`
+scores 2/2 completed, zero errors, Behavior Accuracy `1.0000`, Evidence Recall
+`1.0000`, Evidence Precision `0.6000`, Answer F1 `0.3601`, and zero conflict
+failures. `V116` still retrieves but does not cite/support all IBM roadmap
+evidence, so a full run plus a citation-completeness follow-up remain required.
+
 Run the full candidate with:
 
 ```bash

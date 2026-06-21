@@ -247,6 +247,20 @@ Answer F1 `0.5106`, Evidence Recall `1.0000`, and zero conflict failures. This
 is a targeted regression result only; the next full run should verify whether
 the full 152-row behavior accuracy reaches `1.0000` without new regressions.
 
+The next post-full repair targets the two low-recall non-abstain rows, `V095`
+and `V116`, with aspect-coverage retrieval refresh. The retriever now recognizes
+broad multi-aspect questions, uses a complex evidence budget for the second
+pass, and expands carbon-emissions premise questions toward real mitigation
+actions while expanding quantum-application questions toward both application
+and maturity evidence. The pipeline also filters the NLI false positive between
+emissions-level facts and mitigation-progress facts. The focused report
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_aspect_refresh_v095_v116.json`
+scores 2/2 completed with zero errors, Behavior Accuracy `1.0000`, Answer F1
+`0.3601`, Evidence Recall `1.0000`, Evidence Precision `0.6000`, and zero
+conflict failures. `V116` still has incomplete citation/support coverage for
+the IBM roadmap evidence, so this is a retrieval/conflict regression smoke
+rather than a full answer-quality closure.
+
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 
 The learned conflict detector is not enabled by default. On 2026-06-15, the
