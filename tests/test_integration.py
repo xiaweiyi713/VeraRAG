@@ -492,6 +492,44 @@ class TestPipelineIntegration:
 
         assert filtered.get_conflicts() == []
 
+    def test_disjoint_company_attribute_nli_conflict_is_filtered_in_premise_question(
+        self,
+        pipeline_config,
+    ):
+        pipeline = _create_pipeline(pipeline_config)
+        founded = Claim(
+            claim_id="C_founded",
+            claim="星辰科技由李明远博士于2012年在北京创立",
+            claim_type=ClaimType.FACTUAL,
+        )
+        employees = Claim(
+            claim_id="C_employees",
+            claim="截至2023年末，星辰科技员工总数为41,000人",
+            claim_type=ClaimType.FACTUAL,
+        )
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_founded",
+                "C_employees",
+                ConflictType.REFUTE,
+                0.91,
+                rationale="NLI contradiction: 0.91",
+            ),
+        ]
+        evidence_pool = [
+            Evidence("D013_c0", "wiki", "星辰科技公司介绍", "", claims=[founded]),
+            Evidence("D011_c0", "report", "星辰科技2023年度财务报告", "", claims=[employees]),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "星辰科技2010年成立，是中国最早的AI芯片公司，目前员工超过6万人，对吗？",
+        )
+
+        assert filtered.get_conflicts() == []
+
     def test_strategy_question_filters_unrelated_runtime_dispute(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
         google = Claim(
@@ -1518,6 +1556,48 @@ class TestPipelineIntegration:
         assert claims[1].supporting_evidence == ["D011_c0"]
         assert claims[2].supporting_evidence == ["D014_c0"]
         assert steps[0].evidence_ids == ["D013_c0", "D011_c0", "D014_c0"]
+
+    def test_company_attribute_conflict_guard_skips_premise_validation(
+        self,
+        pipeline_config,
+    ):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D014_c0",
+                source="news",
+                title="星辰科技发展历程引争议",
+                text_span=(
+                    "有媒体报道称星辰科技成立于2010年，员工人数超过6万人。"
+                    "以上部分数据需进一步核实，与官方信息存在出入。"
+                ),
+            ),
+            Evidence(
+                evidence_id="D011_c0",
+                source="report",
+                title="星辰科技2023年度财务报告",
+                text_span="截至2023年末，公司员工总数增至41,000人。",
+            ),
+            Evidence(
+                evidence_id="D013_c0",
+                source="wiki",
+                title="星辰科技公司介绍",
+                text_span="星辰科技由李明远博士于2012年在北京创立。",
+            ),
+        ]
+
+        answer, claims, steps, guard = pipeline._apply_company_attribute_conflict_guard(
+            "星辰科技2010年成立，是中国最早的AI芯片公司，目前员工超过6万人，对吗？",
+            "证据存在冲突：D014_c0 与 D013_c0 内容不一致。",
+            [],
+            [],
+            evidence,
+        )
+
+        assert guard is None
+        assert answer.startswith("证据存在冲突")
+        assert claims == []
+        assert steps == []
 
     def test_evidence_detail_completion_guard_restores_semiconductor_constraints(
         self,

@@ -187,8 +187,14 @@ All notable changes to VeraRAG are recorded here.
   evidence-detail completion guard, and disjoint evidence-attribute NLI
   pruning. The focused two-row DeepSeek smoke completes with `2/2` correct
   answers, zero errors, Evidence Recall `1.0000`, Behavior Accuracy `1.0000`,
-  and Conflict F1 `1.0000`; a full gate18 rerun is still required before
-  promotion.
+  and Conflict F1 `1.0000`, motivating the full gate18 rerun below.
+- Rerun the stabilized targeted guarded gate18. It completes 18/18 with zero
+  errors, Behavior Accuracy `1.0000`, Conflict F1 `1.0000`, Answer F1
+  `0.4597`, Evidence Recall `0.7963`, Evidence Precision `0.5833`, Citation
+  F1 `0.7741`, Supporting-Fact F1 `0.7333`, and correctness `0.9444`. Compared
+  with top-3 guarded it improves the main answer/evidence/citation/conflict
+  metrics and passes the gate for a full 152-question A/B, with ECE `0.4937`
+  and premise-refutation F1 `0.7500` kept as audit risks.
 
 ### Added
 

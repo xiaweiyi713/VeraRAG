@@ -663,8 +663,22 @@ evidence-detail completion guard, and disjoint evidence-attribute NLI pruning.
 The focused two-row smoke at
 `outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stability_v020_v081.json`
 completed with `2/2` correct answers, zero errors, Evidence Recall `1.0000`,
-Behavior Accuracy `1.0000`, and Conflict F1 `1.0000`. This does not replace
-gate18; rerun the guarded gate before spending a full 152-row candidate A/B.
+Behavior Accuracy `1.0000`, and Conflict F1 `1.0000`. This smoke did not
+replace gate18, so the guarded gate was rerun before promoting the candidate.
+
+That gate rerun is now recorded at
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stabilized_gate18.json`.
+It completed 18/18 with zero errors, Behavior Accuracy `1.0000`, Conflict F1
+`1.0000`, Answer F1 `0.4597`, Evidence Recall `0.7963`, Evidence Precision
+`0.5833`, Citation F1 `0.7741`, Supporting-Fact F1 `0.7333`, and Brier
+`0.3175`. Compared with top-3 guarded, the paired deltas favor the stabilized
+candidate on Answer F1 (`+0.0495`), Evidence Recall (`+0.1019`), Citation F1
+(`+0.1148`), Supporting-Fact F1 (`+0.1056`), Conflict micro-F1 (`+0.2727`),
+correctness (`+0.2222`), and Brier (`-0.0581`), while latency increases by
+`+4.6550s` and ECE worsens by `+0.0603`. Compared with the previous calibrated
+gate, it fixes `V020`/`V081`, raises Conflict F1 to `1.0000`, but worsens ECE
+(`0.3803` to `0.4937`). The next promotion step is a full 152-row A/B plus a
+calibration/premise-refutation audit.
 
 Run the full candidate with:
 

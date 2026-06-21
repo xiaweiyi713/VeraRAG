@@ -665,9 +665,9 @@ class VeraRAG:
         """Drop NLI-only contradictions between different fact slots."""
         if "NLI contradiction" not in edge.rationale:
             return False
-        if self._is_premise_validation_question(question):
-            return False
         if source_claim is None or target_claim is None:
+            return False
+        if source_claim.source_span == "reported_claim" or target_claim.source_span == "reported_claim":
             return False
         source_slots = self._attribute_slots(
             self.conflict_graph_builder._claim_attributes(source_claim)
@@ -689,8 +689,6 @@ class VeraRAG:
     ) -> bool:
         """Fallback for NLI false positives when extracted claims lost entities."""
         if "NLI contradiction" not in edge.rationale:
-            return False
-        if self._is_premise_validation_question(question):
             return False
         if source_claim and source_claim.source_span == "reported_claim":
             return False
@@ -1272,6 +1270,8 @@ class VeraRAG:
         if "成立" not in question and "创立" not in question:
             return False
         if "员工" not in question:
+            return False
+        if cls._is_premise_validation_question(question):
             return False
         if cls._is_abstention_answer(answer):
             return False

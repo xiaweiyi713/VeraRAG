@@ -197,6 +197,20 @@ omitted process-node and advanced-packaging constraints. This is a targeted
 smoke result only; promotion still requires another gate18 and then a full
 152-question A/B.
 
+The post-stability gate18 rerun,
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stabilized_gate18.json`,
+completed 18/18 questions with zero errors. Against top-3 guarded it improves
+Answer F1 (`0.4102` to `0.4597`), Evidence Recall (`0.6944` to `0.7963`),
+Evidence Precision (`0.5463` to `0.5833`), Citation F1 (`0.6593` to
+`0.7741`), Supporting-Fact F1 (`0.6278` to `0.7333`), Conflict F1 (`0.7273`
+to `1.0000`), correctness accuracy (`0.7222` to `0.9444`), and Brier
+(`0.3756` to `0.3175`) while preserving Behavior Accuracy at `1.0000`.
+Against the immediately prior calibrated gate it improves Answer F1, Citation
+F1, Supporting-Fact F1, Conflict F1, and correctness, but ECE regresses
+(`0.3803` to `0.4937`) and Brier worsens (`0.2978` to `0.3175`). The stabilized
+candidate now passes gate18 for a full 152-question A/B, with calibration and
+premise-refutation diagnostics flagged as watch items.
+
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 
 The learned conflict detector is not enabled by default. On 2026-06-15, the
