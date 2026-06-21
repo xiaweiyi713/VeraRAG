@@ -698,6 +698,16 @@ Evidence Precision and about `+7.67s` latency. Remaining diagnostics are narrow:
 non-abstain rows with Evidence Recall below `0.5`, and conflict errors are
 dominated by over-detection plus the `V122` self-conflict miss.
 
+The first post-full targeted repair is the current-role temporal path for
+`V026`. It expands current officer questions with role-aware `现任`/`新任`/
+`加入` retrieval terms, emits a deterministic appointment-plus-departure
+answer when both evidence types are present, and filters NLI false positives
+between role-transition facts. The focused report
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_role_transition_v026.json`
+scores Behavior Accuracy `1.0000`, Answer F1 `0.5106`, Evidence Recall
+`1.0000`, and zero conflict failures. Treat this as a regression smoke until a
+new full 152-row run confirms no side effects.
+
 Run the full candidate with:
 
 ```bash

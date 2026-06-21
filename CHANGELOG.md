@@ -211,6 +211,15 @@ All notable changes to VeraRAG are recorded here.
   canonical BM25, plus recall/citation/calibration recovery versus the earlier
   top-3 reranker, while leaving V026, V095/V116 low recall, and conflict
   over-detection/self-conflict as the next targeted failure set.
+- Add a current-role temporal retrieval/answer guard for questions like
+  "currently who is the CTO?". The retriever now forces a second pass for
+  current officer/role questions and searches for `现任`/`新任`/`加入` role
+  evidence; the pipeline then combines appointment evidence with prior
+  departure evidence and suppresses NLI false positives between those role
+  transition facts. The focused `V026` DeepSeek smoke now has Behavior Accuracy
+  `1.0000`, Answer F1 `0.5106`, Evidence Recall `1.0000`, and zero conflict
+  failures; a future full run should verify whether this removes the last full
+  behavior failure.
 
 ### Added
 

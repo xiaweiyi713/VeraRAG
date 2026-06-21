@@ -238,6 +238,15 @@ pair. The paired comparison artifacts are
 and
 `outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stabilized_behavior_full_vs_top3.md`.
 
+After that full-run audit, a targeted current-role temporal fix was validated
+on `V026` at
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_role_transition_v026.json`.
+The one-row smoke retrieves both `D012` and `D011`, answers with the new CTO
+appointment and prior CTO departure, and scores Behavior Accuracy `1.0000`,
+Answer F1 `0.5106`, Evidence Recall `1.0000`, and zero conflict failures. This
+is a targeted regression result only; the next full run should verify whether
+the full 152-row behavior accuracy reaches `1.0000` without new regressions.
+
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 
 The learned conflict detector is not enabled by default. On 2026-06-15, the

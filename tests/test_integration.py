@@ -530,6 +530,53 @@ class TestPipelineIntegration:
 
         assert filtered.get_conflicts() == []
 
+    def test_current_role_transition_nli_conflict_is_filtered(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        current_cto = Claim(
+            claim_id="C_current_cto",
+            claim="新任CTO陈晓峰博士于2024年3月正式加入",
+            claim_type=ClaimType.FACTUAL,
+        )
+        former_cto = Claim(
+            claim_id="C_former_cto",
+            claim="2023年11月，公司CTO张伟宣布因个人原因离职",
+            claim_type=ClaimType.FACTUAL,
+        )
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_current_cto",
+                "C_former_cto",
+                ConflictType.REFUTE,
+                0.84,
+                rationale="NLI contradiction: 0.84",
+            ),
+        ]
+        evidence_pool = [
+            Evidence(
+                "D012_c0",
+                "report",
+                "星辰科技2024年第一季度财报",
+                "新任CTO陈晓峰博士于2024年3月正式加入。",
+                claims=[current_cto],
+            ),
+            Evidence(
+                "D011_c0",
+                "report",
+                "星辰科技2023年度财务报告",
+                "2023年11月，公司CTO张伟宣布因个人原因离职。",
+                claims=[former_cto],
+            ),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "星辰科技目前的CTO是谁？",
+        )
+
+        assert filtered.get_conflicts() == []
+
     def test_strategy_question_filters_unrelated_runtime_dispute(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
         google = Claim(
@@ -1625,6 +1672,47 @@ class TestPipelineIntegration:
         assert answer.startswith("证据存在冲突")
         assert claims == []
         assert steps == []
+
+    def test_current_role_transition_guard_uses_new_and_departure_evidence(
+        self,
+        pipeline_config,
+    ):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D012_c0",
+                source="report",
+                title="星辰科技2024年第一季度财报",
+                text_span="新任CTO陈晓峰博士于2024年3月正式加入。",
+            ),
+            Evidence(
+                evidence_id="D011_c0",
+                source="report",
+                title="星辰科技2023年度财务报告",
+                text_span="2023年11月，公司CTO张伟宣布因个人原因离职。",
+            ),
+        ]
+
+        answer, claims, steps, guard = pipeline._apply_current_role_transition_guard(
+            "星辰科技目前的CTO是谁？",
+            "证据存在冲突：无关证据不一致。综合判断，星辰科技目前的CTO是陈晓峰博士。",
+            [],
+            [],
+            evidence,
+        )
+
+        assert guard == {
+            "action": "current_role_transition_answer",
+            "selected_evidence": ["D012_c0", "D011_c0"],
+        }
+        assert answer.startswith("根据现有证据")
+        assert "陈晓峰" in answer
+        assert "张伟" in answer
+        assert "离职" in answer
+        assert "证据存在冲突" not in answer
+        assert claims[0].supporting_evidence == ["D012_c0"]
+        assert claims[1].supporting_evidence == ["D011_c0"]
+        assert steps[0].evidence_ids == ["D012_c0", "D011_c0"]
 
     def test_evidence_detail_completion_guard_restores_semiconductor_constraints(
         self,

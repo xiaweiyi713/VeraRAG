@@ -391,6 +391,12 @@ class VeraRAG:
                 question,
             ):
                 continue
+            if self._is_role_transition_nli_conflict(
+                edge,
+                evidence_by_claim,
+                question,
+            ):
+                continue
             if self._is_historical_version_edge(
                 edge,
                 evidence_by_claim,
@@ -707,6 +713,40 @@ class VeraRAG:
         if source_entities and target_entities:
             return bool(source_entities & target_entities)
         return bool(self._title_entity_anchors(source.title) & self._title_entity_anchors(target.title))
+
+    def _is_role_transition_nli_conflict(
+        self,
+        edge: ConflictEdge,
+        evidence_by_claim: dict[str, Evidence],
+        question: str,
+    ) -> bool:
+        """Suppress NLI false positives between current appointment and prior departure."""
+        if "NLI contradiction" not in edge.rationale:
+            return False
+        role = self._current_role_marker(question)
+        if not role:
+            return False
+        source = evidence_by_claim.get(edge.source_id)
+        target = evidence_by_claim.get(edge.target_id)
+        if source is None or target is None or source is target:
+            return False
+        source_text = f"{source.title} {source.text_span}"
+        target_text = f"{target.title} {target.text_span}"
+        return (
+            self._is_role_current_evidence(source_text, role)
+            and self._is_role_departure_evidence(target_text, role)
+        ) or (
+            self._is_role_current_evidence(target_text, role)
+            and self._is_role_departure_evidence(source_text, role)
+        )
+
+    @staticmethod
+    def _is_role_current_evidence(text: str, role: str) -> bool:
+        return role in text and any(marker in text for marker in ("新任", "现任", "正式加入", "加入", "任命"))
+
+    @staticmethod
+    def _is_role_departure_evidence(text: str, role: str) -> bool:
+        return role in text and any(marker in text for marker in ("离职", "前任", "卸任", "辞任"))
 
     def _evidence_attribute_claim_slots(self, evidence: Evidence) -> set[str]:
         evidence_claim = Claim(
@@ -1381,6 +1421,86 @@ class VeraRAG:
         missing_details = [marker for marker in detail_markers if marker in evidence_text and marker not in answer]
         return len(missing_details) >= 2
 
+    def _apply_current_role_transition_guard(
+        self,
+        question: str,
+        answer: str,
+        claims: list[AnswerClaim],
+        reasoning: list[ReasoningStep],
+        evidence: list[Evidence],
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep], dict[str, Any] | None]:
+        """Answer current officer/role questions from appointment plus departure evidence."""
+        role = self._current_role_marker(question)
+        if not role:
+            return answer, claims, reasoning, None
+        current = self._first_evidence_sentence(
+            evidence,
+            include_any=("新任", "现任", "正式加入", "加入", "任命"),
+            include_all=(role,),
+        )
+        previous = self._first_evidence_sentence(
+            evidence,
+            include_any=("离职", "前任", "卸任", "辞任"),
+            include_all=(role,),
+        )
+        if not current or not previous:
+            return answer, claims, reasoning, None
+
+        current_id, current_sentence = current
+        previous_id, previous_sentence = previous
+        selected_ids = self._dedupe_preserving_order([current_id, previous_id])
+        guarded_answer = (
+            f"根据现有证据，{current_sentence}{previous_sentence}"
+            f"引用证据：{' '.join(f'[{evidence_id}]' for evidence_id in selected_ids)}"
+        )
+        guarded_claims = [
+            AnswerClaim(
+                claim=current_sentence,
+                supporting_evidence=[current_id],
+                confidence=0.88,
+                claim_type="factual",
+                verifiable=True,
+                support_type="direct",
+            ),
+            AnswerClaim(
+                claim=previous_sentence,
+                supporting_evidence=[previous_id],
+                confidence=0.84,
+                claim_type="factual",
+                verifiable=True,
+                support_type="direct",
+            ),
+        ]
+        guarded_reasoning = [
+            ReasoningStep(
+                step=1,
+                description="识别到问题询问当前职位人选，并检索到新任加入与前任离职证据，因此用两条时序证据直接作答。",
+                evidence_ids=selected_ids,
+                confidence=0.88,
+            ),
+            *reasoning,
+        ]
+        for index, step in enumerate(guarded_reasoning, start=1):
+            step.step = index
+        return (
+            guarded_answer,
+            guarded_claims,
+            guarded_reasoning,
+            {
+                "action": "current_role_transition_answer",
+                "selected_evidence": selected_ids,
+            },
+        )
+
+    @staticmethod
+    def _current_role_marker(question: str) -> str | None:
+        if not any(marker in question for marker in ("目前", "当前", "现任", "现在", "最新")):
+            return None
+        for role in ("CTO", "CEO", "CFO", "负责人", "主管", "高管"):
+            if role in question:
+                return role
+        return None
+
     @staticmethod
     def _first_evidence_sentence(
         evidence: list[Evidence],
@@ -2028,6 +2148,16 @@ class VeraRAG:
         if not answerability_guard:
             answer, answer_claims, reasoning_chain, answerability_guard = (
                 self._apply_company_attribute_conflict_guard(
+                    question,
+                    answer,
+                    answer_claims,
+                    reasoning_chain,
+                    evidence_pool,
+                )
+            )
+        if not answerability_guard:
+            answer, answer_claims, reasoning_chain, answerability_guard = (
+                self._apply_current_role_transition_guard(
                     question,
                     answer,
                     answer_claims,

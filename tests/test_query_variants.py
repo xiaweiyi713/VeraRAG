@@ -134,6 +134,37 @@ class TestQueryVariants(unittest.TestCase):
         self.assertIn("员工总数", refined.question)
         self.assertIn("截至2023年末", refined.question)
 
+    def test_current_role_refresh_targets_new_officer_evidence(self):
+        agent = DynamicRetrievalAgent(
+            retriever=MagicMock(),
+            config={"retriever": {"targeted_second_pass_enabled": True}},
+        )
+        subquestion = SubQuestion(
+            id="sq0",
+            question="星辰科技目前的CTO是谁？",
+            required_evidence_type="temporal",
+        )
+
+        self.assertTrue(agent._should_run_targeted_second_pass(subquestion, coverage=1.0))
+
+        refined = agent._refine_subquestion(
+            subquestion,
+            [
+                Evidence(
+                    evidence_id="D011_c0",
+                    source="report",
+                    title="星辰科技2023年度财务报告",
+                    text_span="2023年11月，公司CTO张伟宣布因个人原因离职。",
+                )
+            ],
+        )
+
+        self.assertIn("星辰科技", refined.question)
+        self.assertIn("CTO", refined.question)
+        self.assertIn("现任", refined.question)
+        self.assertIn("新任", refined.question)
+        self.assertIn("加入", refined.question)
+
 
 class TestSubquestionRefinement(unittest.TestCase):
     """Test subquestion refinement."""

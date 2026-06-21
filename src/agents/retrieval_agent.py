@@ -526,6 +526,14 @@ Output ONLY valid JSON, no other text."""
             "创立",
             "人数",
             "规模",
+            "CTO",
+            "CEO",
+            "CFO",
+            "负责人",
+            "主管",
+            "高管",
+            "新任",
+            "现任",
             "多少",
             "哪一年",
         )
@@ -543,6 +551,11 @@ Output ONLY valid JSON, no other text."""
             markers.extend(["成立", "创立", "创始人"])
         if any(marker in question for marker in ("营收", "收入")):
             markers.extend(["最新", "财报", "营收", "收入"])
+        if any(marker in question for marker in ("CTO", "CEO", "CFO", "负责人", "主管", "高管", "现任")):
+            for role in ("CTO", "CEO", "CFO", "负责人", "主管", "高管"):
+                if role in question:
+                    markers.append(role)
+            markers.extend(["最新", "现任", "新任", "加入", "财报", "公告"])
         if not markers:
             markers.extend(["最新", "官方", "报告"])
         return " ".join(dict.fromkeys([entity, *markers])).strip() or question
