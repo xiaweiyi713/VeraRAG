@@ -144,6 +144,14 @@ All notable changes to VeraRAG are recorded here.
   The naive expanded-depth variant is rejected because Behavior Accuracy falls
   to `0.9444`, Answer F1 falls to `0.3336`, and Evidence Recall does not
   improve versus top-3 guarded.
+- Add targeted second-pass retrieval for under-covered medium/complex
+  subquestions, disabled by default and enabled in
+  `configs/verabench_v112_retrieval_rerank_targeted_guarded.yaml`. On gate18 it
+  improves over top-3 guarded on Evidence Recall (`0.6944` to `0.7407`),
+  Citation F1 (`0.6593` to `0.7278`), Supporting-Fact F1 (`0.6278` to
+  `0.7000`), and Brier (`0.3756` to `0.3134`), but Answer F1 regresses to
+  `0.3109`, so it remains a research candidate rather than a full-run
+  promotion.
 
 ### Added
 

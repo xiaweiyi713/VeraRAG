@@ -93,7 +93,7 @@ Run provenance:
 
 The BM25+Reranker top-3 adaptive candidate completed the same 152-question
 DeepSeek run with zero errors and is compared against the canonical report in
-`outputs/remote_results/verabench_v112_retrieval_rerank_top3_comparison.md`.
+`outputs/remote_results/verabench_v112_retrieval_rerank_top3_deepseek_vs_canonical.md`.
 
 | Metric | Direction | Canonical BM25 fixed | BM25+Reranker top-3 adaptive | Delta | 95% delta CI | P(candidate better) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
@@ -144,6 +144,17 @@ rejected on the same gate: Behavior Accuracy falls to `0.9444`, Answer F1 falls
 to `0.3336`, and Evidence Recall does not improve. The next candidate should
 use targeted second-pass retrieval for low-coverage multi-evidence/temporal/
 conflict rows instead of global top-k expansion.
+
+The targeted second-pass candidate,
+`configs/verabench_v112_retrieval_rerank_targeted_guarded.yaml`, keeps the
+top-3 guarded first pass and appends at most two extra chunks only for
+under-covered medium/complex retrieval needs. On gate18 it improves over
+top-3 guarded on Evidence Recall (`0.6944` to `0.7407`), Evidence Precision
+(`0.5463` to `0.5917`), Citation F1 (`0.6593` to `0.7278`),
+Supporting-Fact F1 (`0.6278` to `0.7000`), and Brier (`0.3756` to `0.3134`)
+while keeping Behavior Accuracy at `1.0000`. It is still held back because
+Answer F1 drops from `0.4102` to `0.3109`; the next Stage-3 candidate needs
+answer-side evidence compression or claim-slot selection before a full run.
 
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 

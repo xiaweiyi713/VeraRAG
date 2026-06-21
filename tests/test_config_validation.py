@@ -130,6 +130,11 @@ def test_retrieval_rerank_top3_guarded_config_preserves_base_recall_anchor():
             encoding="utf-8"
         )
     )
+    targeted = yaml.safe_load(
+        Path("configs/verabench_v112_retrieval_rerank_targeted_guarded.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
 
     assert (
         guarded["canonical_run"]["name"]
@@ -158,6 +163,19 @@ def test_retrieval_rerank_top3_guarded_config_preserves_base_recall_anchor():
     assert expanded["retriever"]["adaptive_complex_top_k"] == 5
     assert expanded["retriever"]["reranker_candidate_k"] == 8
     assert expanded["retriever"]["reranker_preserve_base_top_k"] == 2
+    assert (
+        targeted["canonical_run"]["name"]
+        == "verabench_v112_retrieval_rerank_targeted_guarded_deepseek"
+    )
+    assert targeted["canonical_run"]["benchmark_version"] == canonical["canonical_run"]["benchmark_version"]
+    assert targeted["llm"] == canonical["llm"]
+    assert targeted["pipeline"] == canonical["pipeline"]
+    assert targeted["retriever"]["retrieval_top_k"] == 3
+    assert targeted["retriever"]["reranker_candidate_k"] == 8
+    assert targeted["retriever"]["reranker_preserve_base_top_k"] == 1
+    assert targeted["retriever"]["targeted_second_pass_enabled"] is True
+    assert targeted["retriever"]["targeted_second_pass_top_k"] == 8
+    assert targeted["retriever"]["targeted_second_pass_max_new_evidence"] == 2
 
 
 def test_config_validation_reports_runtime_shape_errors(tmp_path):

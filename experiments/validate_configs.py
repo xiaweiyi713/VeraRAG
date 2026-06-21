@@ -156,8 +156,22 @@ def _validate_runtime_config(
             "adaptive_complex_top_k",
             "reranker_candidate_k",
             "reranker_batch_size",
+            "targeted_second_pass_top_k",
+            "targeted_second_pass_max_new_evidence",
         ):
             _positive_int(path, f"retriever.{field}", retriever.get(field), errors, required=False)
+        _boolean(
+            path,
+            "retriever.targeted_second_pass_enabled",
+            retriever.get("targeted_second_pass_enabled"),
+            errors,
+        )
+        _probability(
+            path,
+            "retriever.targeted_second_pass_coverage_threshold",
+            retriever.get("targeted_second_pass_coverage_threshold"),
+            errors,
+        )
         _non_negative_int(
             path,
             "retriever.reranker_preserve_base_top_k",

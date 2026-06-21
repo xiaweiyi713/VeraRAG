@@ -555,6 +555,24 @@ under
 and
 `outputs/remote_results/verabench_v112_retrieval_rerank_expanded_guarded_gate18_vs_top3_guarded.md`.
 
+That targeted second-pass candidate now exists at
+`configs/verabench_v112_retrieval_rerank_targeted_guarded.yaml`. It keeps the
+top-3 guarded first pass for simple questions, then runs one bounded second
+retrieval only when a medium/complex subquestion has low coverage, appending at
+most two new evidence chunks before conflict detection and verification. On
+gate18, it improves over top-3 guarded on Evidence Recall (`0.6944` to
+`0.7407`), Evidence Precision (`0.5463` to `0.5917`), Citation F1 (`0.6593` to
+`0.7278`), Supporting-Fact F1 (`0.6278` to `0.7000`), Brier (`0.3756` to
+`0.3134`), and keeps Behavior Accuracy at `1.0000` with the same mean latency.
+It is still not ready for promotion: Answer F1 drops from `0.4102` to `0.3109`,
+and compared with canonical BM25 the gate still has lower Evidence Recall
+(`0.9722` to `0.7407`) and lower Supporting-Fact F1 (`0.7856` to `0.7000`).
+The next iteration should keep targeted retrieval but add answer-side evidence
+compression or claim-slot selection so extra retrieved evidence improves
+support without dragging the generated answer away from the gold content. The
+paired report is saved under
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_guarded_gate18_vs_top3_guarded.md`.
+
 A three-question end-to-end smoke A/B over `V001`, `V017`, and `V041`
 validates the reranked candidate in the real DeepSeek pipeline before full-run
 spend. Compared with canonical BM25 fixed-depth retrieval on the same questions,
@@ -577,7 +595,7 @@ By type, Behavior Accuracy is `1.0000` for single-evidence, multi-evidence,
 conflict, temporal, and unanswerable rows, and `0.9730` for misleading rows.
 The paired full-run A/B is now available against the canonical BM25 fixed-depth
 DeepSeek baseline:
-`outputs/remote_results/verabench_v112_retrieval_rerank_top3_comparison.md`.
+`outputs/remote_results/verabench_v112_retrieval_rerank_top3_deepseek_vs_canonical.md`.
 The canonical report completed 152/152 with zero errors at
 `outputs/remote_results/verabench_v112_canonical_deepseek.json`.
 
@@ -600,10 +618,13 @@ Recall drops significantly, citation quality drops significantly, and Brier
 score worsens. The first recall/citation safeguards, question-aware conflict
 pruning, and point-in-time value guard are implemented. They pass the
 three-question smoke gate, but the broader gate18 rejects both top-3 guarded
-and naive expanded guarded variants for full-run promotion. The next Stage-3
-iteration should keep the reranker and add targeted second-pass retrieval for
-multi-evidence, temporal, and conflict rows whose fact-slot coverage is low,
-with selective fallback to BM25 depth-10 reserved for broader gate failures.
+and naive expanded guarded variants for full-run promotion. A targeted
+second-pass candidate recovers part of the evidence/citation loss without
+hurting behavior, but answer synthesis regresses. The next Stage-3 iteration
+should keep the reranker and targeted retrieval, then add answer-side evidence
+compression or claim-slot selection for low-coverage multi-evidence, temporal,
+and conflict rows, with selective fallback to BM25 depth-10 reserved for
+broader gate failures.
 
 Run the full candidate with:
 
@@ -636,6 +657,13 @@ python experiments/compare_verabench_reports.py \
   --baseline-label "Canonical BM25 gate18" \
   --candidate-label "Guarded BM25+Reranker gate18" \
   --output outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_gate18_vs_canonical.md
+
+python experiments/run_verabench.py \
+  --config configs/verabench_v112_retrieval_rerank_targeted_guarded.yaml \
+  --ids-file configs/verabench_v112_guarded_gate18_ids.txt \
+  --output outputs/remote_results/verabench_v112_retrieval_rerank_targeted_guarded_gate18.json \
+  --checkpoint outputs/remote_results/verabench_v112_retrieval_rerank_targeted_guarded_gate18.ckpt.jsonl \
+  --restart
 ```
 
 Reproduce the smoke A/B with:

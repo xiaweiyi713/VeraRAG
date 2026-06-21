@@ -184,6 +184,67 @@ class TestDynamicRetrievalAgent:
         assert retriever.top_k_calls == [3]
         assert len(conflict) == 3
 
+    def test_targeted_second_pass_appends_bounded_evidence_for_low_coverage_complex_need(self):
+        from src.agents.retrieval_agent import DynamicRetrievalAgent
+
+        retriever = self.RecordingRetriever()
+        agent = DynamicRetrievalAgent(
+            retriever=retriever,  # type: ignore[arg-type]
+            config={
+                "retriever": {
+                    "retrieval_top_k": 3,
+                    "top_k_policy": "complexity_adaptive",
+                    "targeted_second_pass_enabled": True,
+                    "targeted_second_pass_top_k": 8,
+                    "targeted_second_pass_max_new_evidence": 2,
+                    "targeted_second_pass_coverage_threshold": 0.67,
+                }
+            },
+        )
+        subquestions = [
+            SubQuestion(
+                id="sq_original",
+                question="完全不匹配的问题",
+                required_evidence_type="conflict",
+            )
+        ]
+
+        evidence = agent.dynamic_retrieve(subquestions, [], max_rounds=1)
+
+        assert retriever.top_k_calls[0] == 3
+        assert retriever.top_k_calls[1:]
+        assert set(retriever.top_k_calls[1:]) == {8}
+        assert [item.evidence_id for item in evidence] == [
+            "D000_c0",
+            "D001_c0",
+            "D002_c0",
+            "D003_c0",
+            "D004_c0",
+        ]
+
+    def test_targeted_second_pass_skips_simple_need(self):
+        from src.agents.retrieval_agent import DynamicRetrievalAgent
+
+        retriever = self.RecordingRetriever()
+        agent = DynamicRetrievalAgent(
+            retriever=retriever,  # type: ignore[arg-type]
+            config={
+                "retriever": {
+                    "retrieval_top_k": 3,
+                    "targeted_second_pass_enabled": True,
+                    "targeted_second_pass_top_k": 8,
+                }
+            },
+        )
+        subquestions = [
+            SubQuestion(id="sq_original", question="完全不匹配的问题")
+        ]
+
+        evidence = agent.dynamic_retrieve(subquestions, [], max_rounds=1)
+
+        assert retriever.top_k_calls == [3]
+        assert len(evidence) == 3
+
     def test_compact_entity_group_expands_retrieval_queries(self):
         from src.agents.retrieval_agent import DynamicRetrievalAgent
 

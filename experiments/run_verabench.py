@@ -218,6 +218,10 @@ def _read_config_run_metadata(config_path: str) -> dict[str, Any]:
             "reranker_batch_size",
             "reranker_local_files_only",
             "reranker_preserve_base_top_k",
+            "targeted_second_pass_enabled",
+            "targeted_second_pass_top_k",
+            "targeted_second_pass_max_new_evidence",
+            "targeted_second_pass_coverage_threshold",
         ):
             if key in retriever:
                 metadata[f"retriever_{key}"] = retriever[key]

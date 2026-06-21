@@ -88,6 +88,23 @@ Output ONLY valid JSON, no other text."""
         self.adaptive_simple_top_k = int(retriever_config.get("adaptive_simple_top_k", 2))
         self.adaptive_medium_top_k = int(retriever_config.get("adaptive_medium_top_k", 4))
         self.adaptive_complex_top_k = int(retriever_config.get("adaptive_complex_top_k", 5))
+        self.targeted_second_pass_enabled = bool(
+            retriever_config.get("targeted_second_pass_enabled", False)
+        )
+        self.targeted_second_pass_top_k = self._positive_config_int(
+            retriever_config.get(
+                "targeted_second_pass_top_k",
+                max(self.retrieval_top_k, self.adaptive_complex_top_k),
+            ),
+            "retriever.targeted_second_pass_top_k",
+        )
+        self.targeted_second_pass_max_new_evidence = self._positive_config_int(
+            retriever_config.get("targeted_second_pass_max_new_evidence", 2),
+            "retriever.targeted_second_pass_max_new_evidence",
+        )
+        self.targeted_second_pass_coverage_threshold = float(
+            retriever_config.get("targeted_second_pass_coverage_threshold", 0.67)
+        )
 
     @staticmethod
     def _positive_config_int(value: Any, field: str) -> int:
@@ -253,6 +270,27 @@ Output ONLY valid JSON, no other text."""
             # Assess coverage
             coverage = self._assess_subquestion_coverage(target, evidence_pool)
             target.coverage_score = coverage
+            if self._should_run_targeted_second_pass(target, coverage):
+                second_pass_target = self._refine_subquestion(target, evidence_pool)
+                second_pass_results = self.retrieve_for_subquestion(
+                    second_pass_target,
+                    top_k=self.targeted_second_pass_top_k,
+                    seek_counter_evidence=target.requires_counter_evidence,
+                )
+                second_pass_evidence = [
+                    self._result_to_evidence(
+                        r,
+                        r.doc_id if getattr(r, "doc_id", "") else f"E{uuid.uuid4().hex[:8]}",
+                    )
+                    for r in second_pass_results
+                ]
+                self._append_new_evidence(
+                    evidence_pool,
+                    second_pass_evidence,
+                    limit=self.targeted_second_pass_max_new_evidence,
+                )
+                coverage = self._assess_subquestion_coverage(target, evidence_pool)
+                target.coverage_score = coverage
 
             if coverage >= 0.8:  # Coverage threshold
                 target.status = "resolved"
@@ -265,6 +303,40 @@ Output ONLY valid JSON, no other text."""
                     self._replace_subquestion(subquestions, target, refined_target)
 
         return evidence_pool
+
+    def _should_run_targeted_second_pass(
+        self,
+        subquestion: SubQuestion,
+        coverage: float,
+    ) -> bool:
+        """Run a bounded second retrieval only for under-covered non-simple needs."""
+        if not self.targeted_second_pass_enabled:
+            return False
+        if coverage >= self.targeted_second_pass_coverage_threshold:
+            return False
+        return (
+            self._is_complex_retrieval_need(subquestion)
+            or self._is_medium_retrieval_need(subquestion)
+        )
+
+    @staticmethod
+    def _append_new_evidence(
+        evidence_pool: list[Evidence],
+        candidates: list[Evidence],
+        *,
+        limit: int,
+    ) -> None:
+        """Append at most ``limit`` evidence items not already in the pool."""
+        seen = {item.evidence_id for item in evidence_pool}
+        added = 0
+        for item in candidates:
+            if item.evidence_id in seen:
+                continue
+            evidence_pool.append(item)
+            seen.add(item.evidence_id)
+            added += 1
+            if added >= limit:
+                return
 
     def _generate_query_variants(self, question: str) -> list[str]:
         """Generate multiple query variants for better retrieval."""
