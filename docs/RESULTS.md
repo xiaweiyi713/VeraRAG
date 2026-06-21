@@ -148,13 +148,16 @@ conflict rows instead of global top-k expansion.
 The targeted second-pass candidate,
 `configs/verabench_v112_retrieval_rerank_targeted_guarded.yaml`, keeps the
 top-3 guarded first pass and appends at most two extra chunks only for
-under-covered medium/complex retrieval needs. On gate18 it improves over
-top-3 guarded on Evidence Recall (`0.6944` to `0.7407`), Evidence Precision
-(`0.5463` to `0.5917`), Citation F1 (`0.6593` to `0.7278`),
-Supporting-Fact F1 (`0.6278` to `0.7000`), and Brier (`0.3756` to `0.3134`)
-while keeping Behavior Accuracy at `1.0000`. It is still held back because
-Answer F1 drops from `0.4102` to `0.3109`; the next Stage-3 candidate needs
-answer-side evidence compression or claim-slot selection before a full run.
+under-covered medium/complex retrieval needs. It now also enables
+`reasoning.claim_slot_selection_enabled`, which compresses the reasoning prompt
+to the strongest answer evidence slots while retaining the full evidence pool
+for verification and scoring. On gate18 it improves over top-3 guarded on
+Evidence Recall (`0.6944` to `0.7407`) and Evidence Precision (`0.5463` to
+`0.5583`), keeps Citation F1 essentially flat (`0.6593` to `0.6574`), and
+keeps Behavior Accuracy at `1.0000`. The claim-slot selector mitigates the
+previous uncompressed targeted Answer F1 regression (`0.3109` to `0.3786`),
+but the candidate is still held back because it remains below top-3 guarded
+Answer F1 (`0.4102`) and supporting-fact F1 is flat (`0.6278` to `0.6259`).
 
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 

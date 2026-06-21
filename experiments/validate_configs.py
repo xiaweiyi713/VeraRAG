@@ -204,6 +204,19 @@ def _validate_runtime_config(
             reasoning.get("enforce_answer_citations"),
             errors,
         )
+        _boolean(
+            path,
+            "reasoning.claim_slot_selection_enabled",
+            reasoning.get("claim_slot_selection_enabled"),
+            errors,
+        )
+        _positive_int(
+            path,
+            "reasoning.claim_slot_max_evidence",
+            reasoning.get("claim_slot_max_evidence"),
+            errors,
+            required=False,
+        )
 
 
 def _validate_dataset_config(

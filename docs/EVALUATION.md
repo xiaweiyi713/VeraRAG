@@ -559,19 +559,24 @@ That targeted second-pass candidate now exists at
 `configs/verabench_v112_retrieval_rerank_targeted_guarded.yaml`. It keeps the
 top-3 guarded first pass for simple questions, then runs one bounded second
 retrieval only when a medium/complex subquestion has low coverage, appending at
-most two new evidence chunks before conflict detection and verification. On
-gate18, it improves over top-3 guarded on Evidence Recall (`0.6944` to
-`0.7407`), Evidence Precision (`0.5463` to `0.5917`), Citation F1 (`0.6593` to
-`0.7278`), Supporting-Fact F1 (`0.6278` to `0.7000`), Brier (`0.3756` to
-`0.3134`), and keeps Behavior Accuracy at `1.0000` with the same mean latency.
-It is still not ready for promotion: Answer F1 drops from `0.4102` to `0.3109`,
-and compared with canonical BM25 the gate still has lower Evidence Recall
-(`0.9722` to `0.7407`) and lower Supporting-Fact F1 (`0.7856` to `0.7000`).
-The next iteration should keep targeted retrieval but add answer-side evidence
-compression or claim-slot selection so extra retrieved evidence improves
-support without dragging the generated answer away from the gold content. The
-paired report is saved under
-`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_guarded_gate18_vs_top3_guarded.md`.
+most two new evidence chunks before conflict detection and verification. It
+also enables answer-side claim-slot selection: the reasoning prompt is
+compressed to the strongest evidence slots by quality, retrieval rank, question
+overlap, and conflict membership, while verifier/evaluator still receive the
+full evidence pool. On gate18, this improves over top-3 guarded on Evidence
+Recall (`0.6944` to `0.7407`) and Evidence Precision (`0.5463` to `0.5583`),
+keeps Citation F1 essentially flat (`0.6593` to `0.6574`), and keeps Behavior
+Accuracy at `1.0000`. It also mitigates the earlier uncompressed targeted
+Answer F1 regression (`0.3109` to `0.3786`). It is still not ready for
+promotion: Answer F1 remains below top-3 guarded (`0.4102`), Brier is flat to
+slightly worse (`0.3756` to `0.3824`), and compared with canonical BM25 the
+gate still has lower Evidence Recall (`0.9722` to `0.7407`) and lower
+Supporting-Fact F1 (`0.7856` to `0.6259`). The next iteration should add
+selective fallback to BM25 depth-10 or tune slot budgets for multi-evidence and
+temporal rows. The paired reports are saved under
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_claim_slot_gate18_vs_top3_guarded.md`
+and
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_claim_slot_gate18_vs_canonical.md`.
 
 A three-question end-to-end smoke A/B over `V001`, `V017`, and `V041`
 validates the reranked candidate in the real DeepSeek pipeline before full-run
@@ -619,11 +624,12 @@ score worsens. The first recall/citation safeguards, question-aware conflict
 pruning, and point-in-time value guard are implemented. They pass the
 three-question smoke gate, but the broader gate18 rejects both top-3 guarded
 and naive expanded guarded variants for full-run promotion. A targeted
-second-pass candidate recovers part of the evidence/citation loss without
-hurting behavior, but answer synthesis regresses. The next Stage-3 iteration
-should keep the reranker and targeted retrieval, then add answer-side evidence
-compression or claim-slot selection for low-coverage multi-evidence, temporal,
-and conflict rows, with selective fallback to BM25 depth-10 reserved for
+second-pass candidate with claim-slot selection recovers part of the evidence
+loss and reduces the earlier answer-synthesis regression without hurting
+behavior, but it still trails top-3 guarded Answer F1. The next Stage-3
+iteration should keep the reranker and targeted retrieval, then add selective
+fallback or tune evidence-slot budgets for low-coverage multi-evidence,
+temporal, and conflict rows, with BM25 depth-10 reserved for
 broader gate failures.
 
 Run the full candidate with:
@@ -664,6 +670,13 @@ python experiments/run_verabench.py \
   --output outputs/remote_results/verabench_v112_retrieval_rerank_targeted_guarded_gate18.json \
   --checkpoint outputs/remote_results/verabench_v112_retrieval_rerank_targeted_guarded_gate18.ckpt.jsonl \
   --restart
+
+python experiments/compare_verabench_reports.py \
+  outputs/remote_results/verabench_v112_retrieval_rerank_top3_guarded_gate18.json \
+  outputs/remote_results/verabench_v112_retrieval_rerank_targeted_guarded_gate18.json \
+  --baseline-label "Top3 guarded BM25+Reranker gate18" \
+  --candidate-label "Targeted claim-slot BM25+Reranker gate18" \
+  --output outputs/remote_results/verabench_v112_retrieval_rerank_targeted_claim_slot_gate18_vs_top3_guarded.md
 ```
 
 Reproduce the smoke A/B with:

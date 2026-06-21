@@ -176,6 +176,8 @@ def test_retrieval_rerank_top3_guarded_config_preserves_base_recall_anchor():
     assert targeted["retriever"]["targeted_second_pass_enabled"] is True
     assert targeted["retriever"]["targeted_second_pass_top_k"] == 8
     assert targeted["retriever"]["targeted_second_pass_max_new_evidence"] == 2
+    assert targeted["reasoning"]["claim_slot_selection_enabled"] is True
+    assert targeted["reasoning"]["claim_slot_max_evidence"] == 6
 
 
 def test_config_validation_reports_runtime_shape_errors(tmp_path):
@@ -193,6 +195,8 @@ def test_config_validation_reports_runtime_shape_errors(tmp_path):
                 "  enable_repair: sometimes",
                 "reasoning:",
                 "  enforce_answer_citations: sometimes",
+                "  claim_slot_selection_enabled: sometimes",
+                "  claim_slot_max_evidence: 0",
                 "retriever:",
                 "  type: graph",
                 "  retrieval_top_k: 0",
@@ -217,6 +221,14 @@ def test_config_validation_reports_runtime_shape_errors(tmp_path):
     assert (
         "reasoning.enforce_answer_citations",
         "reasoning.enforce_answer_citations must be a boolean",
+    ) in messages
+    assert (
+        "reasoning.claim_slot_selection_enabled",
+        "reasoning.claim_slot_selection_enabled must be a boolean",
+    ) in messages
+    assert (
+        "reasoning.claim_slot_max_evidence",
+        "reasoning.claim_slot_max_evidence must be a positive integer",
     ) in messages
     assert (
         "retriever.type",

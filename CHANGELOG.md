@@ -147,11 +147,14 @@ All notable changes to VeraRAG are recorded here.
 - Add targeted second-pass retrieval for under-covered medium/complex
   subquestions, disabled by default and enabled in
   `configs/verabench_v112_retrieval_rerank_targeted_guarded.yaml`. On gate18 it
-  improves over top-3 guarded on Evidence Recall (`0.6944` to `0.7407`),
-  Citation F1 (`0.6593` to `0.7278`), Supporting-Fact F1 (`0.6278` to
-  `0.7000`), and Brier (`0.3756` to `0.3134`), but Answer F1 regresses to
-  `0.3109`, so it remains a research candidate rather than a full-run
-  promotion.
+  improves over top-3 guarded on Evidence Recall (`0.6944` to `0.7407`) but
+  initially regresses Answer F1 to `0.3109`.
+- Add optional answer-side claim-slot selection for the reasoning prompt. The
+  targeted guarded config now compresses answer evidence slots while preserving
+  the full evidence pool for verification/evaluation; gate18 mitigates the
+  targeted Answer F1 regression to `0.3786`, keeps Behavior Accuracy at
+  `1.0000`, and improves Evidence Precision to `0.5583`, but still remains
+  below top-3 guarded Answer F1 (`0.4102`), so it is not promoted to a full run.
 
 ### Added
 

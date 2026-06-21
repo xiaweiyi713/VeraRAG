@@ -204,6 +204,12 @@ def _read_config_run_metadata(config_path: str) -> dict[str, Any]:
             "reasoning_enforce_answer_citations": reasoning.get(
                 "enforce_answer_citations", True
             ),
+            "reasoning_claim_slot_selection_enabled": reasoning.get(
+                "claim_slot_selection_enabled", False
+            ),
+            "reasoning_claim_slot_max_evidence": reasoning.get(
+                "claim_slot_max_evidence", 6
+            ),
         }
         for key in (
             "type",

@@ -430,6 +430,90 @@ class TestReasoningAgent:
                        dependency_ids=[], requires_counter_evidence=False, status="completed", coverage_score=0.8),
         ]
 
+    def test_claim_slot_selection_compresses_reasoning_evidence_context(self):
+        from src.agents.reasoning_agent import ReasoningAgent
+
+        evidence = [
+            Evidence(evidence_id="E1", source="test", title="噪声1", text_span="无关背景"),
+            Evidence(evidence_id="E2", source="test", title="噪声2", text_span="更多无关背景"),
+            Evidence(
+                evidence_id="E3",
+                source="test",
+                title="星辰科技财报",
+                text_span="星辰科技2023财年营收达到612亿元。",
+                credibility_score=1.0,
+                recency_score=1.0,
+                relevance_score=1.0,
+            ),
+            Evidence(
+                evidence_id="E4",
+                source="test",
+                title="星辰科技成本说明",
+                text_span="星辰科技2023财年研发投入为120亿元。",
+                credibility_score=0.9,
+                recency_score=0.9,
+                relevance_score=0.9,
+            ),
+        ]
+        agent = ReasoningAgent(
+            config={"reasoning": {"claim_slot_selection_enabled": True, "claim_slot_max_evidence": 2}},
+            llm_client=MockLLM(),
+        )
+
+        context = agent._prepare_evidence_context(
+            evidence,
+            question="星辰科技2023年营收是多少？",
+            subquestions=[],
+            conflict_graph=EvidenceConflictGraph(),
+        )
+
+        assert "[E3]" in context
+        assert "[E4]" in context
+        assert "[E1]" not in context
+        assert "[E2]" not in context
+
+    def test_claim_slot_selection_preserves_conflict_evidence_beyond_slot_limit(self):
+        from src.agents.reasoning_agent import ReasoningAgent
+
+        ev1 = Evidence(
+            evidence_id="E1",
+            source="test",
+            title="权威财报",
+            text_span="星辰科技2023财年营收达到612亿元。",
+            claims=[Claim("C1", "星辰科技2023财年营收达到612亿元", ClaimType.NUMERICAL)],
+            credibility_score=1.0,
+            recency_score=1.0,
+            relevance_score=1.0,
+        )
+        ev2 = Evidence(
+            evidence_id="E2",
+            source="test",
+            title="不实报道",
+            text_span="星辰科技2023年营收突破800亿元。",
+            claims=[Claim("C2", "星辰科技2023年营收突破800亿元", ClaimType.NUMERICAL)],
+            credibility_score=0.1,
+            recency_score=0.1,
+            relevance_score=0.1,
+        )
+        graph = EvidenceConflictGraph()
+        graph.add_node(ConflictGraphNode("C1", ev1.claims[0].claim, "claim", ["E1"]))
+        graph.add_node(ConflictGraphNode("C2", ev2.claims[0].claim, "claim", ["E2"]))
+        graph.add_edge(ConflictEdge("C1", "C2", ConflictType.NUMERIC_CONFLICT, 0.9))
+        agent = ReasoningAgent(
+            config={"reasoning": {"claim_slot_selection_enabled": True, "claim_slot_max_evidence": 1}},
+            llm_client=MockLLM(),
+        )
+
+        context = agent._prepare_evidence_context(
+            [ev1, ev2],
+            question="星辰科技2023年营收是多少？",
+            subquestions=[],
+            conflict_graph=graph,
+        )
+
+        assert "[E1]" in context
+        assert "[E2]" in context
+
     def test_reason_with_mock_llm(self):
         from src.agents.reasoning_agent import ReasoningAgent
 

@@ -2,6 +2,7 @@
 
 import json
 import re
+from itertools import pairwise
 from typing import Any
 
 from ..utils.data_structures import (
@@ -34,9 +35,27 @@ class ReasoningAgent(BaseAgent):
         if not isinstance(enforce_answer_citations, bool):
             raise ValueError("reasoning.enforce_answer_citations must be a boolean")
         self.enforce_answer_citations = enforce_answer_citations
+        claim_slot_selection = reasoning_config.get("claim_slot_selection_enabled", False)
+        if not isinstance(claim_slot_selection, bool):
+            raise ValueError("reasoning.claim_slot_selection_enabled must be a boolean")
+        self.claim_slot_selection_enabled = claim_slot_selection
+        self.claim_slot_max_evidence = self._positive_config_int(
+            reasoning_config.get("claim_slot_max_evidence", 6),
+            "reasoning.claim_slot_max_evidence",
+        )
         self.system_prompt = """你是面向复杂知识任务的推理专家，目标是基于给定证据生成准确、有据可依的回答。
 核心准则：宁可拒答，也不臆造。证据不足时必须明确拒答；问题前提与证据矛盾时必须纠正前提；证据相互冲突时必须如实标注冲突。
 所有回答用简体中文。只输出合法 JSON，不要输出其它内容。"""
+
+    @staticmethod
+    def _positive_config_int(value: Any, field: str) -> int:
+        try:
+            numeric = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field} must be a positive integer") from exc
+        if numeric < 1:
+            raise ValueError(f"{field} must be a positive integer")
+        return numeric
 
     def reason(
         self,
@@ -60,7 +79,12 @@ class ReasoningAgent(BaseAgent):
             Tuple of (answer, answer_claims, reasoning_chain)
         """
         # Prepare evidence context
-        evidence_context = self._prepare_evidence_context(evidence)
+        evidence_context = self._prepare_evidence_context(
+            evidence,
+            question=question,
+            subquestions=subquestions,
+            conflict_graph=conflict_graph,
+        )
 
         # Prepare conflict context
         conflict_context = self._prepare_conflict_context(conflict_graph, evidence)
@@ -164,16 +188,128 @@ class ReasoningAgent(BaseAgent):
             # Fallback: generate simple answer
             return self._fallback_answer(question, evidence)
 
-    def _prepare_evidence_context(self, evidence: list[Evidence]) -> str:
+    def _prepare_evidence_context(
+        self,
+        evidence: list[Evidence],
+        *,
+        question: str = "",
+        subquestions: list[SubQuestion] | None = None,
+        conflict_graph: EvidenceConflictGraph | None = None,
+    ) -> str:
         """Prepare evidence context for the prompt."""
         if not evidence:
             return "No evidence available."
+
+        if self.claim_slot_selection_enabled:
+            evidence = self._select_claim_slot_evidence(
+                evidence,
+                question=question,
+                subquestions=subquestions or [],
+                conflict_graph=conflict_graph or EvidenceConflictGraph(),
+            )
 
         contexts = []
         for ev in evidence[:20]:  # Limit to prevent token overflow
             contexts.append(f"[{ev.evidence_id}] {ev.title}\n{ev.text_span}\n")
 
         return "\n".join(contexts)
+
+    def _select_claim_slot_evidence(
+        self,
+        evidence: list[Evidence],
+        *,
+        question: str,
+        subquestions: list[SubQuestion],
+        conflict_graph: EvidenceConflictGraph,
+    ) -> list[Evidence]:
+        """Compress answer evidence to the strongest claim-level slots."""
+        if len(evidence) <= self.claim_slot_max_evidence:
+            return evidence
+
+        conflict_ids = self._conflict_evidence_ids(evidence, conflict_graph)
+        query_terms = self._slot_terms(
+            " ".join([question, *(sq.question for sq in subquestions)])
+        )
+        scored = [
+            (
+                self._claim_slot_score(
+                    item,
+                    index=index,
+                    total=len(evidence),
+                    query_terms=query_terms,
+                    conflict_ids=conflict_ids,
+                ),
+                index,
+                item,
+            )
+            for index, item in enumerate(evidence)
+        ]
+        scored.sort(key=lambda row: (-row[0], row[1]))
+        selected = [item for _score, _index, item in scored[: self.claim_slot_max_evidence]]
+
+        selected_ids = {item.evidence_id for item in selected}
+        for item in evidence:
+            if item.evidence_id in conflict_ids and item.evidence_id not in selected_ids:
+                selected.append(item)
+                selected_ids.add(item.evidence_id)
+
+        selected.sort(key=lambda item: next(
+            index for index, original in enumerate(evidence)
+            if original.evidence_id == item.evidence_id
+        ))
+        return selected
+
+    def _claim_slot_score(
+        self,
+        evidence: Evidence,
+        *,
+        index: int,
+        total: int,
+        query_terms: set[str],
+        conflict_ids: set[str],
+    ) -> float:
+        quality = evidence.combined_score * 0.45 + evidence.relevance_score * 0.25
+        lexical = self._slot_overlap_score(query_terms, f"{evidence.title} {evidence.text_span}")
+        rank_bonus = 0.20 * (1.0 - index / max(total, 1))
+        conflict_bonus = 0.18 if evidence.evidence_id in conflict_ids else 0.0
+        claim_bonus = min(0.08, len(evidence.claims) * 0.02)
+        return quality + lexical * 0.25 + rank_bonus + conflict_bonus + claim_bonus
+
+    @staticmethod
+    def _slot_terms(text: str) -> set[str]:
+        lowered = text.lower()
+        terms = set(re.findall(r"[a-z0-9_]+", lowered))
+        cjk_chars = re.findall(r"[\u4e00-\u9fff]", lowered)
+        terms.update(
+            "".join(pair)
+            for pair in pairwise(cjk_chars)
+        )
+        return {term for term in terms if len(term) >= 2}
+
+    def _slot_overlap_score(self, query_terms: set[str], text: str) -> float:
+        if not query_terms:
+            return 0.0
+        evidence_terms = self._slot_terms(text)
+        if not evidence_terms:
+            return 0.0
+        return len(query_terms & evidence_terms) / len(query_terms)
+
+    def _conflict_evidence_ids(
+        self,
+        evidence: list[Evidence],
+        conflict_graph: EvidenceConflictGraph,
+    ) -> set[str]:
+        if not conflict_graph.get_conflicts():
+            return set()
+        claim_lookup = self._claim_lookup(evidence, conflict_graph)
+        evidence_ids = {item.evidence_id for item in evidence}
+        selected = set()
+        for conflict in conflict_graph.get_conflicts():
+            for claim_id in (conflict.source_id, conflict.target_id):
+                mapped_id = claim_lookup.get(claim_id, {}).get("evidence_id", claim_id)
+                if mapped_id in evidence_ids:
+                    selected.add(mapped_id)
+        return selected
 
     def _prepare_conflict_context(
         self,

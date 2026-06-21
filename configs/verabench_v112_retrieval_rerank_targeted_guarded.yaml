@@ -52,6 +52,8 @@ retriever:
 
 reasoning:
   enforce_answer_citations: true
+  claim_slot_selection_enabled: true
+  claim_slot_max_evidence: 6
 
 evidence:
   semantic_dedup: true
