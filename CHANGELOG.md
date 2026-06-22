@@ -78,6 +78,9 @@ All notable changes to VeraRAG are recorded here.
 - Strip unsupported conflict preambles from ordinary answers when the runtime
   conflict graph has no conflict edges, removing the generic caution note that
   otherwise depresses exact-answer quality.
+- Strip the fixed trailing generic caution note from generated answers as a
+  format-only guard; the previous Stage-3 full report contained this template
+  in 124/152 rows, including 52 full-recall low-answer-F1 rows.
 - Extend deterministic answer guards for exact single-evidence questions:
   concise value extraction now handles exponent-style `FLOPS` thresholds, and
   direct treatment-disease questions are compressed to the cited disease span.

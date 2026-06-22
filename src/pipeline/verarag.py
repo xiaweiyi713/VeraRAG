@@ -121,6 +121,7 @@ class VeraRAG:
     }
     _ABSTENTION_FORMAT_ONLY_GUARD_ACTIONS: ClassVar[set[str]] = {
         "abstention_conflict_prefix_stripped",
+        "trailing_caution_note_stripped",
     }
     _CONFLICT_NOTE_MARKERS: ClassVar[tuple[str, ...]] = (
         "证据中存在冲突",
@@ -1571,6 +1572,7 @@ class VeraRAG:
         if not self._should_strip_abstention_conflict_prefix(question, answer):
             return answer, claims, reasoning, None
         stripped = re.sub(r"^证据存在冲突：.*?综合判断，", "", answer, count=1, flags=re.S).strip()
+        stripped = self._strip_trailing_caution_note(stripped)
         if not stripped or stripped == answer:
             return answer, claims, reasoning, None
         guarded_reasoning = [
@@ -1585,6 +1587,30 @@ class VeraRAG:
         for index, step in enumerate(guarded_reasoning, start=1):
             step.step = index
         return stripped, claims, guarded_reasoning, {"action": "abstention_conflict_prefix_stripped"}
+
+    def _apply_trailing_caution_note_guard(
+        self,
+        answer: str,
+        claims: list[AnswerClaim],
+        reasoning: list[ReasoningStep],
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep], dict[str, Any] | None]:
+        """Remove the fixed generic caution note appended by the generator."""
+        stripped = self._strip_trailing_caution_note(answer)
+        if not stripped or stripped == answer:
+            return answer, claims, reasoning, None
+
+        guarded_reasoning = [
+            ReasoningStep(
+                step=1,
+                description="识别到答案末尾包含固定通用谨慎提示，移除该非证据内容以保持答案聚焦。",
+                evidence_ids=[],
+                confidence=0.80,
+            ),
+            *reasoning,
+        ]
+        for index, step in enumerate(guarded_reasoning, start=1):
+            step.step = index
+        return stripped, claims, guarded_reasoning, {"action": "trailing_caution_note_stripped"}
 
     def _apply_unsupported_conflict_prefix_guard(
         self,
@@ -1641,12 +1667,15 @@ class VeraRAG:
             count=1,
             flags=re.S,
         ).strip()
-        stripped = re.sub(
+        return VeraRAG._strip_trailing_caution_note(stripped)
+
+    @staticmethod
+    def _strip_trailing_caution_note(answer: str) -> str:
+        return re.sub(
             r"\s*（注：上述部分论断证据有限，请谨慎对待。）\s*$",
             "",
-            stripped,
+            answer,
         ).strip()
-        return stripped
 
     def _apply_process_node_dimension_answer_guard(
         self,
@@ -2918,6 +2947,14 @@ class VeraRAG:
             answer, answer_claims, reasoning_chain, answerability_guard = (
                 self._apply_abstention_conflict_prefix_guard(
                     question,
+                    answer,
+                    answer_claims,
+                    reasoning_chain,
+                )
+            )
+        if not answerability_guard:
+            answer, answer_claims, reasoning_chain, answerability_guard = (
+                self._apply_trailing_caution_note_guard(
                     answer,
                     answer_claims,
                     reasoning_chain,

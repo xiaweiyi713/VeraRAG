@@ -2055,7 +2055,7 @@ class TestPipelineIntegration:
             "全球禁止人类生殖细胞基因编辑的70个国家具体是哪些？",
             "证据存在冲突：D076_c0 提到无关大豆实验，而 D089_c0 提到递送系统优化。"
             "综合判断，根据现有证据无法回答此问题。证据仅提到已有超过70个国家禁止相关临床应用，"
-            "但未列出具体国家名单。",
+            "但未列出具体国家名单。 （注：上述部分论断证据有限，请谨慎对待。）",
             [],
             [],
         )
@@ -2063,8 +2063,25 @@ class TestPipelineIntegration:
         assert guard == {"action": "abstention_conflict_prefix_stripped"}
         assert answer.startswith("根据现有证据无法回答此问题")
         assert "证据存在冲突" not in answer
+        assert "谨慎对待" not in answer
         assert claims == []
         assert steps[0].description.startswith("识别到答案主体为不可答")
+
+    def test_trailing_caution_note_guard_strips_fixed_template(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+
+        answer, claims, steps, guard = pipeline._apply_trailing_caution_note_guard(
+            "ITER的目标是Q值达到10，即产生500MW聚变功率。引用证据：[D088_c0] "
+            "（注：上述部分论断证据有限，请谨慎对待。）",
+            [],
+            [],
+        )
+
+        assert guard == {"action": "trailing_caution_note_stripped"}
+        assert answer == "ITER的目标是Q值达到10，即产生500MW聚变功率。引用证据：[D088_c0]"
+        assert "谨慎对待" not in answer
+        assert claims == []
+        assert steps[0].evidence_ids == []
 
     def test_unsupported_conflict_prefix_guard_strips_fact_answer_preamble(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
