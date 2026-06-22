@@ -1150,6 +1150,38 @@ class TestVeraBenchEvaluator:
         assert report.supporting_fact_summary["micro_f1"] == 1.0
         assert report.to_dict()["question_results"][0]["citation_f1"] == 0.6667
 
+    def test_pipeline_promotes_confidence_calibration_diagnostics(self, temp_bench_dir):
+        bench = VeraBenchLoader(temp_bench_dir).load()
+        evaluator = VeraBenchEvaluator(benchmark=bench)
+        q = bench.questions[0]
+        confidence_calibration = {
+            "enabled": True,
+            "stage": "answer",
+            "predicted_behavior": "answer_with_citation",
+            "failure_mode_caps": [
+                {"reason": "unsupported_conflict_note", "cap": 0.46}
+            ],
+        }
+        output = SimpleNamespace(
+            answer=f"{q.ground_truth_answer} [D001_c0]",
+            confidence=0.46,
+            evidence=[SimpleNamespace(evidence_id="D001_c0")],
+            answer_claims=[
+                SimpleNamespace(supporting_evidence=["D001_c0"]),
+            ],
+            verification_report=None,
+            conflict_report={"nodes": [], "edges": []},
+            metadata={"confidence_calibration": confidence_calibration},
+        )
+
+        result = evaluator._score_pipeline_output(q, output, latency=0.0)
+
+        assert result.diagnostics["confidence_calibration"] == confidence_calibration
+        assert result.diagnostics["confidence_calibration"] is not confidence_calibration
+        assert result.diagnostics["output_metadata"]["confidence_calibration"] == (
+            confidence_calibration
+        )
+
     def test_rescore_maps_citation_and_supporting_chunk_ids(self, temp_bench_dir):
         bench = VeraBenchLoader(temp_bench_dir).load()
         evaluator = VeraBenchEvaluator(benchmark=bench)
@@ -1367,6 +1399,13 @@ class TestVeraBenchEvaluator:
                     "confidence": 0.1,
                     "predicted_conflicts": 0,
                     "gold_conflicts": 0,
+                    "diagnostics": {
+                        "confidence_calibration": {
+                            "enabled": True,
+                            "stage": "abstention",
+                            "predicted_behavior": "abstain",
+                        }
+                    },
                 },
                 {
                     "question_id": "T002",
@@ -1384,6 +1423,21 @@ class TestVeraBenchEvaluator:
                     "conflict_false_positives": 1,
                     "premise_refutation_expected": True,
                     "premise_refutation_detected": True,
+                    "diagnostics": {
+                        "output_metadata": {
+                            "confidence_calibration": {
+                                "enabled": True,
+                                "stage": "answer",
+                                "predicted_behavior": "answer_with_citation",
+                                "failure_mode_caps": [
+                                    {
+                                        "reason": "unsupported_conflict_note",
+                                        "cap": 0.46,
+                                    }
+                                ],
+                            }
+                        }
+                    },
                 },
             ],
         }
@@ -1405,6 +1459,15 @@ class TestVeraBenchEvaluator:
         assert analysis["confidence_diagnostics"]["confidence_auroc"] == 1.0
         assert analysis["confidence_diagnostics"]["correct_mean_confidence"] == 0.9
         assert analysis["confidence_diagnostics"]["incorrect_mean_confidence"] == 0.1
+        runtime_calibration = analysis["runtime_confidence_calibration"]
+        assert runtime_calibration["enabled_rows"] == 2
+        assert runtime_calibration["predicted_behaviors"] == {
+            "abstain": 1,
+            "answer_with_citation": 1,
+        }
+        assert runtime_calibration["failure_mode_caps"] == {
+            "unsupported_conflict_note": 1,
+        }
         assert analysis["risk_coverage"]["coverage_at_accuracy"]["0.90"] == 0.5
 
     def test_offline_result_analysis_flags_near_constant_confidence(self):

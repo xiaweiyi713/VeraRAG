@@ -57,6 +57,9 @@ All notable changes to VeraRAG are recorded here.
 - Cap confidence for unsupported conflict-note answers when the final answer
   claims evidence conflict or inconsistency but the runtime conflict graph has
   no conflict edges, and expose the cap reason in confidence diagnostics.
+- Promote runtime confidence-calibration metadata into per-question VeraBench
+  diagnostics and summarize calibration stages, predicted behaviors, and
+  failure-mode cap reasons in `analyze_verabench_results.py`.
 - Add VeraBench citation and supporting-fact scoring to per-question rows and
   report summaries, including pipeline chunk-ID to gold-evidence-ID mapping for
   answer citations such as `[D001_c0]`.

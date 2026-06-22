@@ -35,7 +35,10 @@ from src.evaluation.statistics import (  # noqa: E402
 
 def _load_report(path: str) -> dict[str, Any]:
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("VeraBench report must be a JSON object")
+    return data
 
 
 def _question_results(report: dict[str, Any]) -> list[dict[str, Any]]:
@@ -142,7 +145,7 @@ def _correctness(row: dict[str, Any]) -> bool | None:
         return value
     expected = row.get("expected_behavior")
     actual = row.get("actual_behavior")
-    if expected and actual:
+    if isinstance(expected, str) and isinstance(actual, str):
         return expected == actual
     return None
 
@@ -402,6 +405,59 @@ def _confidence_diagnostics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _runtime_confidence_calibration_summary(
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    summaries: list[dict[str, Any]] = []
+    for row in rows:
+        diagnostics = row.get("diagnostics") or {}
+        if not isinstance(diagnostics, dict):
+            continue
+        calibration = diagnostics.get("confidence_calibration")
+        if not isinstance(calibration, dict) or not calibration:
+            output_metadata = diagnostics.get("output_metadata") or {}
+            if isinstance(output_metadata, dict):
+                calibration = output_metadata.get("confidence_calibration")
+        if isinstance(calibration, dict) and calibration:
+            summaries.append(calibration)
+
+    if not summaries:
+        return {
+            "available": False,
+            "reason": "no runtime confidence calibration diagnostics",
+        }
+
+    stages: dict[str, int] = defaultdict(int)
+    predicted_behaviors: dict[str, int] = defaultdict(int)
+    cap_reasons: dict[str, int] = defaultdict(int)
+    enabled_rows = 0
+    failure_mode_cap_rows = 0
+    for summary in summaries:
+        if summary.get("enabled") is True:
+            enabled_rows += 1
+        stages[str(summary.get("stage") or "unknown")] += 1
+        predicted_behaviors[str(summary.get("predicted_behavior") or "unknown")] += 1
+        caps = summary.get("failure_mode_caps") or []
+        if isinstance(caps, list) and caps:
+            failure_mode_cap_rows += 1
+            for cap in caps:
+                reason = "unknown"
+                if isinstance(cap, dict):
+                    reason = str(cap.get("reason") or "unknown")
+                cap_reasons[reason] += 1
+
+    return {
+        "available": True,
+        "rows": len(summaries),
+        "enabled_rows": enabled_rows,
+        "disabled_rows": len(summaries) - enabled_rows,
+        "stages": dict(sorted(stages.items())),
+        "predicted_behaviors": dict(sorted(predicted_behaviors.items())),
+        "failure_mode_cap_rows": failure_mode_cap_rows,
+        "failure_mode_caps": dict(sorted(cap_reasons.items())),
+    }
+
+
 def _conflict_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     has_counts = any(
         "predicted_conflicts" in r or "gold_conflicts" in r
@@ -519,6 +575,7 @@ def analyze(report: dict[str, Any], max_examples: int = 10) -> dict[str, Any]:
     confusion = report.get("behavior_confusion") or _behavior_confusion(rows)
     calibration_bins = report.get("calibration_bins") or _calibration_bins(rows)
     confidence_diagnostics = _confidence_diagnostics(rows)
+    runtime_confidence_calibration = _runtime_confidence_calibration_summary(rows)
     risk_coverage = _risk_coverage(
         [
             (confidence, correct)
@@ -554,6 +611,7 @@ def analyze(report: dict[str, Any], max_examples: int = 10) -> dict[str, Any]:
         "metadata": report.get("metadata", {}),
         "calibration_bins": calibration_bins,
         "confidence_diagnostics": confidence_diagnostics,
+        "runtime_confidence_calibration": runtime_confidence_calibration,
         "risk_coverage": risk_coverage,
         "confidence_intervals": confidence_intervals,
         "dependency_robust_confidence_intervals": dependency_intervals,
@@ -705,6 +763,35 @@ def _print_table(analysis: dict[str, Any], max_examples: int) -> None:
                 "Flags:            "
                 + ", ".join(confidence.get("diagnostic_flags", []))
             )
+
+    runtime_calibration = analysis.get("runtime_confidence_calibration", {})
+    if runtime_calibration:
+        print("\nRuntime Confidence Calibration")
+        print("-" * 72)
+        if runtime_calibration.get("available") is False:
+            print(
+                "Unavailable: "
+                f"{runtime_calibration.get('reason', 'missing runtime calibration diagnostics')}"
+            )
+        else:
+            print(
+                f"Rows enabled:     {runtime_calibration.get('enabled_rows', 0)} / "
+                f"{runtime_calibration.get('rows', 0)}"
+            )
+            behaviors = runtime_calibration.get("predicted_behaviors") or {}
+            if behaviors:
+                formatted = ", ".join(
+                    f"{behavior}:{count}" for behavior, count in sorted(behaviors.items())
+                )
+                print(f"Behaviors:        {formatted}")
+            caps = runtime_calibration.get("failure_mode_caps") or {}
+            if caps:
+                formatted = ", ".join(
+                    f"{reason}:{count}" for reason, count in sorted(caps.items())
+                )
+                print(f"Failure caps:     {formatted}")
+            else:
+                print("Failure caps:     none")
 
     risk_coverage = analysis.get("risk_coverage", {})
     if risk_coverage:

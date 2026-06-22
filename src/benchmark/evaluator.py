@@ -608,6 +608,9 @@ class VeraBenchEvaluator:
 
         output_metadata = getattr(output, "metadata", {}) or {}
         conflict_report = getattr(output, "conflict_report", {}) or {}
+        confidence_calibration = self._diagnostic_mapping(
+            output_metadata.get("confidence_calibration")
+        )
         diagnostics = {
             "evidence_ids": [
                 getattr(e, "evidence_id", "")
@@ -627,6 +630,7 @@ class VeraBenchEvaluator:
             "required_citation_ids": citation_metrics["required_citation_ids"],
             "predicted_supporting_fact_ids": predicted_supporting_ids,
             "gold_supporting_fact_ids": supporting_metrics["gold_ids"],
+            "confidence_calibration": confidence_calibration,
             "output_metadata": output_metadata,
         }
 
@@ -662,6 +666,11 @@ class VeraBenchEvaluator:
             difficulty=q.difficulty,
             diagnostics=diagnostics,
         )
+
+    @staticmethod
+    def _diagnostic_mapping(value: Any) -> dict[str, Any]:
+        """Return a shallow copy of dict-like diagnostics for report rows."""
+        return dict(value) if isinstance(value, dict) else {}
 
     @staticmethod
     def _chunk_id_to_doc_id(evidence_id: str) -> str:
