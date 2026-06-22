@@ -78,6 +78,9 @@ All notable changes to VeraRAG are recorded here.
 - Extend deterministic answer guards for exact single-evidence questions:
   concise value extraction now handles exponent-style `FLOPS` thresholds, and
   direct treatment-disease questions are compressed to the cited disease span.
+- Add a process-node physical-dimension answer guard for questions asking
+  whether names such as `3nm` represent actual physical dimensions; it now
+  compresses noisy answers to the cited naming/actual-gate-length evidence.
 - Add VeraBench citation and supporting-fact scoring to per-question rows and
   report summaries, including pipeline chunk-ID to gold-evidence-ID mapping for
   answer citations such as `[D001_c0]`.

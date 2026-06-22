@@ -1967,6 +1967,50 @@ class TestPipelineIntegration:
         assert claims[0].supporting_evidence == ["D004_c0"]
         assert steps[0].evidence_ids == ["D004_c0"]
 
+    def test_process_node_dimension_guard_compacts_answer(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D053_c0",
+                source="report",
+                title="先进制程节点命名",
+                text_span=(
+                    '"3nm"和"5nm"等命名已不再代表实际的物理栅极长度。'
+                    '例如，台积电的"3nm"工艺的实际栅极长度约为20nm以上。'
+                    "这些数字更多是商业命名，而非精确技术参数。"
+                ),
+                relevance_score=0.95,
+            ),
+            Evidence(
+                evidence_id="D012_c0",
+                source="finance",
+                title="StarTech财务",
+                text_span="StarTech公司的季度收入同比增长12%。",
+                relevance_score=0.45,
+            ),
+        ]
+
+        answer, claims, steps, guard = pipeline._apply_process_node_dimension_answer_guard(
+            '芯片制程中的"3nm"是否代表实际的3纳米物理尺寸？',
+            "证据存在冲突：D053_c0讨论制程命名，D012_c0讨论公司财务。"
+            '综合判断，"3nm"不代表实际3纳米尺寸，但还需要考虑行业收入变化。'
+            "引用证据：[D053_c0] [D012_c0]",
+            [],
+            [],
+            evidence,
+        )
+
+        assert guard == {
+            "action": "process_node_dimension_answer",
+            "selected_evidence": ["D053_c0"],
+        }
+        assert answer.startswith("不是。")
+        assert "实际栅极长度约为20nm以上" in answer
+        assert "[D053_c0]" in answer
+        assert "D012_c0" not in answer
+        assert claims[0].supporting_evidence == ["D053_c0"]
+        assert steps[0].evidence_ids == ["D053_c0"]
+
     def test_direct_treatment_answer_guard_extracts_disease(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
         evidence = [

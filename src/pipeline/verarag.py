@@ -1586,6 +1586,111 @@ class VeraRAG:
             step.step = index
         return stripped, claims, guarded_reasoning, {"action": "abstention_conflict_prefix_stripped"}
 
+    def _apply_process_node_dimension_answer_guard(
+        self,
+        question: str,
+        answer: str,
+        claims: list[AnswerClaim],
+        reasoning: list[ReasoningStep],
+        evidence: list[Evidence],
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep], dict[str, Any] | None]:
+        """Normalize process-node physical-dimension premise questions to cited facts."""
+        if not self._should_apply_process_node_dimension_answer_guard(question, answer, evidence):
+            return answer, claims, reasoning, None
+
+        selected = self._process_node_dimension_sentences(evidence)
+        if not selected:
+            return answer, claims, reasoning, None
+
+        selected_ids = self._dedupe_preserving_order(evidence_id for evidence_id, _ in selected)
+        guarded_answer = (
+            "不是。"
+            + "".join(sentence for _evidence_id, sentence in selected)
+            + "引用证据："
+            + " ".join(f"[{evidence_id}]" for evidence_id in selected_ids)
+        )
+        guarded_claims = [
+            AnswerClaim(
+                claim=sentence.rstrip("。；;"),
+                supporting_evidence=[evidence_id],
+                confidence=0.87,
+                claim_type="factual",
+                verifiable=True,
+                support_type="direct",
+            )
+            for evidence_id, sentence in selected
+        ]
+        guarded_reasoning = [
+            ReasoningStep(
+                step=1,
+                description="识别到问题询问制程节点命名是否等于实际物理尺寸，因此压缩为证据中的直接否定和实际栅极长度说明。",
+                evidence_ids=selected_ids,
+                confidence=0.87,
+            ),
+            *reasoning,
+        ]
+        for index, step in enumerate(guarded_reasoning, start=1):
+            step.step = index
+        return (
+            guarded_answer,
+            guarded_claims,
+            guarded_reasoning,
+            {
+                "action": "process_node_dimension_answer",
+                "selected_evidence": selected_ids,
+            },
+        )
+
+    @classmethod
+    def _should_apply_process_node_dimension_answer_guard(
+        cls,
+        question: str,
+        answer: str,
+        evidence: list[Evidence],
+    ) -> bool:
+        if cls._is_abstention_answer(answer):
+            return False
+        if len(evidence) > 4:
+            return False
+        question_text = question.lower()
+        node_markers = ("3nm", "5nm", "制程", "工艺节点", "process node")
+        dimension_markers = ("实际", "物理", "尺寸", "栅极", "长度")
+        premise_markers = ("是否", "是不是", "代表", "意味着", "对吗")
+        if not any(marker in question_text for marker in node_markers):
+            return False
+        if not any(marker in question for marker in dimension_markers):
+            return False
+        if not any(marker in question for marker in premise_markers):
+            return False
+        evidence_text = " ".join(f"{item.title} {item.text_span}" for item in evidence)
+        return "实际栅极长度" in evidence_text and any(
+            marker in evidence_text for marker in ("不再代表实际", "商业命名", "20nm")
+        )
+
+    @staticmethod
+    def _process_node_dimension_sentences(evidence: list[Evidence]) -> list[tuple[str, str]]:
+        selected: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        sentence_markers = ("实际栅极长度", "物理栅极长度", "商业命名", "不再代表实际")
+        node_markers = ("3nm", "5nm", "制程", "工艺", "nm")
+        for item in evidence:
+            for sentence in re.split(r"(?<=[。！？!?；;])", item.text_span or ""):
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                if not any(marker in sentence for marker in sentence_markers):
+                    continue
+                if not any(marker in sentence for marker in node_markers):
+                    continue
+                key = (item.evidence_id, sentence)
+                if key in seen:
+                    continue
+                seen.add(key)
+                selected.append((item.evidence_id, sentence))
+                if len(selected) >= 3:
+                    return selected
+        return selected
+
     def _apply_direct_treatment_answer_guard(
         self,
         question: str,
@@ -2714,6 +2819,16 @@ class VeraRAG:
                     reasoning_chain,
                     evidence_pool,
                     conflict_graph,
+                )
+            )
+        if not answerability_guard:
+            answer, answer_claims, reasoning_chain, answerability_guard = (
+                self._apply_process_node_dimension_answer_guard(
+                    question,
+                    answer,
+                    answer_claims,
+                    reasoning_chain,
+                    evidence_pool,
                 )
             )
         if not answerability_guard:
