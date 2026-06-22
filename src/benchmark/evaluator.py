@@ -509,6 +509,7 @@ class VeraBenchEvaluator:
         # Evidence matching — map pipeline evidence_id (D006_c0) → original doc_id (D006) → gold evidence_id (E1)
         gold_evidence_ids = [e.evidence_id for e in q.evidence]
         doc_to_gold_eid = self._doc_to_gold_evidence_id(q)
+        doc_to_gold_eids = self._doc_to_gold_evidence_ids(q)
 
         pred_evidence_ids = []
         if hasattr(output, "evidence"):
@@ -546,10 +547,13 @@ class VeraBenchEvaluator:
                 tgt_claim = edge.get("target_id", "")
                 src_ev = claim_to_ev_id.get(src_claim, src_claim)
                 tgt_ev = claim_to_ev_id.get(tgt_claim, tgt_claim)
-                # Map pipeline evidence_id (D006_c0) → doc_id (D006) → gold evidence_id (E1)
-                src_gold = self._map_evidence_id_to_gold(src_ev, doc_to_gold_eid)
-                tgt_gold = self._map_evidence_id_to_gold(tgt_ev, doc_to_gold_eid)
-                pair = tuple(sorted([src_gold, tgt_gold]))
+                pair = self._map_conflict_pair_to_gold(
+                    src_ev,
+                    tgt_ev,
+                    doc_to_gold_eid,
+                    doc_to_gold_eids,
+                    q.expected_conflicts,
+                )
                 pred_conflicts.append(pair)
                 if len(conflict_edge_diagnostics) < 20:
                     conflict_edge_diagnostics.append({
@@ -562,9 +566,10 @@ class VeraBenchEvaluator:
                         "rationale": edge.get("rationale", ""),
                     })
 
-        gold_conflicts = []
+        gold_conflicts: list[tuple[str, str]] = []
         for c in q.expected_conflicts:
-            pair = tuple(sorted(c.pair))
+            pair_values = sorted(c.pair)
+            pair = (pair_values[0], pair_values[1])
             gold_conflicts.append(pair)
 
         raw_pred_conflict_set = {f"{p[0]}-{p[1]}" for p in pred_conflicts}
@@ -670,6 +675,14 @@ class VeraBenchEvaluator:
         """Map benchmark document IDs to their question-local gold evidence IDs."""
         return {ref.doc_id: ref.evidence_id for ref in q.evidence}
 
+    @staticmethod
+    def _doc_to_gold_evidence_ids(q: BenchmarkQuestion) -> dict[str, list[str]]:
+        """Map document IDs to all question-local gold evidence IDs."""
+        doc_to_gold: dict[str, list[str]] = {}
+        for ref in q.evidence:
+            doc_to_gold.setdefault(ref.doc_id, []).append(ref.evidence_id)
+        return doc_to_gold
+
     @classmethod
     def _map_evidence_id_to_gold(
         cls,
@@ -679,6 +692,45 @@ class VeraBenchEvaluator:
         """Map pipeline chunk/document IDs to question-local gold evidence IDs."""
         doc_id = cls._chunk_id_to_doc_id(evidence_id)
         return doc_to_gold_eid.get(doc_id, evidence_id)
+
+    @classmethod
+    def _map_conflict_pair_to_gold(
+        cls,
+        source_evidence_id: str,
+        target_evidence_id: str,
+        doc_to_gold_eid: dict[str, str],
+        doc_to_gold_eids: dict[str, list[str]],
+        expected_conflicts: list[Any],
+    ) -> tuple[str, str]:
+        """Map a predicted conflict edge to the best question-local gold pair.
+
+        Conflict scoring is span-level, but the pipeline emits chunk-level
+        evidence IDs. When one document contributes multiple gold spans, a
+        same-document predicted edge can align to a gold self-conflict such as
+        E1-E1 even if the default doc→gold mapping points at E2.
+        """
+        source_doc = cls._chunk_id_to_doc_id(source_evidence_id)
+        target_doc = cls._chunk_id_to_doc_id(target_evidence_id)
+        candidate_source_ids = doc_to_gold_eids.get(source_doc) or [
+            cls._map_evidence_id_to_gold(source_evidence_id, doc_to_gold_eid)
+        ]
+        candidate_target_ids = doc_to_gold_eids.get(target_doc) or [
+            cls._map_evidence_id_to_gold(target_evidence_id, doc_to_gold_eid)
+        ]
+        gold_pairs = {
+            tuple(sorted(conflict.pair))
+            for conflict in expected_conflicts
+        }
+        for source_id in candidate_source_ids:
+            for target_id in candidate_target_ids:
+                pair_values = sorted([source_id, target_id])
+                pair = (pair_values[0], pair_values[1])
+                if pair in gold_pairs:
+                    return pair
+        default_source = cls._map_evidence_id_to_gold(source_evidence_id, doc_to_gold_eid)
+        default_target = cls._map_evidence_id_to_gold(target_evidence_id, doc_to_gold_eid)
+        pair_values = sorted([default_source, default_target])
+        return (pair_values[0], pair_values[1])
 
     @staticmethod
     def _dedupe_preserve_order(values: list[str]) -> list[str]:

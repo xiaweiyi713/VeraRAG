@@ -624,6 +624,85 @@ class TestPipelineIntegration:
 
         assert filtered.get_conflicts() == []
 
+    def test_multi_period_finance_nli_conflict_is_filtered(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        revenue_2022 = Claim(
+            claim_id="C_2022",
+            claim="星辰科技2022财年全年营收为458亿元人民币，全年净利润为68亿元",
+            claim_type=ClaimType.FACTUAL,
+            entities=["星辰科技"],
+            numbers=["2022", "458亿元", "68亿元"],
+            time_expressions=["2022"],
+        )
+        revenue_2023 = Claim(
+            claim_id="C_2023",
+            claim="星辰科技2023财年全年营收达到612亿元人民币，同比增长33.6%，全年净利润为102亿元",
+            claim_type=ClaimType.FACTUAL,
+            entities=["星辰科技"],
+            numbers=["2023", "612亿元", "33.6%", "102亿元"],
+            time_expressions=["2023"],
+        )
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_2022",
+                "C_2023",
+                ConflictType.REFUTE,
+                0.92,
+                rationale="NLI contradiction: 0.92",
+            ),
+        ]
+        evidence_pool = [
+            Evidence("D010_c0", "report", "星辰科技2022年度财务报告", "", claims=[revenue_2022]),
+            Evidence("D011_c0", "report", "星辰科技2023年度财务报告", "", claims=[revenue_2023]),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "星辰科技2022年和2023年的营收和净利润分别是多少？增长趋势如何？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_quantum_application_maturity_nli_conflict_is_filtered(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        applications = Claim(
+            claim_id="C_applications",
+            claim="量子计算在药物发现领域可用于靶点-配体结合能计算、蛋白质结构预测和分子优化",
+            claim_type=ClaimType.FACTUAL,
+            entities=["量子计算", "药物发现"],
+        )
+        roadmap = Claim(
+            claim_id="C_roadmap",
+            claim="IBM计划在2029年前构建拥有10万个量子比特的系统，并采用模块化架构",
+            claim_type=ClaimType.FACTUAL,
+            entities=["量子计算", "IBM"],
+            numbers=["2029", "10万"],
+        )
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_applications",
+                "C_roadmap",
+                ConflictType.REFUTE,
+                0.83,
+                rationale="NLI contradiction: 0.83",
+            ),
+        ]
+        evidence_pool = [
+            Evidence("D082_c0", "report", "量子计算在药物发现中的应用前景", "", claims=[applications]),
+            Evidence("D032_c0", "report", "IBM量子计算路线图", "", claims=[roadmap]),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "量子计算在哪些领域有应用前景？目前技术成熟度如何？",
+        )
+
+        assert filtered.get_conflicts() == []
+
     def test_strategy_question_filters_unrelated_runtime_dispute(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
         google = Claim(
@@ -1810,6 +1889,60 @@ class TestPipelineIntegration:
         assert claims[0].supporting_evidence == ["D053_c0"]
         assert claims[-1].supporting_evidence == ["D071_c0"]
         assert steps[0].evidence_ids == ["D053_c0", "D071_c0"]
+
+    def test_quantum_application_maturity_guard_completes_roadmap_evidence(
+        self,
+        pipeline_config,
+    ):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D082_c0",
+                source="report",
+                title="量子计算在药物发现中的应用前景",
+                text_span=(
+                    "量子计算可用于靶点-配体结合能计算、药物代谢预测、蛋白质结构预测和分子优化。"
+                    "但当前量子计算机不足以处理实际分子，需要数百到数千个逻辑量子比特。"
+                ),
+            ),
+            Evidence(
+                evidence_id="D032_c0",
+                source="report",
+                title="IBM量子计算路线图",
+                text_span=(
+                    "IBM当前旗舰处理器为Condor（1121量子比特），计划2029年前构建拥有10万个量子比特的系统，"
+                    "并通过模块化架构连接多个处理器。"
+                ),
+            ),
+            Evidence(
+                evidence_id="D031_c0",
+                source="report",
+                title="谷歌Willow量子处理器",
+                text_span="Willow首次实现低于阈值的量子纠错，但谷歌表示实现大规模容错量子计算仍需5-10年。",
+            ),
+        ]
+
+        answer, claims, steps, guard = pipeline._apply_evidence_detail_completion_guard(
+            "量子计算在哪些领域有应用前景？目前技术成熟度如何？",
+            "量子计算在药物发现领域有应用前景，但目前仍处于早期阶段。引用证据：[D082_c0]",
+            [],
+            [],
+            evidence,
+        )
+
+        assert guard == {
+            "action": "quantum_application_maturity_completion",
+            "selected_evidence": ["D082_c0", "D032_c0", "D031_c0"],
+        }
+        assert "10万个量子比特" in answer
+        assert "5-10年" in answer
+        assert "[D032_c0]" in answer
+        assert [claim.supporting_evidence[0] for claim in claims] == [
+            "D082_c0",
+            "D032_c0",
+            "D031_c0",
+        ]
+        assert steps[0].evidence_ids == ["D082_c0", "D032_c0", "D031_c0"]
 
     def test_post_guard_sync_adds_answer_citations_to_claim_support(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)

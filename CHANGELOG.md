@@ -229,6 +229,15 @@ All notable changes to VeraRAG are recorded here.
   `1.0000`, Evidence Recall `1.0000`, Evidence Precision `0.6000`, and zero
   conflict failures. `V116` still needs a citation/support completeness follow-up
   for IBM roadmap evidence.
+- Add the next Stage-3 local precision pass: question-focused conflict filtering
+  now suppresses NLI-only false positives between complementary multi-facet
+  answer aspects, including disjoint year facets and quantum/energy/AI/semiconductor
+  overview facets; VeraBench conflict scoring now maps chunk-level same-document
+  edges to the matching gold self-conflict when a document has multiple gold
+  spans; and the answer guard completes quantum application/maturity answers
+  with application, IBM roadmap, and fault-tolerance evidence. Local regression
+  tests cover the `V010`/`V116`/`V122` failure modes; DeepSeek targeted/full
+  reruns remain pending because the long API run is paused at the user's request.
 
 ### Added
 

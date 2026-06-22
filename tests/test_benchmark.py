@@ -600,6 +600,17 @@ class TestVeraBenchEvaluator:
             for row in report.results
         )
 
+    def test_conflict_pair_mapping_prefers_gold_self_pair_for_multi_span_doc(self):
+        pair = VeraBenchEvaluator._map_conflict_pair_to_gold(
+            "D088_c0",
+            "D088_c0",
+            {"D088": "E2"},
+            {"D088": ["E1", "E2"]},
+            [SimpleNamespace(pair=["E1", "E1"])],
+        )
+
+        assert pair == ("E1", "E1")
+
     def test_cli_requires_explicit_evaluation_mode(self):
         from experiments.run_verabench import _build_parser
 
