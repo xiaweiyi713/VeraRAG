@@ -405,6 +405,90 @@ def _confidence_diagnostics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _confidence_slice_summary(
+    rows: list[dict[str, Any]],
+    *,
+    group_field: str,
+    max_errors: int = 5,
+) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, list[tuple[dict[str, Any], float, bool]]] = defaultdict(list)
+    for row in rows:
+        confidence = _confidence_value(row)
+        correct = _correctness(row)
+        if confidence is None or correct is None:
+            continue
+        group = str(row.get(group_field) or "unknown")
+        grouped[group].append((row, confidence, correct))
+
+    summaries: dict[str, dict[str, Any]] = {}
+    for group, items in sorted(grouped.items()):
+        pairs = [(confidence, correct) for _, confidence, correct in items]
+        confidences = [confidence for _, confidence, _ in items]
+        correct_confidences = [
+            confidence for _, confidence, correct in items if correct
+        ]
+        incorrect_items = [
+            (row, confidence)
+            for row, confidence, correct in items
+            if not correct
+        ]
+        incorrect_confidences = [confidence for _, confidence in incorrect_items]
+        accuracy = sum(int(correct) for _, _, correct in items) / len(items)
+        high_confidence_errors = [
+            {
+                "question_id": row.get("question_id"),
+                "question_type": row.get("question_type"),
+                "expected_behavior": row.get("expected_behavior"),
+                "actual_behavior": row.get("actual_behavior"),
+                "confidence": round(confidence, 6),
+                "answer_f1": row.get("answer_f1"),
+                "evidence_recall": row.get("evidence_recall"),
+            }
+            for row, confidence in sorted(
+                incorrect_items,
+                key=lambda item: item[1],
+                reverse=True,
+            )[:max_errors]
+        ]
+        summaries[group] = {
+            "rows": len(items),
+            "accuracy": round(accuracy, 6),
+            "mean_confidence": round(sum(confidences) / len(confidences), 6),
+            "confidence_std": _round_optional(_std(confidences)),
+            "correct_mean_confidence": _round_optional(_mean(correct_confidences)),
+            "incorrect_mean_confidence": _round_optional(_mean(incorrect_confidences)),
+            "confidence_auroc": _round_optional(_confidence_auc(pairs)),
+            "high_confidence_errors": high_confidence_errors,
+        }
+    return summaries
+
+
+def _confidence_slices(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    if not any(
+        _confidence_value(row) is not None and _correctness(row) is not None
+        for row in rows
+    ):
+        return {
+            "available": False,
+            "reason": "no rows with valid confidence and correctness",
+        }
+    return {
+        "available": True,
+        "by_actual_behavior": _confidence_slice_summary(
+            rows,
+            group_field="actual_behavior",
+        ),
+        "by_expected_behavior": _confidence_slice_summary(
+            rows,
+            group_field="expected_behavior",
+        ),
+        "by_question_type": _confidence_slice_summary(
+            rows,
+            group_field="question_type",
+        ),
+    }
+
+
 def _runtime_confidence_calibration_summary(
     rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -575,6 +659,7 @@ def analyze(report: dict[str, Any], max_examples: int = 10) -> dict[str, Any]:
     confusion = report.get("behavior_confusion") or _behavior_confusion(rows)
     calibration_bins = report.get("calibration_bins") or _calibration_bins(rows)
     confidence_diagnostics = _confidence_diagnostics(rows)
+    confidence_slices = _confidence_slices(rows)
     runtime_confidence_calibration = _runtime_confidence_calibration_summary(rows)
     risk_coverage = _risk_coverage(
         [
@@ -611,6 +696,7 @@ def analyze(report: dict[str, Any], max_examples: int = 10) -> dict[str, Any]:
         "metadata": report.get("metadata", {}),
         "calibration_bins": calibration_bins,
         "confidence_diagnostics": confidence_diagnostics,
+        "confidence_slices": confidence_slices,
         "runtime_confidence_calibration": runtime_confidence_calibration,
         "risk_coverage": risk_coverage,
         "confidence_intervals": confidence_intervals,
@@ -763,6 +849,33 @@ def _print_table(analysis: dict[str, Any], max_examples: int) -> None:
                 "Flags:            "
                 + ", ".join(confidence.get("diagnostic_flags", []))
             )
+
+    confidence_slices = analysis.get("confidence_slices", {})
+    if confidence_slices:
+        print("\nConfidence by Actual Behavior")
+        print("-" * 72)
+        if confidence_slices.get("available") is False:
+            print(
+                "Unavailable: "
+                f"{confidence_slices.get('reason', 'missing confidence/correctness rows')}"
+            )
+        else:
+            by_behavior = confidence_slices.get("by_actual_behavior") or {}
+            for behavior, values in sorted(by_behavior.items()):
+                wrong_mean = values.get("incorrect_mean_confidence")
+                wrong_text = (
+                    f"{float(wrong_mean):.4f}" if wrong_mean is not None else "n/a"
+                )
+                auc = values.get("confidence_auroc")
+                auc_text = f"{float(auc):.4f}" if auc is not None else "n/a"
+                print(
+                    f"{behavior:<26s} "
+                    f"n={int(values.get('rows', 0)):<3d} "
+                    f"acc={float(values.get('accuracy') or 0.0):.3f} "
+                    f"conf={float(values.get('mean_confidence') or 0.0):.3f} "
+                    f"wrong_conf={wrong_text} "
+                    f"auc={auc_text}"
+                )
 
     runtime_calibration = analysis.get("runtime_confidence_calibration", {})
     if runtime_calibration:

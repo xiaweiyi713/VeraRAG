@@ -1459,6 +1459,17 @@ class TestVeraBenchEvaluator:
         assert analysis["confidence_diagnostics"]["confidence_auroc"] == 1.0
         assert analysis["confidence_diagnostics"]["correct_mean_confidence"] == 0.9
         assert analysis["confidence_diagnostics"]["incorrect_mean_confidence"] == 0.1
+        confidence_slices = analysis["confidence_slices"]
+        assert confidence_slices["available"] is True
+        assert confidence_slices["by_actual_behavior"]["answer_with_citation"][
+            "rows"
+        ] == 2
+        assert confidence_slices["by_actual_behavior"]["answer_with_citation"][
+            "accuracy"
+        ] == 0.5
+        assert confidence_slices["by_question_type"]["unanswerable"][
+            "high_confidence_errors"
+        ][0]["question_id"] == "T001"
         runtime_calibration = analysis["runtime_confidence_calibration"]
         assert runtime_calibration["enabled_rows"] == 2
         assert runtime_calibration["predicted_behaviors"] == {

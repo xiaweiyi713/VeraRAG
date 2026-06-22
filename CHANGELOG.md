@@ -60,6 +60,9 @@ All notable changes to VeraRAG are recorded here.
 - Promote runtime confidence-calibration metadata into per-question VeraBench
   diagnostics and summarize calibration stages, predicted behaviors, and
   failure-mode cap reasons in `analyze_verabench_results.py`.
+- Add confidence slice diagnostics to `analyze_verabench_results.py`, grouping
+  calibration/ranking quality by actual behavior, expected behavior, and
+  question type with high-confidence error exemplars for follow-up guards.
 - Add VeraBench citation and supporting-fact scoring to per-question rows and
   report summaries, including pipeline chunk-ID to gold-evidence-ID mapping for
   answer citations such as `[D001_c0]`.
