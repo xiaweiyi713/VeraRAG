@@ -8,16 +8,18 @@ on:
   schedule:
     - cron: "19 4 * * 2"
 
-permissions:
-  contents: read
-  security-events: write
-  id-token: write  # OIDC token，供 publish_results 的 Sigstore keyless 签名
+# 顶层只读：publish_results 的 webapp 校验要求 global 权限不得为 write，
+# 所有写权限必须下放到 job 级（见 ossf/scorecard-action#workflow-restrictions）。
+permissions: read-all
 
 jobs:
   scorecard:
     name: OpenSSF Scorecard
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      id-token: write  # OIDC token，供 publish_results 的 Sigstore keyless 签名
+      contents: read
 
     steps:
       - name: Run Scorecard
