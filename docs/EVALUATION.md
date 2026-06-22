@@ -237,6 +237,19 @@ the held-out Platt calibration run with seed 1729 changes ECE from `0.5523` to
 `0.0110` and Brier from `0.3929` to `0.0836`; this is a historical diagnostic,
 not the canonical v1.1.2 result.
 
+On the current Stage-3 v1.1.2 behavior-stabilized targeted full report, the
+same held-out Platt procedure is archived under
+`outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stabilized_behavior_full_posthoc_platt.json`.
+It changes all-row ECE/Brier from `0.3800/0.2763` to `0.0164/0.1270`; on the
+deterministic holdout split it changes ECE/Brier from `0.3902/0.2816` to
+`0.0301/0.1260`. The corresponding selective-prediction curve is published at
+`docs/assets/verabench_v112_stage3_stabilized_posthoc_platt_risk_coverage.svg`
+with CSV points beside it. Because Platt scaling is monotonic, confidence AUROC
+and risk-coverage ranking do not improve: AUROC remains `0.6112`, AURC remains
+`0.1015`, coverage@accuracy≥0.90 remains `0.4013`, and
+coverage@accuracy≥0.95 remains `0.0789`. This means the current runtime signal
+is calibratable, but still not selective enough for the long-term stage-2 DoD.
+
 Because VeraRAG confidence attaches to different behavior types, the same CLI
 can calibrate each behavior family separately:
 

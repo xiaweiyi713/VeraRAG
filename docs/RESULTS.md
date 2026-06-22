@@ -261,6 +261,42 @@ conflict failures. `V116` still has incomplete citation/support coverage for
 the IBM roadmap evidence, so this is a retrieval/conflict regression smoke
 rather than a full answer-quality closure.
 
+### Stage-3 Post-hoc Calibration Diagnostic
+
+The behavior-stabilized targeted full report was also calibrated offline with
+held-out Platt scaling:
+
+```bash
+python experiments/calibrate_verabench_confidence.py \
+  --input outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stabilized_behavior_full.json \
+  --output outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stabilized_behavior_full_posthoc_platt.json \
+  --summary-output outputs/remote_results/verabench_v112_retrieval_rerank_targeted_stabilized_behavior_full_posthoc_platt_summary.json \
+  --method platt \
+  --seed 1729 \
+  --json
+```
+
+This is a diagnostic calibrated copy, not a replacement for the uncalibrated
+runtime report. It shows the probability scale is now recoverable from saved
+rows: all-row ECE/Brier improve from `0.3800/0.2763` to `0.0164/0.1270`; on
+the deterministic holdout split, ECE/Brier improve from `0.3902/0.2816` to
+`0.0301/0.1260`. Temperature scaling was much weaker (`0.3503` all-row ECE
+after calibration). Behavior-grouped Platt improves all-row Brier further to
+`0.1161`, but most behavior groups fall back to smoothed constants because
+their calibration splits are sparse or single-class.
+
+The ranking signal still needs work: confidence AUROC remains `0.6112`, and
+because Platt scaling is monotonic, AURC stays `0.1015` with
+coverage@accuracy≥0.90 at `0.4013` and coverage@accuracy≥0.95 at `0.0789`.
+That separates the stage-2 problem cleanly: post-hoc calibration fixes the
+probability scale, while future runtime confidence work must improve
+correct/incorrect ranking.
+
+![Stage-3 post-hoc Platt risk-coverage curve](assets/verabench_v112_stage3_stabilized_posthoc_platt_risk_coverage.svg)
+
+Curve points are archived in
+[`assets/verabench_v112_stage3_stabilized_posthoc_platt_risk_coverage.csv`](assets/verabench_v112_stage3_stabilized_posthoc_platt_risk_coverage.csv).
+
 ## VeraBench v1.1.2 Conflict CrossEncoder Negative Result
 
 The learned conflict detector is not enabled by default. On 2026-06-15, the

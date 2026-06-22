@@ -238,6 +238,12 @@ All notable changes to VeraRAG are recorded here.
   with application, IBM roadmap, and fault-tolerance evidence. Local regression
   tests cover the `V010`/`V116`/`V122` failure modes; DeepSeek targeted/full
   reruns remain pending because the long API run is paused at the user's request.
+- Archive a Stage-3 v1.1.2 post-hoc Platt calibration diagnostic for the
+  behavior-stabilized targeted full report. The calibrated copy improves
+  all-row ECE/Brier from `0.3800/0.2763` to `0.0164/0.1270` and holdout
+  ECE/Brier from `0.3902/0.2816` to `0.0301/0.1260`; the new risk-coverage
+  asset records that ranking remains the limiting factor (`AUROC 0.6112`,
+  AURC `0.1015`, coverage@accuracy≥0.90 `0.4013`).
 
 ### Added
 
