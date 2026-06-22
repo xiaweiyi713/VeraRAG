@@ -63,6 +63,9 @@ All notable changes to VeraRAG are recorded here.
 - Add confidence slice diagnostics to `analyze_verabench_results.py`, grouping
   calibration/ranking quality by actual behavior, expected behavior, and
   question type with high-confidence error exemplars for follow-up guards.
+- Treat conflict-prefix stripping as a format-only abstention guard for runtime
+  confidence: it no longer boosts abstention confidence and is capped with a
+  diagnostic `format_only_abstention_guard` reason.
 - Add VeraBench citation and supporting-fact scoring to per-question rows and
   report summaries, including pipeline chunk-ID to gold-evidence-ID mapping for
   answer citations such as `[D001_c0]`.

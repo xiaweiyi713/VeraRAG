@@ -115,6 +115,13 @@ class VeraRAG:
         "answer_with_conflict_note",
         "correct_premise",
     }
+    _ABSTENTION_SUPPORT_GUARD_ACTIONS: ClassVar[set[str]] = {
+        "abstain",
+        "exact_value_gap_abstain",
+    }
+    _ABSTENTION_FORMAT_ONLY_GUARD_ACTIONS: ClassVar[set[str]] = {
+        "abstention_conflict_prefix_stripped",
+    }
     _CONFLICT_NOTE_MARKERS: ClassVar[tuple[str, ...]] = (
         "证据中存在冲突",
         "证据存在冲突",
@@ -2713,6 +2720,11 @@ class VeraRAG:
                 conflict_graph=conflict_graph,
                 stage="abstention",
             )
+            abstention_confidence = self._cap_abstention_confidence_for_failure_modes(
+                abstention_confidence,
+                answerability_guard=answerability_guard,
+            )
+            self._last_confidence_calibration["capped_confidence"] = abstention_confidence
             final_confidence = float(self.uncertainty_controller.calibrator.calibrate_confidence(
                 abstention_confidence,
                 uncertainty,
@@ -2878,11 +2890,41 @@ class VeraRAG:
             verification_supported = verification_report.overall_status == VerificationStatus.SUPPORTED
 
         confidence = 0.32 + lack_of_evidence * 0.42 + verification_nei * 0.12
-        if answerability_guard:
+        if self._is_abstention_support_guard(answerability_guard):
             confidence += 0.10
         if verification_supported:
             confidence -= 0.25
         return self._clamp01(confidence)
+
+    @classmethod
+    def _is_abstention_support_guard(cls, guard: dict[str, Any] | None) -> bool:
+        if not isinstance(guard, dict):
+            return False
+        return str(guard.get("action") or "") in cls._ABSTENTION_SUPPORT_GUARD_ACTIONS
+
+    @classmethod
+    def _is_abstention_format_only_guard(cls, guard: dict[str, Any] | None) -> bool:
+        if not isinstance(guard, dict):
+            return False
+        return str(guard.get("action") or "") in cls._ABSTENTION_FORMAT_ONLY_GUARD_ACTIONS
+
+    def _cap_abstention_confidence_for_failure_modes(
+        self,
+        confidence: float,
+        *,
+        answerability_guard: dict[str, Any] | None,
+    ) -> float:
+        capped = self._clamp01(confidence)
+        cap_reasons: list[dict[str, Any]] = []
+        if self._is_abstention_format_only_guard(answerability_guard):
+            capped = min(capped, 0.60)
+            cap_reasons.append({
+                "reason": "format_only_abstention_guard",
+                "cap": 0.60,
+            })
+        if cap_reasons:
+            self._last_confidence_calibration["failure_mode_caps"] = cap_reasons
+        return capped
 
     def _cap_confidence_for_failure_modes(
         self,

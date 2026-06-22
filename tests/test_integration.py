@@ -2145,6 +2145,44 @@ class TestPipelineIntegration:
         assert unjustified < justified
         assert unjustified < 0.55
 
+    def test_format_only_abstention_guard_does_not_raise_confidence(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        not_enough_report = VerificationReport(
+            claim_verifications=[],
+            overall_status=VerificationStatus.NOT_ENOUGH_INFO,
+        )
+        uncertainty = pipeline.uncertainty_controller.get_uncertainty_breakdown(
+            [], [], EvidenceConflictGraph()
+        )
+
+        supported_guard = pipeline._estimate_final_confidence(
+            answer="根据现有证据无法回答此问题。",
+            answer_claims=[],
+            reasoning_chain=[],
+            evidence_pool=[],
+            conflict_graph=EvidenceConflictGraph(),
+            verification_report=not_enough_report,
+            uncertainty=uncertainty,
+            answerability_guard={"action": "abstain"},
+        )
+        format_only_guard = pipeline._estimate_final_confidence(
+            answer="根据现有证据无法回答此问题。",
+            answer_claims=[],
+            reasoning_chain=[],
+            evidence_pool=[],
+            conflict_graph=EvidenceConflictGraph(),
+            verification_report=not_enough_report,
+            uncertainty=uncertainty,
+            answerability_guard={"action": "abstention_conflict_prefix_stripped"},
+        )
+
+        assert format_only_guard < supported_guard
+        assert format_only_guard < 0.55
+        assert {
+            "reason": "format_only_abstention_guard",
+            "cap": 0.60,
+        } in pipeline._last_confidence_calibration["failure_mode_caps"]
+
     def test_runtime_confidence_behavior_prior_recalibrates_underconfident_answer(
         self,
         pipeline_config,
