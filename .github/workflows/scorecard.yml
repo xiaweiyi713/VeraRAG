@@ -11,6 +11,7 @@ on:
 permissions:
   contents: read
   security-events: write
+  id-token: write  # OIDC token，供 publish_results 的 Sigstore keyless 签名
 
 jobs:
   scorecard:
