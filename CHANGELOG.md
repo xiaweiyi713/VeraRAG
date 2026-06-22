@@ -66,6 +66,9 @@ All notable changes to VeraRAG are recorded here.
 - Treat conflict-prefix stripping as a format-only abstention guard for runtime
   confidence: it no longer boosts abstention confidence and is capped with a
   diagnostic `format_only_abstention_guard` reason.
+- Suppress premise-overreach NLI conflict false positives between milestone or
+  capability evidence and limitation or boundary evidence while preserving
+  reported-claim refutations for misleading-premise questions.
 - Add VeraBench citation and supporting-fact scoring to per-question rows and
   report summaries, including pipeline chunk-ID to gold-evidence-ID mapping for
   answer citations such as `[D001_c0]`.

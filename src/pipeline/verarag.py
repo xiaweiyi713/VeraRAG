@@ -438,6 +438,14 @@ class VeraRAG:
                 question,
             ):
                 continue
+            if self._is_premise_overreach_nli_conflict(
+                edge,
+                source_claim,
+                target_claim,
+                evidence_by_claim,
+                question,
+            ):
+                continue
             if self._is_historical_version_edge(
                 edge,
                 evidence_by_claim,
@@ -866,6 +874,96 @@ class VeraRAG:
         source_aspects = self._topic_aspects(source_text)
         target_aspects = self._topic_aspects(target_text)
         return bool(source_aspects and target_aspects and not (source_aspects & target_aspects))
+
+    def _is_premise_overreach_nli_conflict(
+        self,
+        edge: ConflictEdge,
+        source_claim: Claim | None,
+        target_claim: Claim | None,
+        evidence_by_claim: dict[str, Evidence],
+        question: str,
+    ) -> bool:
+        """Suppress NLI false positives between premise support and limits."""
+        if "NLI contradiction" not in edge.rationale:
+            return False
+        if not self._is_premise_validation_question(question):
+            return False
+        if self._is_direct_conflict_question(question):
+            return False
+        if source_claim and source_claim.source_span == "reported_claim":
+            return False
+        if target_claim and target_claim.source_span == "reported_claim":
+            return False
+
+        source_text = self._claim_with_evidence_text(edge.source_id, source_claim, evidence_by_claim)
+        target_text = self._claim_with_evidence_text(edge.target_id, target_claim, evidence_by_claim)
+        source_capability = self._has_capability_or_milestone_signal(source_text)
+        target_capability = self._has_capability_or_milestone_signal(target_text)
+        source_limit = self._has_limitation_or_boundary_signal(source_text)
+        target_limit = self._has_limitation_or_boundary_signal(target_text)
+        if (source_capability and target_limit) or (target_capability and source_limit):
+            return True
+
+        return (
+            self._question_overclaims_completeness(question)
+            and source_limit
+            and target_limit
+        )
+
+    @staticmethod
+    def _has_capability_or_milestone_signal(text: str) -> bool:
+        return any(
+            marker in text
+            for marker in (
+                "实现",
+                "突破",
+                "量子霸权",
+                "5分钟",
+                "10^25年",
+                "7nm",
+                "量产",
+                "2nm",
+                "计划",
+                "目标",
+                "新方向",
+                "发布",
+                "获得",
+            )
+        )
+
+    @staticmethod
+    def _has_limitation_or_boundary_signal(text: str) -> bool:
+        return any(
+            marker in text
+            for marker in (
+                "仍",
+                "尚未",
+                "不足",
+                "不能",
+                "不意味着",
+                "并不",
+                "限制",
+                "局限",
+                "缺乏",
+                "距离",
+                "良率",
+                "产能",
+                "市场份额",
+                "超90%",
+                "存疑",
+                "不总是",
+                "改进",
+                "复杂任务",
+                "幻觉率",
+            )
+        )
+
+    @staticmethod
+    def _question_overclaims_completeness(question: str) -> bool:
+        return any(
+            marker in question
+            for marker in ("完美", "完全", "所有", "不需要", "取代", "追上", "马上")
+        )
 
     @classmethod
     def _claims_are_disjoint_question_year_facets(

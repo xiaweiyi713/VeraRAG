@@ -898,6 +898,123 @@ class TestPipelineIntegration:
 
         assert len(premise_filtered.get_conflicts()) == 2
 
+    def test_premise_overreach_filters_milestone_limit_nli_conflict(
+        self,
+        pipeline_config,
+    ):
+        pipeline = _create_pipeline(pipeline_config)
+        milestone = Claim(
+            claim_id="C_milestone",
+            claim="谷歌2019年在随机电路采样任务上实现量子霸权",
+            claim_type=ClaimType.FACTUAL,
+            entities=["谷歌", "量子计算机", "量子霸权"],
+        )
+        limits = Claim(
+            claim_id="C_limits",
+            claim="当前量子计算机仍存在错误率高和缺乏实用纠错等限制",
+            claim_type=ClaimType.FACTUAL,
+            entities=["量子计算机"],
+        )
+        evidence_pool = [
+            Evidence(
+                "D030_c0",
+                "paper",
+                "谷歌量子计算里程碑",
+                "谷歌2019年实现量子霸权。",
+                claims=[milestone],
+            ),
+            Evidence(
+                "D031_c0",
+                "paper",
+                "量子计算实用化限制",
+                "当前量子计算机仍存在错误率高和缺乏实用纠错等限制。",
+                claims=[limits],
+            ),
+        ]
+        evidence_by_claim = {
+            claim.claim_id: evidence
+            for evidence in evidence_pool
+            for claim in evidence.claims
+        }
+        edge = ConflictEdge(
+            "C_milestone",
+            "C_limits",
+            ConflictType.REFUTE,
+            0.85,
+            rationale="NLI contradiction: 0.85",
+        )
+
+        assert pipeline._is_premise_overreach_nli_conflict(
+            edge,
+            milestone,
+            limits,
+            evidence_by_claim,
+            "既然谷歌2019年就实现了量子霸权，量子计算机现在应该已经取代经典计算机了，对吧？",
+        )
+
+        graph = EvidenceConflictGraph()
+        graph.edges = [edge]
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "既然谷歌2019年就实现了量子霸权，量子计算机现在应该已经取代经典计算机了，对吧？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_premise_overreach_keeps_reported_claim_refutation(
+        self,
+        pipeline_config,
+    ):
+        pipeline = _create_pipeline(pipeline_config)
+        reported = Claim(
+            claim_id="C_reported",
+            claim="欧盟AI法案已无限期搁置",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+            source_span="reported_claim",
+        )
+        passed = Claim(
+            claim_id="C_passed",
+            claim="欧盟AI法案已于2024年3月13日通过",
+            claim_type=ClaimType.FACTUAL,
+            entities=["欧盟AI法案"],
+        )
+        evidence_pool = [
+            Evidence("D006_c0", "blog", "错误报道", "", claims=[reported]),
+            Evidence("D001_c0", "official", "欧盟AI法案", "", claims=[passed]),
+        ]
+        evidence_by_claim = {
+            claim.claim_id: evidence
+            for evidence in evidence_pool
+            for claim in evidence.claims
+        }
+        edge = ConflictEdge(
+            "C_reported",
+            "C_passed",
+            ConflictType.REFUTE,
+            0.9,
+            rationale="NLI contradiction: 0.90",
+        )
+
+        assert not pipeline._is_premise_overreach_nli_conflict(
+            edge,
+            reported,
+            passed,
+            evidence_by_claim,
+            "欧盟AI法案已被搁置，目前尚未通过，对吗？",
+        )
+
+        graph = EvidenceConflictGraph()
+        graph.edges = [edge]
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "欧盟AI法案已被搁置，目前尚未通过，对吗？",
+        )
+
+        assert len(filtered.get_conflicts()) == 1
+
     def test_reported_claim_conflict_dedupe_prefers_stronger_evidence(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
         reported = Claim(
