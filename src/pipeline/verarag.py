@@ -1503,12 +1503,17 @@ class VeraRAG:
             "人",
             "辆",
             "篇",
+            "FLOPS",
+            "FLOP",
+            "flops",
+            "flop",
             "%",
             "％",
         )
         unit_pattern = "|".join(re.escape(item) for item in units)
         pattern = re.compile(
-            rf"(?:约|大约|超过|不足|近|接近)?\s*\d+(?:\.\d+)?(?:万|亿|千|百)?(?:{unit_pattern})"
+            rf"(?:约|大约|超过|不足|近|接近)?\s*"
+            rf"\d+(?:\.\d+)?(?:\^\d+)?(?:万|亿|千|百)?\s*(?:{unit_pattern})"
         )
         matches = [match.group(0).replace(" ", "") for match in pattern.finditer(sentence)]
         if unit:
@@ -1544,6 +1549,10 @@ class VeraRAG:
             "人",
             "辆",
             "篇",
+            "FLOPS",
+            "FLOP",
+            "flops",
+            "flop",
             "%",
             "％",
         ):
@@ -1576,6 +1585,95 @@ class VeraRAG:
         for index, step in enumerate(guarded_reasoning, start=1):
             step.step = index
         return stripped, claims, guarded_reasoning, {"action": "abstention_conflict_prefix_stripped"}
+
+    def _apply_direct_treatment_answer_guard(
+        self,
+        question: str,
+        answer: str,
+        claims: list[AnswerClaim],
+        reasoning: list[ReasoningStep],
+        evidence: list[Evidence],
+        conflict_graph: EvidenceConflictGraph,
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep], dict[str, Any] | None]:
+        """Normalize direct treatment-disease questions to the disease span."""
+        if not self._should_apply_direct_treatment_answer_guard(
+            question,
+            answer,
+            evidence,
+            conflict_graph,
+        ):
+            return answer, claims, reasoning, None
+
+        for evidence_id, sentence in self._rank_guard_sentences(question, evidence, limit=3):
+            disease = self._extract_treatment_disease_phrase(sentence)
+            if not disease:
+                continue
+            guarded_answer = f"治疗{disease}。引用证据：[{evidence_id}]"
+            guarded_claims = [
+                AnswerClaim(
+                    claim=f"治疗{disease}",
+                    supporting_evidence=[evidence_id],
+                    confidence=0.88,
+                    claim_type="factual",
+                    verifiable=True,
+                    support_type="direct",
+                )
+            ]
+            guarded_reasoning = [
+                ReasoningStep(
+                    step=1,
+                    description="识别到问题只询问治疗疾病，压缩答案为证据中的直接疾病短语并保留引用。",
+                    evidence_ids=[evidence_id],
+                    confidence=0.88,
+                ),
+                *reasoning,
+            ]
+            for index, step in enumerate(guarded_reasoning, start=1):
+                step.step = index
+            return (
+                guarded_answer,
+                guarded_claims,
+                guarded_reasoning,
+                {
+                    "action": "direct_treatment_answer",
+                    "selected_evidence": evidence_id,
+                },
+            )
+        return answer, claims, reasoning, None
+
+    @classmethod
+    def _should_apply_direct_treatment_answer_guard(
+        cls,
+        question: str,
+        answer: str,
+        evidence: list[Evidence],
+        conflict_graph: EvidenceConflictGraph,
+    ) -> bool:
+        if cls._is_abstention_answer(answer):
+            return False
+        if cls._is_premise_validation_question(question) or cls._is_comparison_question(question):
+            return False
+        if conflict_graph.get_conflicts() and not answer.startswith("证据存在冲突："):
+            return False
+        if len(evidence) > 3:
+            return False
+        return "治疗" in question and any(marker in question for marker in ("疾病", "什么病", "哪种病"))
+
+    @staticmethod
+    def _extract_treatment_disease_phrase(sentence: str) -> str | None:
+        patterns = (
+            r"(?:用于|用来)?治疗([^，。；;、]+(?:（[^）]+）)?(?:的小分子药物)?)",
+            r"适应症为([^，。；;、]+(?:（[^）]+）)?)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, sentence)
+            if not match:
+                continue
+            disease = match.group(1).strip()
+            disease = re.sub(r"^(?:一种|一款|用于)", "", disease).strip()
+            if 2 <= len(disease) <= 40:
+                return disease
+        return None
 
     def _apply_company_attribute_conflict_guard(
         self,
@@ -2610,6 +2708,17 @@ class VeraRAG:
         if not answerability_guard:
             answer, answer_claims, reasoning_chain, answerability_guard = (
                 self._apply_concise_value_answer_guard(
+                    question,
+                    answer,
+                    answer_claims,
+                    reasoning_chain,
+                    evidence_pool,
+                    conflict_graph,
+                )
+            )
+        if not answerability_guard:
+            answer, answer_claims, reasoning_chain, answerability_guard = (
+                self._apply_direct_treatment_answer_guard(
                     question,
                     answer,
                     answer_claims,

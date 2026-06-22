@@ -1930,6 +1930,80 @@ class TestPipelineIntegration:
         assert claims[0].supporting_evidence == ["D073_c0"]
         assert steps[0].evidence_ids == ["D073_c0"]
 
+    def test_concise_value_guard_extracts_flops_threshold(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D004_c0",
+                source="official",
+                title="美国AI行政命令",
+                text_span="该命令要求开发强大AI系统（训练计算量超过10^26 FLOPS）的公司向政府报告安全测试结果。",
+                relevance_score=0.95,
+            ),
+            Evidence(
+                evidence_id="D005_c0",
+                source="report",
+                title="全球AI监管模式",
+                text_span="美国继续以行政命令和行业自律为主。",
+                relevance_score=0.6,
+            ),
+        ]
+
+        answer, claims, steps, guard = pipeline._apply_concise_value_answer_guard(
+            "美国AI行政命令要求开发强大AI系统的公司在训练计算量超过多少时向政府报告？",
+            "根据证据，训练计算量超过10^26 FLOPS时需要报告。",
+            [],
+            [],
+            evidence,
+            EvidenceConflictGraph(),
+        )
+
+        assert guard == {
+            "action": "concise_value_answer",
+            "selected_evidence": "D004_c0",
+        }
+        assert answer == "超过10^26FLOPS。引用证据：[D004_c0]"
+        assert claims[0].claim == "超过10^26FLOPS"
+        assert claims[0].supporting_evidence == ["D004_c0"]
+        assert steps[0].evidence_ids == ["D004_c0"]
+
+    def test_direct_treatment_answer_guard_extracts_disease(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="D062_c0",
+                source="paper",
+                title="AI辅助药物研发突破",
+                text_span="全球首例AI辅助药物是一款用于治疗特发性肺纤维化（IPF）的小分子药物。",
+                relevance_score=0.95,
+            ),
+            Evidence(
+                evidence_id="D060_c0",
+                source="paper",
+                title="AI医疗诊断",
+                text_span="AI在肺结节检测中灵敏度较高。",
+                relevance_score=0.5,
+            ),
+        ]
+
+        answer, claims, steps, guard = pipeline._apply_direct_treatment_answer_guard(
+            "全球首例AI辅助药物获批上市是治疗什么疾病的？",
+            "证据存在冲突：研发流程与平台信息不同。综合判断，该药物用于治疗特发性肺纤维化（IPF）。",
+            [],
+            [],
+            evidence,
+            EvidenceConflictGraph(),
+        )
+
+        assert guard == {
+            "action": "direct_treatment_answer",
+            "selected_evidence": "D062_c0",
+        }
+        assert answer == "治疗特发性肺纤维化（IPF）的小分子药物。引用证据：[D062_c0]"
+        assert claims[0].claim == "治疗特发性肺纤维化（IPF）的小分子药物"
+        assert claims[0].supporting_evidence == ["D062_c0"]
+        assert steps[0].evidence_ids == ["D062_c0"]
+
     def test_abstention_conflict_prefix_guard_strips_unrelated_preamble(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
 

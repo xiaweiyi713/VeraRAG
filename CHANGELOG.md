@@ -75,6 +75,9 @@ All notable changes to VeraRAG are recorded here.
 - Filter same-evidence conflict noise for ordinary fact and premise-refutation
   questions, dropping numeric/NLI/causal artifacts while preserving explicit
   reported-claim corrections and same-passage conflict-intent questions.
+- Extend deterministic answer guards for exact single-evidence questions:
+  concise value extraction now handles exponent-style `FLOPS` thresholds, and
+  direct treatment-disease questions are compressed to the cited disease span.
 - Add VeraBench citation and supporting-fact scoring to per-question rows and
   report summaries, including pipeline chunk-ID to gold-evidence-ID mapping for
   answer citations such as `[D001_c0]`.
