@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
+      security-events: write  # 上传 SARIF/结果（job 级写，顶层保持只读以通过 webapp 校验）
       id-token: write  # OIDC token，供 publish_results 的 Sigstore keyless 签名
       contents: read
 
