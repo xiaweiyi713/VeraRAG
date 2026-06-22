@@ -2691,6 +2691,7 @@ class VeraRAG:
                 )
 
         final_confidence = self._estimate_final_confidence(
+            question=question,
             answer=answer,
             answer_claims=answer_claims,
             reasoning_chain=reasoning_chain,
@@ -2842,6 +2843,7 @@ class VeraRAG:
     def _estimate_final_confidence(
         self,
         *,
+        question: str | None = None,
         answer: str,
         answer_claims: list[AnswerClaim],
         reasoning_chain: list[ReasoningStep],
@@ -2902,6 +2904,7 @@ class VeraRAG:
         )
         raw_confidence = self._cap_confidence_for_failure_modes(
             raw_confidence,
+            question=question,
             answer=answer,
             evidence_pool=evidence_pool,
             answer_claims=answer_claims,
@@ -3085,6 +3088,7 @@ class VeraRAG:
         self,
         confidence: float,
         *,
+        question: str | None,
         answer: str,
         evidence_pool: list[Evidence],
         answer_claims: list[AnswerClaim],
@@ -3108,6 +3112,9 @@ class VeraRAG:
         if not answer_claims:
             capped = min(capped, 0.50)
             cap_reasons.append({"reason": "no_answer_claims", "cap": 0.50})
+        if self._has_thin_multi_facet_support(question, answer_claims, evidence_pool):
+            capped = min(capped, 0.52)
+            cap_reasons.append({"reason": "thin_multi_facet_support", "cap": 0.52})
         if verification_report:
             if verification_report.overall_status == VerificationStatus.REFUTED:
                 capped = min(capped, 0.35)
@@ -3124,6 +3131,52 @@ class VeraRAG:
         if cap_reasons:
             self._last_confidence_calibration["failure_mode_caps"] = cap_reasons
         return capped
+
+    def _has_thin_multi_facet_support(
+        self,
+        question: str | None,
+        answer_claims: list[AnswerClaim],
+        evidence_pool: list[Evidence],
+    ) -> bool:
+        if not question or len(evidence_pool) < 2:
+            return False
+        if self._is_direct_conflict_question(question):
+            return False
+        if not self._requires_broad_evidence_support(question):
+            return False
+        evidence_ids = {evidence.evidence_id for evidence in evidence_pool}
+        supported_ids = {
+            evidence_id
+            for claim in answer_claims
+            if claim.verifiable and claim.support_type != "none"
+            for evidence_id in claim.supporting_evidence
+            if evidence_id in evidence_ids
+        }
+        return len(supported_ids) < 2
+
+    @classmethod
+    def _requires_broad_evidence_support(cls, question: str) -> bool:
+        if cls._is_multi_facet_question(question):
+            return True
+        if cls._question_overclaims_completeness(question):
+            return True
+        return any(
+            marker in question
+            for marker in (
+                "各自",
+                "分别",
+                "相比",
+                "比较",
+                "对比",
+                "差不多",
+                "挑战",
+                "格局",
+                "趋势",
+                "时间表",
+                "哪些领域",
+                "成熟度",
+            )
+        )
 
     @classmethod
     def _answer_has_conflict_note(cls, answer: str) -> bool:

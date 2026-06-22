@@ -66,6 +66,9 @@ All notable changes to VeraRAG are recorded here.
 - Treat conflict-prefix stripping as a format-only abstention guard for runtime
   confidence: it no longer boosts abstention confidence and is capped with a
   diagnostic `format_only_abstention_guard` reason.
+- Cap confidence for complex multi-facet answers that cite only a thin slice of
+  the retrieved evidence, exposing `thin_multi_facet_support` in runtime
+  calibration diagnostics.
 - Suppress premise-overreach NLI conflict false positives between milestone or
   capability evidence and limitation or boundary evidence while preserving
   reported-claim refutations for misleading-premise questions.

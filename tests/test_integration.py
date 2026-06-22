@@ -2576,6 +2576,124 @@ class TestPipelineIntegration:
         } in pipeline._last_confidence_calibration["failure_mode_caps"]
         assert pipeline._answer_has_conflict_note("未发现冲突，结论一致。") is False
 
+    def test_confidence_caps_thin_multi_facet_support(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="E_china",
+                source="report",
+                title="中国芯片制造挑战",
+                text_span="中国先进制程受光刻机等设备出口管制限制。",
+                credibility_score=0.9,
+                recency_score=0.9,
+                relevance_score=0.95,
+            ),
+            Evidence(
+                evidence_id="E_us",
+                source="report",
+                title="美国芯片制造挑战",
+                text_span="美国先进制程制造依赖台积电。",
+                credibility_score=0.9,
+                recency_score=0.9,
+                relevance_score=0.95,
+            ),
+        ]
+        claims = [
+            AnswerClaim(
+                claim="中国先进制程受设备出口管制限制。",
+                supporting_evidence=["E_china"],
+                confidence=0.9,
+                verification_status=VerificationStatus.SUPPORTED,
+                support_type="direct",
+            )
+        ]
+        steps = [ReasoningStep(step=1, description="读取证据", evidence_ids=["E_china"], confidence=0.9)]
+        report = VerificationReport(
+            claim_verifications=[
+                {"claim": claims[0].claim, "status": "SUPPORTED", "confidence": 0.9}
+            ],
+            overall_status=VerificationStatus.SUPPORTED,
+        )
+        uncertainty = pipeline.uncertainty_controller.get_uncertainty_breakdown(
+            [], evidence, EvidenceConflictGraph()
+        )
+
+        confidence = pipeline._estimate_final_confidence(
+            question="中国和美国在芯片制造领域各自面临什么挑战？自给率情况如何？",
+            answer="中国先进制程受设备出口管制限制。引用证据：[E_china]",
+            answer_claims=claims,
+            reasoning_chain=steps,
+            evidence_pool=evidence,
+            conflict_graph=EvidenceConflictGraph(),
+            verification_report=report,
+            uncertainty=uncertainty,
+            answerability_guard=None,
+        )
+
+        assert confidence <= 0.52
+        assert {
+            "reason": "thin_multi_facet_support",
+            "cap": 0.52,
+        } in pipeline._last_confidence_calibration["failure_mode_caps"]
+
+    def test_confidence_does_not_cap_simple_question_with_extra_evidence(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="E1",
+                source="report",
+                title="ITER目标",
+                text_span="ITER的目标是Q值达到10。",
+                credibility_score=0.9,
+                recency_score=0.9,
+                relevance_score=0.95,
+            ),
+            Evidence(
+                evidence_id="E2",
+                source="report",
+                title="ITER背景",
+                text_span="ITER项目预算已超过220亿欧元。",
+                credibility_score=0.8,
+                recency_score=0.8,
+                relevance_score=0.4,
+            ),
+        ]
+        claims = [
+            AnswerClaim(
+                claim="ITER的目标是Q值达到10。",
+                supporting_evidence=["E1"],
+                confidence=0.9,
+                verification_status=VerificationStatus.SUPPORTED,
+                support_type="direct",
+            )
+        ]
+        steps = [ReasoningStep(step=1, description="读取证据", evidence_ids=["E1"], confidence=0.9)]
+        report = VerificationReport(
+            claim_verifications=[
+                {"claim": claims[0].claim, "status": "SUPPORTED", "confidence": 0.9}
+            ],
+            overall_status=VerificationStatus.SUPPORTED,
+        )
+        uncertainty = pipeline.uncertainty_controller.get_uncertainty_breakdown(
+            [], evidence, EvidenceConflictGraph()
+        )
+
+        confidence = pipeline._estimate_final_confidence(
+            question="ITER核聚变项目的Q值目标是多少？",
+            answer="ITER的目标是Q值达到10。引用证据：[E1]",
+            answer_claims=claims,
+            reasoning_chain=steps,
+            evidence_pool=evidence,
+            conflict_graph=EvidenceConflictGraph(),
+            verification_report=report,
+            uncertainty=uncertainty,
+            answerability_guard=None,
+        )
+
+        caps = pipeline._last_confidence_calibration.get("failure_mode_caps", [])
+        assert {"reason": "thin_multi_facet_support", "cap": 0.52} not in caps
+        assert confidence > 0.52
+
     def test_full_pipeline_run(self, pipeline_config):
         """Test that the full pipeline runs end-to-end with mock LLM."""
         pipeline = _create_pipeline(pipeline_config)
