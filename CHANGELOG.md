@@ -54,6 +54,9 @@ All notable changes to VeraRAG are recorded here.
   support, evidence quality/coverage, claim and reasoning confidence, conflict
   pressure, abstention justification, and bounded uncertainty pressure instead
   of relying on a single multiplicatively discounted uncertainty aggregate.
+- Cap confidence for unsupported conflict-note answers when the final answer
+  claims evidence conflict or inconsistency but the runtime conflict graph has
+  no conflict edges, and expose the cap reason in confidence diagnostics.
 - Add VeraBench citation and supporting-fact scoring to per-question rows and
   report summaries, including pipeline chunk-ID to gold-evidence-ID mapping for
   answer citations such as `[D001_c0]`.

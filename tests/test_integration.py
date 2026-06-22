@@ -2231,6 +2231,71 @@ class TestPipelineIntegration:
         )
         assert calibrated_pipeline._last_confidence_calibration["behavior_prior"] == 0.90
 
+    def test_confidence_caps_unsupported_conflict_note(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        evidence = [
+            Evidence(
+                evidence_id="E1",
+                source="official",
+                title="芯片制造自给率",
+                text_span="整体自给率约为23%，成熟制程自给率超过45%。",
+                credibility_score=0.9,
+                recency_score=0.9,
+                relevance_score=0.95,
+            )
+        ]
+        claims = [
+            AnswerClaim(
+                claim="整体自给率约为23%，成熟制程自给率超过45%。",
+                supporting_evidence=["E1"],
+                confidence=0.9,
+                verification_status=VerificationStatus.SUPPORTED,
+                support_type="direct",
+            )
+        ]
+        steps = [ReasoningStep(step=1, description="读取证据", evidence_ids=["E1"], confidence=0.9)]
+        report = VerificationReport(
+            claim_verifications=[
+                {"claim": claims[0].claim, "status": "SUPPORTED", "confidence": 0.9}
+            ],
+            overall_status=VerificationStatus.SUPPORTED,
+        )
+        uncertainty = pipeline.uncertainty_controller.get_uncertainty_breakdown(
+            [], evidence, EvidenceConflictGraph()
+        )
+
+        direct = pipeline._estimate_final_confidence(
+            answer="整体自给率约为23%，成熟制程自给率超过45%。引用证据：[E1]",
+            answer_claims=claims,
+            reasoning_chain=steps,
+            evidence_pool=evidence,
+            conflict_graph=EvidenceConflictGraph(),
+            verification_report=report,
+            uncertainty=uncertainty,
+            answerability_guard=None,
+        )
+        unsupported_conflict_note = pipeline._estimate_final_confidence(
+            answer=(
+                "证据中存在不一致：整体自给率约为23%，成熟制程自给率超过45%。"
+                "引用证据：[E1]"
+            ),
+            answer_claims=claims,
+            reasoning_chain=steps,
+            evidence_pool=evidence,
+            conflict_graph=EvidenceConflictGraph(),
+            verification_report=report,
+            uncertainty=uncertainty,
+            answerability_guard=None,
+        )
+
+        assert unsupported_conflict_note <= 0.46
+        assert direct - unsupported_conflict_note > 0.15
+        assert {
+            "reason": "unsupported_conflict_note",
+            "cap": 0.46,
+        } in pipeline._last_confidence_calibration["failure_mode_caps"]
+        assert pipeline._answer_has_conflict_note("未发现冲突，结论一致。") is False
+
     def test_full_pipeline_run(self, pipeline_config):
         """Test that the full pipeline runs end-to-end with mock LLM."""
         pipeline = _create_pipeline(pipeline_config)

@@ -115,6 +115,26 @@ class VeraRAG:
         "answer_with_conflict_note",
         "correct_premise",
     }
+    _CONFLICT_NOTE_MARKERS: ClassVar[tuple[str, ...]] = (
+        "证据中存在冲突",
+        "证据存在冲突",
+        "存在证据冲突",
+        "存在冲突",
+        "证据中存在不一致",
+        "证据存在不一致",
+        "存在不一致",
+        "相互矛盾",
+        "证据矛盾",
+    )
+    _NEGATED_CONFLICT_NOTE_MARKERS: ClassVar[tuple[str, ...]] = (
+        "不存在冲突",
+        "没有冲突",
+        "无冲突",
+        "未发现冲突",
+        "不存在不一致",
+        "没有不一致",
+        "无不一致",
+    )
 
     def __init__(self, config: dict[str, Any] | None = None):
         """
@@ -2715,6 +2735,7 @@ class VeraRAG:
         )
         raw_confidence = self._cap_confidence_for_failure_modes(
             raw_confidence,
+            answer=answer,
             evidence_pool=evidence_pool,
             answer_claims=answer_claims,
             verification_report=verification_report,
@@ -2867,26 +2888,55 @@ class VeraRAG:
         self,
         confidence: float,
         *,
+        answer: str,
         evidence_pool: list[Evidence],
         answer_claims: list[AnswerClaim],
         verification_report: VerificationReport | None,
         conflict_graph: EvidenceConflictGraph,
     ) -> float:
         capped = self._clamp01(confidence)
+        cap_reasons: list[dict[str, Any]] = []
+        if (
+            self._answer_has_conflict_note(answer)
+            and not conflict_graph.get_conflicts()
+        ):
+            capped = min(capped, 0.46)
+            cap_reasons.append({
+                "reason": "unsupported_conflict_note",
+                "cap": 0.46,
+            })
         if not evidence_pool:
             capped = min(capped, 0.25)
+            cap_reasons.append({"reason": "no_evidence", "cap": 0.25})
         if not answer_claims:
             capped = min(capped, 0.50)
+            cap_reasons.append({"reason": "no_answer_claims", "cap": 0.50})
         if verification_report:
             if verification_report.overall_status == VerificationStatus.REFUTED:
                 capped = min(capped, 0.35)
+                cap_reasons.append({"reason": "verification_refuted", "cap": 0.35})
             elif verification_report.overall_status == VerificationStatus.NOT_ENOUGH_INFO:
                 capped = min(capped, 0.58)
+                cap_reasons.append({"reason": "verification_not_enough_info", "cap": 0.58})
             if verification_report.ignored_conflicts:
                 capped = min(capped, 0.65)
+                cap_reasons.append({"reason": "ignored_conflicts", "cap": 0.65})
         if conflict_graph.get_conflicts() and not verification_report:
             capped = min(capped, 0.70)
+            cap_reasons.append({"reason": "unverified_conflicts", "cap": 0.70})
+        if cap_reasons:
+            self._last_confidence_calibration["failure_mode_caps"] = cap_reasons
         return capped
+
+    @classmethod
+    def _answer_has_conflict_note(cls, answer: str) -> bool:
+        normalized = re.sub(r"\s+", "", answer or "")
+        if not normalized:
+            return False
+        search_window = normalized[:240]
+        if any(marker in search_window for marker in cls._NEGATED_CONFLICT_NOTE_MARKERS):
+            return False
+        return any(marker in search_window for marker in cls._CONFLICT_NOTE_MARKERS)
 
     def batch_query(
         self,
