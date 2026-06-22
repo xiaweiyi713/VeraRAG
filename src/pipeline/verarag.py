@@ -1586,6 +1586,68 @@ class VeraRAG:
             step.step = index
         return stripped, claims, guarded_reasoning, {"action": "abstention_conflict_prefix_stripped"}
 
+    def _apply_unsupported_conflict_prefix_guard(
+        self,
+        question: str,
+        answer: str,
+        claims: list[AnswerClaim],
+        reasoning: list[ReasoningStep],
+        conflict_graph: EvidenceConflictGraph,
+    ) -> tuple[str, list[AnswerClaim], list[ReasoningStep], dict[str, Any] | None]:
+        """Remove hallucinated conflict preambles when the conflict graph has no edges."""
+        if not self._should_strip_unsupported_conflict_prefix(question, answer, conflict_graph):
+            return answer, claims, reasoning, None
+
+        stripped = self._strip_conflict_prefix_and_caution_note(answer)
+        if not stripped or stripped == answer:
+            return answer, claims, reasoning, None
+
+        guarded_reasoning = [
+            ReasoningStep(
+                step=1,
+                description="识别到答案文本声称证据冲突，但运行时冲突图没有冲突边，因此移除无支撑的冲突前缀和通用谨慎提示。",
+                evidence_ids=[],
+                confidence=0.80,
+            ),
+            *reasoning,
+        ]
+        for index, step in enumerate(guarded_reasoning, start=1):
+            step.step = index
+        return stripped, claims, guarded_reasoning, {"action": "unsupported_conflict_prefix_stripped"}
+
+    @classmethod
+    def _should_strip_unsupported_conflict_prefix(
+        cls,
+        question: str,
+        answer: str,
+        conflict_graph: EvidenceConflictGraph,
+    ) -> bool:
+        if conflict_graph.get_conflicts():
+            return False
+        if cls._is_direct_conflict_question(question):
+            return False
+        if not answer.startswith("证据存在冲突："):
+            return False
+        if "综合判断" not in answer:
+            return False
+        return not cls._is_abstention_answer(answer)
+
+    @staticmethod
+    def _strip_conflict_prefix_and_caution_note(answer: str) -> str:
+        stripped = re.sub(
+            r"^证据存在冲突：.*?综合判断[，,:：]\s*",
+            "",
+            answer,
+            count=1,
+            flags=re.S,
+        ).strip()
+        stripped = re.sub(
+            r"\s*（注：上述部分论断证据有限，请谨慎对待。）\s*$",
+            "",
+            stripped,
+        ).strip()
+        return stripped
+
     def _apply_process_node_dimension_answer_guard(
         self,
         question: str,
@@ -2839,6 +2901,16 @@ class VeraRAG:
                     answer_claims,
                     reasoning_chain,
                     evidence_pool,
+                    conflict_graph,
+                )
+            )
+        if not answerability_guard:
+            answer, answer_claims, reasoning_chain, answerability_guard = (
+                self._apply_unsupported_conflict_prefix_guard(
+                    question,
+                    answer,
+                    answer_claims,
+                    reasoning_chain,
                     conflict_graph,
                 )
             )

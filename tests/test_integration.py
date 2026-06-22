@@ -2066,6 +2066,43 @@ class TestPipelineIntegration:
         assert claims == []
         assert steps[0].description.startswith("识别到答案主体为不可答")
 
+    def test_unsupported_conflict_prefix_guard_strips_fact_answer_preamble(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+
+        answer, claims, steps, guard = pipeline._apply_unsupported_conflict_prefix_guard(
+            "中国空间站的总质量大约是多少？",
+            "证据存在冲突：D083_c0 提到星舰高度，而 D083_c0 提到发射成本。"
+            "综合判断，中国空间站的总质量大约为100吨。 引用证据：[D077_c0] "
+            "（注：上述部分论断证据有限，请谨慎对待。）",
+            [],
+            [],
+            EvidenceConflictGraph(),
+        )
+
+        assert guard == {"action": "unsupported_conflict_prefix_stripped"}
+        assert answer == "中国空间站的总质量大约为100吨。 引用证据：[D077_c0]"
+        assert "证据存在冲突" not in answer
+        assert "谨慎对待" not in answer
+        assert claims == []
+        assert steps[0].evidence_ids == []
+
+    def test_unsupported_conflict_prefix_guard_preserves_supported_conflict(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        graph = EvidenceConflictGraph()
+        graph.add_edge(ConflictEdge("C_old", "C_new", ConflictType.REFUTE, 0.8))
+
+        answer, _claims, _steps, guard = pipeline._apply_unsupported_conflict_prefix_guard(
+            "欧盟AI法案早期提案和最终版本是否有冲突？",
+            "证据存在冲突：早期提案罚款上限为3000万欧元，最终版本为3500万欧元。"
+            "综合判断，两个版本存在差异。引用证据：[D001_c0] [D002_c0]",
+            [],
+            [],
+            graph,
+        )
+
+        assert guard is None
+        assert answer.startswith("证据存在冲突")
+
     def test_company_attribute_conflict_guard_restores_official_facts(
         self,
         pipeline_config,

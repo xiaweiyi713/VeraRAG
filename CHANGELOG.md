@@ -75,6 +75,9 @@ All notable changes to VeraRAG are recorded here.
 - Filter same-evidence conflict noise for ordinary fact and premise-refutation
   questions, dropping numeric/NLI/causal artifacts while preserving explicit
   reported-claim corrections and same-passage conflict-intent questions.
+- Strip unsupported conflict preambles from ordinary answers when the runtime
+  conflict graph has no conflict edges, removing the generic caution note that
+  otherwise depresses exact-answer quality.
 - Extend deterministic answer guards for exact single-evidence questions:
   concise value extraction now handles exponent-style `FLOPS` thresholds, and
   direct treatment-disease questions are compressed to the cited disease span.
