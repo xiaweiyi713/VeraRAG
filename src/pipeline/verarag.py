@@ -446,6 +446,14 @@ class VeraRAG:
                 question,
             ):
                 continue
+            if self._is_same_evidence_noise_conflict(
+                edge,
+                source_claim,
+                target_claim,
+                evidence_by_claim,
+                question,
+            ):
+                continue
             if self._is_historical_version_edge(
                 edge,
                 evidence_by_claim,
@@ -963,6 +971,55 @@ class VeraRAG:
         return any(
             marker in question
             for marker in ("完美", "完全", "所有", "不需要", "取代", "追上", "马上")
+        )
+
+    def _is_same_evidence_noise_conflict(
+        self,
+        edge: ConflictEdge,
+        source_claim: Claim | None,
+        target_claim: Claim | None,
+        evidence_by_claim: dict[str, Evidence],
+        question: str,
+    ) -> bool:
+        """Drop same-passage conflict artifacts that should be premise support."""
+        if not self._is_same_evidence_edge(edge, evidence_by_claim):
+            return False
+        if source_claim and source_claim.source_span == "reported_claim":
+            return False
+        if target_claim and target_claim.source_span == "reported_claim":
+            return False
+        if self._question_allows_same_evidence_conflict(question):
+            return False
+        return (
+            edge.conflict_type
+            in {ConflictType.NUMERIC_CONFLICT, ConflictType.REFUTE, ConflictType.CAUSAL_CONFLICT}
+            or "NLI contradiction" in edge.rationale
+            or "Same-evidence numeric contrast" in edge.rationale
+        )
+
+    @classmethod
+    def _question_allows_same_evidence_conflict(cls, question: str) -> bool:
+        if cls._is_direct_conflict_question(question) or cls._is_comparison_question(question):
+            return True
+        return any(
+            marker in question
+            for marker in (
+                "最佳估计",
+                "不同看法",
+                "是否代表实际",
+                "物理尺寸",
+                "栅极",
+                "命名",
+                "原计划",
+                "推迟",
+                "延误",
+                "进展顺利",
+                "首次等离子体",
+                "禁止所有",
+                "所有人脸识别",
+                "已经在下降",
+                "否定了IPCC",
+            )
         )
 
     @classmethod

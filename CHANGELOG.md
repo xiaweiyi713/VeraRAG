@@ -69,6 +69,9 @@ All notable changes to VeraRAG are recorded here.
 - Suppress premise-overreach NLI conflict false positives between milestone or
   capability evidence and limitation or boundary evidence while preserving
   reported-claim refutations for misleading-premise questions.
+- Filter same-evidence conflict noise for ordinary fact and premise-refutation
+  questions, dropping numeric/NLI/causal artifacts while preserving explicit
+  reported-claim corrections and same-passage conflict-intent questions.
 - Add VeraBench citation and supporting-fact scoring to per-question rows and
   report summaries, including pipeline chunk-ID to gold-evidence-ID mapping for
   answer citations such as `[D001_c0]`.

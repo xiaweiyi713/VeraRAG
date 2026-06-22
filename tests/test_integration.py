@@ -1289,6 +1289,131 @@ class TestPipelineIntegration:
 
         assert filtered.get_conflicts() == []
 
+    def test_simple_fact_questions_drop_same_evidence_numeric_noise(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        q_value = Claim(
+            claim_id="C_q",
+            claim="ITER的目标是Q值达到10",
+            claim_type=ClaimType.FACTUAL,
+            entities=["ITER"],
+            numbers=["10"],
+        )
+        power = Claim(
+            claim_id="C_power",
+            claim="ITER计划产生500MW聚变功率",
+            claim_type=ClaimType.FACTUAL,
+            entities=["ITER"],
+            numbers=["500MW"],
+        )
+        evidence_pool = [
+            Evidence(
+                "D088_c0",
+                "report",
+                "ITER核聚变项目目标",
+                "ITER的目标是Q值达到10，即产生500MW聚变功率。",
+                claims=[q_value, power],
+            ),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_q",
+                "C_power",
+                ConflictType.NUMERIC_CONFLICT,
+                0.78,
+                rationale="Same-evidence numeric contrast between comparable claims",
+            ),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "ITER核聚变项目的Q值目标是多少？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_premise_refutation_questions_drop_same_evidence_causal_noise(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        rag_limit = Claim(
+            claim_id="C_rag_limit",
+            claim="增加检索文档数量并不总是降低幻觉率，因为不相关文档会干扰生成",
+            claim_type=ClaimType.FACTUAL,
+            entities=["RAG"],
+            numbers=["3", "10"],
+        )
+        evidence_pool = [
+            Evidence(
+                "D073_c0",
+                "paper",
+                "RAG系统幻觉率评估基准HAAG",
+                "增加检索文档数量（top-k从3增至10）并不总是降低幻觉率。",
+                claims=[rag_limit],
+            ),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_rag_limit",
+                "C_rag_limit",
+                ConflictType.CAUSAL_CONFLICT,
+                0.75,
+                rationale="Claim explicitly rejects the monotonic retrieval-count premise",
+            ),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "RAG技术已经完美解决了大模型的幻觉问题，不需要再改进了，对吗？",
+        )
+
+        assert filtered.get_conflicts() == []
+
+    def test_same_evidence_conflict_intent_questions_keep_self_conflicts(self, pipeline_config):
+        pipeline = _create_pipeline(pipeline_config)
+        ecs = Claim(
+            claim_id="C_ecs",
+            claim="张海涛等人估计ECS可能为2.5°C",
+            claim_type=ClaimType.FACTUAL,
+            entities=["ECS"],
+            numbers=["2.5°C"],
+        )
+        ipcc = Claim(
+            claim_id="C_ipcc",
+            claim="IPCC AR6的最佳估计值为3.0°C",
+            claim_type=ClaimType.FACTUAL,
+            entities=["ECS", "IPCC"],
+            numbers=["3.0°C"],
+        )
+        evidence_pool = [
+            Evidence(
+                "D022_c0",
+                "paper",
+                "关于气候敏感度的学术争议",
+                "我们估计ECS可能为2.5°C，略低于IPCC AR6的最佳估计值3.0°C。",
+                claims=[ecs, ipcc],
+            ),
+        ]
+        graph = EvidenceConflictGraph()
+        graph.edges = [
+            ConflictEdge(
+                "C_ecs",
+                "C_ipcc",
+                ConflictType.NUMERIC_CONFLICT,
+                0.78,
+                rationale="Same-evidence numeric contrast between comparable claims",
+            ),
+        ]
+
+        filtered = pipeline._filter_conflict_graph_for_question(
+            graph,
+            evidence_pool,
+            "全球气候敏感度（ECS）的最佳估计值是多少？",
+        )
+
+        assert len(filtered.get_conflicts()) == 1
+
     def test_implication_questions_drop_process_self_refutation(self, pipeline_config):
         pipeline = _create_pipeline(pipeline_config)
         process = Claim(
