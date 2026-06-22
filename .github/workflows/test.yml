@@ -101,6 +101,11 @@ jobs:
             run_web.py
 
       - name: Type-check source packages
+        # mypy targets python_version=3.10 via mypy.ini regardless of the
+        # interpreter, so running it once is sufficient. Pinning to 3.11 also
+        # avoids a false syntax error from numpy's 3.13 type stubs (PEP 695
+        # `type` statements) being parsed under the 3.10 target.
+        if: matrix.python-version == '3.11'
         run: |
           python -m mypy src verarag --config-file mypy.ini
 
